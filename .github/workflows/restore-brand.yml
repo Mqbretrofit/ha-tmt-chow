@@ -27,17 +27,17 @@ jobs:
           rm -rf /tmp/tmt-release
           mkdir -p /tmp/tmt-release
           unzip -q /tmp/tmt-chow-v1.0.0.zip -d /tmp/tmt-release
-          test -f /tmp/tmt-release/tmt_chow/brand/icon.png
-          test -f /tmp/tmt-release/tmt_chow/brand/icon@2x.png
-          test -f /tmp/tmt-release/tmt_chow/brand/dark_icon.png
-          test -f /tmp/tmt-release/tmt_chow/brand/dark_icon@2x.png
+          test -f /tmp/tmt-release/custom_components/tmt_chow/brand/icon.png
+          test -f /tmp/tmt-release/custom_components/tmt_chow/brand/icon@2x.png
+          test -f /tmp/tmt-release/custom_components/tmt_chow/brand/dark_icon.png
+          test -f /tmp/tmt-release/custom_components/tmt_chow/brand/dark_icon@2x.png
 
       - name: Restore brand folder and remove one-shot workflow
         run: |
           set -euo pipefail
           rm -rf custom_components/tmt_chow/brand
           mkdir -p custom_components/tmt_chow
-          cp -a /tmp/tmt-release/tmt_chow/brand custom_components/tmt_chow/brand
+          cp -a /tmp/tmt-release/custom_components/tmt_chow/brand custom_components/tmt_chow/brand
           rm -f .github/workflows/restore-brand.yml
 
           git config user.name "github-actions[bot]"
