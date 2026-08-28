@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PUSH_MESSAGE: ${{ github.event.head_commit.message }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="$(printf '%s\n' "$PUSH_MESSAGE" | sed -n 's/.*\[release \(v[^]]*\)\].*/\1/p')"
+          fi
+          if [ -z "$tag" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Restore release source
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .release/bootstrap.part01 ]; then
+            cat .release/bootstrap.part* | base64 -d > /tmp/tmt_chow_source.tar.xz
+            rm -rf /tmp/tmt_chow_source
+            mkdir -p /tmp/tmt_chow_source
+            tar -xJf /tmp/tmt_chow_source.tar.xz -C /tmp/tmt_chow_source
+            test -f /tmp/tmt_chow_source/tmt_chow/manifest.json
+            rm -rf custom_components/tmt_chow
+            mkdir -p custom_components
+            cp -a /tmp/tmt_chow_source/tmt_chow custom_components/tmt_chow
+            rm -f .release/bootstrap.part* .release/source.part*
+            rmdir .release 2>/dev/null || true
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Bootstrap TMT Chow v1.0.0 source"
+            git push origin HEAD:main
+          fi
+
+      - name: Validate source
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          version="${tag#v}"
+          manifest_version="$(python -c 'import json; print(json.load(open("custom_components/tmt_chow/manifest.json", encoding="utf-8"))["version"])')"
+          if [ "$manifest_version" != "$version" ]; then
+            echo "Manifest version $manifest_version does not match release $version"
+            exit 1
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          import ast, json
+
+          root = Path('custom_components/tmt_chow')
+          for path in root.rglob('*.py'):
+              ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+          for path in root.rglob('*.json'):
+              json.loads(path.read_text(encoding='utf-8'))
+          translations = sorted((root / 'translations').glob('*.json'))
+          if len(translations) != 23:
+              raise SystemExit(f'Expected 23 translations, found {len(translations)}')
+          PY
+          test -z "$(find custom_components/tmt_chow -type f \( -name '*.pyc' -o -name '*.pyo' \) -print -quit)"
+
+      - name: Build release archive
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          rm -rf /tmp/tmt-chow-release
+          mkdir -p /tmp/tmt-chow-release/custom_components
+          cp -a custom_components/tmt_chow /tmp/tmt-chow-release/custom_components/
+          cp README.md CHANGELOG.md hacs.json /tmp/tmt-chow-release/
+          cd /tmp/tmt-chow-release
+          zip -r "$GITHUB_WORKSPACE/tmt-chow-${tag}.zip" .
+
+      - name: Publish GitHub release
+        if: steps.release.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          version="${tag#v}"
+          notes="RELEASE_NOTES_v${version}.md"
+          sha="$(git rev-parse HEAD)"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "tmt-chow-${tag}.zip" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "TMT Chow $tag" --latest --notes-file "$notes"
+          else
+            gh release create "$tag" "tmt-chow-${tag}.zip" --repo "$GITHUB_REPOSITORY" --target "$sha" --title "TMT Chow $tag" --latest --notes-file "$notes"
+          fi
