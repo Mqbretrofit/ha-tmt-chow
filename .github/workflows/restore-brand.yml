@@ -21,31 +21,21 @@ jobs:
       - name: Install image tooling
         run: python -m pip install --quiet pillow
 
-      - name: Rebuild brand assets
+      - name: Complete brand folder
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p custom_components/tmt_chow/brand
-          cat .brandtmp/icon.part* | base64 -d > custom_components/tmt_chow/brand/icon.png
-
           python - <<'PY'
-          from pathlib import Path
           from PIL import Image
-
-          p = Path('custom_components/tmt_chow/brand/icon.png')
+          p = 'custom_components/tmt_chow/brand/icon.png'
           im = Image.open(p)
           im.load()
           if im.format != 'PNG' or im.size != (256, 256):
-              raise SystemExit(f'Unexpected icon: format={im.format}, size={im.size}')
-          im.resize((512, 512), Image.Resampling.LANCZOS).save(
-              'custom_components/tmt_chow/brand/icon@2x.png'
-          )
+              raise SystemExit(f'Unexpected icon: {im.format} {im.size}')
+          im.resize((512, 512), Image.Resampling.LANCZOS).save('custom_components/tmt_chow/brand/icon@2x.png')
           PY
-
           cp custom_components/tmt_chow/brand/icon.png custom_components/tmt_chow/brand/dark_icon.png
           cp custom_components/tmt_chow/brand/icon@2x.png custom_components/tmt_chow/brand/dark_icon@2x.png
-
-          file custom_components/tmt_chow/brand/*.png
           rm -rf .brandtmp
           rm -f .github/workflows/restore-brand.yml
 
@@ -56,5 +46,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Restore TMT Chow brand assets"
+          git commit -m "Restore complete TMT Chow brand folder"
           git push origin HEAD:main
