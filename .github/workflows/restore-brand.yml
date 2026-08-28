@@ -48,3 +48,5 @@ jobs:
           git add -A
           git commit -m "Restore complete TMT Chow brand folder"
           git push origin HEAD:main
+
+# one-shot trigger
