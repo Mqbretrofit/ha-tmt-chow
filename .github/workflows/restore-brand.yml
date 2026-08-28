@@ -24,17 +24,22 @@ jobs:
           set -euo pipefail
           mkdir -p custom_components/tmt_chow/brand
           cat .brandtmp/icon.part* | base64 -d > custom_components/tmt_chow/brand/icon.png
-          echo 'f16122ca311e337c1972ac3c0297257cda0f69aca9f73c808f2c94269b1e6f30  custom_components/tmt_chow/brand/icon.png' | sha256sum -c -
+
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          p = Path('custom_components/tmt_chow/brand/icon.png')
+          im = Image.open(p)
+          im.load()
+          if im.format != 'PNG' or im.size != (256, 256):
+              raise SystemExit(f'Unexpected icon: format={im.format}, size={im.size}')
+          im.resize((512, 512), Image.Resampling.LANCZOS).save(
+              'custom_components/tmt_chow/brand/icon@2x.png'
+          )
+          PY
 
           cp custom_components/tmt_chow/brand/icon.png custom_components/tmt_chow/brand/dark_icon.png
-
-          if command -v magick >/dev/null 2>&1; then
-            magick custom_components/tmt_chow/brand/icon.png -resize 512x512 custom_components/tmt_chow/brand/icon@2x.png
-          elif command -v convert >/dev/null 2>&1; then
-            convert custom_components/tmt_chow/brand/icon.png -resize 512x512 custom_components/tmt_chow/brand/icon@2x.png
-          else
-            cp custom_components/tmt_chow/brand/icon.png custom_components/tmt_chow/brand/icon@2x.png
-          fi
           cp custom_components/tmt_chow/brand/icon@2x.png custom_components/tmt_chow/brand/dark_icon@2x.png
 
           file custom_components/tmt_chow/brand/*.png
