@@ -1,14 +1,13 @@
 # Changelog
 
-## 1.0.0 - 2026-08-28
+## v1.0.0
 
-First stable release.
-
-- TMT Chow / ChowHUB gate control in Home Assistant
+- First stable release
+- Gate open / close / stop control
 - Live gate state and position
-- Battery sensor
-- 17 supported controller parameters
-- Config flow setup
+- Battery monitoring
+- ChowHUB controller parameter configuration
+- Home Assistant Config Flow
 - Diagnostics support
 - 23 interface translations
-- Stable translation keys for entities and select options
+- Restored complete integration brand assets
