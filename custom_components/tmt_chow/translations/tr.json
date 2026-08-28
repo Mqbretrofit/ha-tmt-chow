@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "TMT Chow hesabını bağla",
+        "description": "Parola yalnızca kurulum sırasında kullanılır ve kaydedilmez.",
+        "data": {
+          "username": "E-posta adresi",
+          "password": "Parola"
+        }
+      },
+      "device": {
+        "title": "Kapıyı seç",
+        "data": {
+          "device": "Kapı"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "TMT Chow bağlantısı kurulamıyor",
+      "invalid_auth": "Geçersiz e-posta adresi veya parola",
+      "no_devices": "Uyumlu ChowHUB kapısı bulunamadı",
+      "unknown_device": "Seçilen kapı artık kullanılamıyor"
+    },
+    "abort": {
+      "already_configured": "Bu kapı zaten yapılandırılmış",
+      "cannot_connect": "TMT Chow bağlantısı kurulamıyor",
+      "invalid_auth": "Kimlik doğrulama başarısız"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batarya"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Çalışma yönü",
+        "state": {
+          "default": "Varsayılan",
+          "reversed": "Ters"
+        }
+      },
+      "automatic_closing": {
+        "name": "Otomatik kapanma",
+        "state": {
+          "off": "Kapalı",
+          "seconds_5": "5 sn",
+          "seconds_15": "15 sn",
+          "seconds_30": "30 sn",
+          "seconds_45": "45 sn",
+          "seconds_60": "60 sn",
+          "seconds_80": "80 sn",
+          "seconds_120": "120 sn",
+          "seconds_180": "180 sn"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Güvenlik cihazı modu",
+        "state": {
+          "mode_1": "Mod 1",
+          "mode_2": "Mod 2",
+          "mode_3": "Mod 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Çalışma hızı",
+        "state": {
+          "operation_50_learning_50": "Çalışma %50, öğrenme %50",
+          "operation_70_learning_60": "Çalışma %70, öğrenme %60",
+          "operation_85_learning_70": "Çalışma %85, öğrenme %70",
+          "operation_100_learning_80": "Çalışma %100, öğrenme %80"
+        }
+      },
+      "deceleration_point": {
+        "name": "Yavaşlama noktası",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Yavaşlama hızı",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Aşırı akım",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Yaya modu",
+        "state": {
+          "seconds_3": "3 sn",
+          "seconds_6": "6 sn",
+          "seconds_9": "9 sn",
+          "seconds_12": "12 sn",
+          "seconds_15": "15 sn",
+          "seconds_18": "18 sn"
+        }
+      },
+      "flashing_light": {
+        "name": "Yanıp sönen ışık",
+        "state": {
+          "off": "Kapalı",
+          "on": "Açık"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Aşırı akım tepkisi",
+        "state": {
+          "stop": "Dur",
+          "reverse_1s_then_stop": "1 sn tersine çevir, sonra dur",
+          "reverse_3s_then_stop": "3 sn tersine çevir, sonra dur",
+          "reverse_to_end": "Son konuma kadar tersine çevir"
+        }
+      },
+      "main_operation_key": {
+        "name": "Ana çalıştırma düğmesi",
+        "state": {
+          "key_a": "A düğmesi",
+          "key_b": "B düğmesi",
+          "key_c": "C düğmesi",
+          "key_d": "D düğmesi"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Yaya/kısmi açma düğmesi",
+        "state": {
+          "no_function": "İşlev yok",
+          "key_a": "A düğmesi",
+          "key_b": "B düğmesi",
+          "key_c": "C düğmesi",
+          "key_d": "D düğmesi"
+        }
+      },
+      "external_device_key": {
+        "name": "Harici cihaz düğmesi",
+        "state": {
+          "no_function": "İşlev yok",
+          "key_a": "A düğmesi",
+          "key_b": "B düğmesi",
+          "key_c": "C düğmesi",
+          "key_d": "D düğmesi"
+        }
+      },
+      "photocell_activation": {
+        "name": "Fotosel etkinleştirme",
+        "state": {
+          "off": "Kapalı",
+          "on": "Açık"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "2. fotosel etkinleştirme",
+        "state": {
+          "off": "Kapalı",
+          "on": "Açık"
+        }
+      },
+      "stop_terminal": {
+        "name": "STOP girişi işlevi",
+        "state": {
+          "off": "Kapalı",
+          "on": "Açık"
+        }
+      },
+      "gate_operation": {
+        "name": "Kapı çalışması",
+        "state": {
+          "open_stop_close_stop": "Aç/Stop/Kapat/Stop",
+          "open_stop_close": "Aç/Stop/Kapat"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Desteklenmeyen parametre değeri"
+    },
+    "command_failed": {
+      "message": "TMT Chow komutu başarısız oldu"
+    },
+    "invalid_parameter_set": {
+      "message": "Kapı geçerli bir parametre kümesi döndürmedi"
+    },
+    "unsupported_controller": {
+      "message": "Kontrolör doğrulanmış bir PS21053/PS21053C değil"
+    },
+    "unknown_parameter": {
+      "message": "Bilinmeyen kapı parametresi"
+    },
+    "parameters_not_ready": {
+      "message": "Geçerli bir okuma yapılmadan parametreler değiştirilemez"
+    },
+    "parameter_verification_failed": {
+      "message": "Yazma sonrası parametre doğrulaması başarısız oldu"
+    },
+    "gate_offline": {
+      "message": "Kapı çevrimdışı"
+    },
+    "no_acknowledgement": {
+      "message": "{acknowledgement} onayı alınmadı"
+    },
+    "command_rejected": {
+      "message": "Kapı komutu reddetti: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "MQTT bağlantısı kesildi"
+    }
+  }
+}

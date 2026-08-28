@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectează contul TMT Chow",
+        "description": "Parola este utilizată numai în timpul configurării și nu este salvată.",
+        "data": {
+          "username": "Adresă de e-mail",
+          "password": "Parolă"
+        }
+      },
+      "device": {
+        "title": "Selectează poarta",
+        "data": {
+          "device": "Poartă"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nu se poate conecta la TMT Chow",
+      "invalid_auth": "Adresă de e-mail sau parolă nevalidă",
+      "no_devices": "Nu a fost găsită nicio poartă ChowHUB compatibilă",
+      "unknown_device": "Poarta selectată nu mai este disponibilă"
+    },
+    "abort": {
+      "already_configured": "Această poartă este deja configurată",
+      "cannot_connect": "Nu se poate conecta la TMT Chow",
+      "invalid_auth": "Autentificarea a eșuat"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Baterie"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Direcția de funcționare",
+        "state": {
+          "default": "Implicit",
+          "reversed": "Inversat"
+        }
+      },
+      "automatic_closing": {
+        "name": "Închidere automată",
+        "state": {
+          "off": "Oprit",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Mod dispozitiv de siguranță",
+        "state": {
+          "mode_1": "Mod 1",
+          "mode_2": "Mod 2",
+          "mode_3": "Mod 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Viteză de funcționare",
+        "state": {
+          "operation_50_learning_50": "Funcționare 50%, învățare 50%",
+          "operation_70_learning_60": "Funcționare 70%, învățare 60%",
+          "operation_85_learning_70": "Funcționare 85%, învățare 70%",
+          "operation_100_learning_80": "Funcționare 100%, învățare 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Punct de decelerare",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Viteză de decelerare",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Supracurent",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Mod pietonal",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Lumină intermitentă",
+        "state": {
+          "off": "Oprit",
+          "on": "Pornit"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Reacție la supracurent",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Inversează 1 s, apoi oprește",
+          "reverse_3s_then_stop": "Inversează 3 s, apoi oprește",
+          "reverse_to_end": "Inversează până la poziția finală"
+        }
+      },
+      "main_operation_key": {
+        "name": "Buton principal de operare",
+        "state": {
+          "key_a": "Buton A",
+          "key_b": "Buton B",
+          "key_c": "Buton C",
+          "key_d": "Buton D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Buton deschidere pietonală/parțială",
+        "state": {
+          "no_function": "Fără funcție",
+          "key_a": "Buton A",
+          "key_b": "Buton B",
+          "key_c": "Buton C",
+          "key_d": "Buton D"
+        }
+      },
+      "external_device_key": {
+        "name": "Buton dispozitiv extern",
+        "state": {
+          "no_function": "Fără funcție",
+          "key_a": "Buton A",
+          "key_b": "Buton B",
+          "key_c": "Buton C",
+          "key_d": "Buton D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Activare fotocelulă",
+        "state": {
+          "off": "Oprit",
+          "on": "Pornit"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Activare a 2-a fotocelulă",
+        "state": {
+          "off": "Oprit",
+          "on": "Pornit"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funcția intrării STOP",
+        "state": {
+          "off": "Oprit",
+          "on": "Pornit"
+        }
+      },
+      "gate_operation": {
+        "name": "Funcționarea porții",
+        "state": {
+          "open_stop_close_stop": "Deschide/Stop/Închide/Stop",
+          "open_stop_close": "Deschide/Stop/Închide"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Valoare de parametru neacceptată"
+    },
+    "command_failed": {
+      "message": "Comanda TMT Chow a eșuat"
+    },
+    "invalid_parameter_set": {
+      "message": "Poarta nu a returnat un set valid de parametri"
+    },
+    "unsupported_controller": {
+      "message": "Controlerul nu este un PS21053/PS21053C verificat"
+    },
+    "unknown_parameter": {
+      "message": "Parametru de poartă necunoscut"
+    },
+    "parameters_not_ready": {
+      "message": "Parametrii nu pot fi modificați înainte de o citire validă"
+    },
+    "parameter_verification_failed": {
+      "message": "Verificarea parametrului după scriere a eșuat"
+    },
+    "gate_offline": {
+      "message": "Poarta este offline"
+    },
+    "no_acknowledgement": {
+      "message": "Nu s-a primit confirmarea {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Poarta a respins comanda: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Conexiunea MQTT a fost întreruptă"
+    }
+  }
+}

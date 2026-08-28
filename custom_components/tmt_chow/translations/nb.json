@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koble til TMT Chow-konto",
+        "description": "Passordet brukes bare under oppsett og lagres ikke.",
+        "data": {
+          "username": "E-postadresse",
+          "password": "Passord"
+        }
+      },
+      "device": {
+        "title": "Velg port",
+        "data": {
+          "device": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan ikke koble til TMT Chow",
+      "invalid_auth": "Ugyldig e-postadresse eller passord",
+      "no_devices": "Ingen kompatibel ChowHUB-port ble funnet",
+      "unknown_device": "Den valgte porten er ikke lenger tilgjengelig"
+    },
+    "abort": {
+      "already_configured": "Denne porten er allerede konfigurert",
+      "cannot_connect": "Kan ikke koble til TMT Chow",
+      "invalid_auth": "Autentisering mislyktes"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batteri"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Driftsretning",
+        "state": {
+          "default": "Standard",
+          "reversed": "Omvendt"
+        }
+      },
+      "automatic_closing": {
+        "name": "Automatisk lukking",
+        "state": {
+          "off": "Av",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Sikkerhetsenhetsmodus",
+        "state": {
+          "mode_1": "Modus 1",
+          "mode_2": "Modus 2",
+          "mode_3": "Modus 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Driftshastighet",
+        "state": {
+          "operation_50_learning_50": "Drift 50 %, læring 50 %",
+          "operation_70_learning_60": "Drift 70 %, læring 60 %",
+          "operation_85_learning_70": "Drift 85 %, læring 70 %",
+          "operation_100_learning_80": "Drift 100 %, læring 80 %"
+        }
+      },
+      "deceleration_point": {
+        "name": "Nedbremsingspunkt",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Nedbremsingshastighet",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Overstrøm",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Fotgjengermodus",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Blinklys",
+        "state": {
+          "off": "Av",
+          "on": "På"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Overstrømsreaksjon",
+        "state": {
+          "stop": "Stopp",
+          "reverse_1s_then_stop": "Reverser i 1 s, stopp deretter",
+          "reverse_3s_then_stop": "Reverser i 3 s, stopp deretter",
+          "reverse_to_end": "Reverser til endeposisjon"
+        }
+      },
+      "main_operation_key": {
+        "name": "Hovedbetjeningsknapp",
+        "state": {
+          "key_a": "Knapp A",
+          "key_b": "Knapp B",
+          "key_c": "Knapp C",
+          "key_d": "Knapp D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Knapp for fotgjenger-/delåpning",
+        "state": {
+          "no_function": "Ingen funksjon",
+          "key_a": "Knapp A",
+          "key_b": "Knapp B",
+          "key_c": "Knapp C",
+          "key_d": "Knapp D"
+        }
+      },
+      "external_device_key": {
+        "name": "Knapp for ekstern enhet",
+        "state": {
+          "no_function": "Ingen funksjon",
+          "key_a": "Knapp A",
+          "key_b": "Knapp B",
+          "key_c": "Knapp C",
+          "key_d": "Knapp D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Aktivering av fotocelle",
+        "state": {
+          "off": "Av",
+          "on": "På"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Aktivering av 2. fotocelle",
+        "state": {
+          "off": "Av",
+          "on": "På"
+        }
+      },
+      "stop_terminal": {
+        "name": "STOPP-inngangsfunksjon",
+        "state": {
+          "off": "Av",
+          "on": "På"
+        }
+      },
+      "gate_operation": {
+        "name": "Portbetjening",
+        "state": {
+          "open_stop_close_stop": "Åpne/Stop/Lukk/Stop",
+          "open_stop_close": "Åpne/Stop/Lukk"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Parameterverdien støttes ikke"
+    },
+    "command_failed": {
+      "message": "TMT Chow-kommandoen mislyktes"
+    },
+    "invalid_parameter_set": {
+      "message": "Porten returnerte ikke et gyldig parametersett"
+    },
+    "unsupported_controller": {
+      "message": "Kontrolleren er ikke en verifisert PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Ukjent portparameter"
+    },
+    "parameters_not_ready": {
+      "message": "Parametere kan ikke endres før en gyldig avlesning"
+    },
+    "parameter_verification_failed": {
+      "message": "Parameterverifisering etter skriving mislyktes"
+    },
+    "gate_offline": {
+      "message": "Porten er frakoblet"
+    },
+    "no_acknowledgement": {
+      "message": "Ingen {acknowledgement}-bekreftelse mottatt"
+    },
+    "command_rejected": {
+      "message": "Porten avviste kommandoen: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "MQTT-tilkoblingen ble avbrutt"
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Połącz konto TMT Chow",
+        "description": "Hasło jest używane tylko podczas konfiguracji i nie jest zapisywane.",
+        "data": {
+          "username": "Adres e-mail",
+          "password": "Hasło"
+        }
+      },
+      "device": {
+        "title": "Wybierz bramę",
+        "data": {
+          "device": "Brama"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie można połączyć się z TMT Chow",
+      "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
+      "no_devices": "Nie znaleziono zgodnej bramy ChowHUB",
+      "unknown_device": "Wybrana brama nie jest już dostępna"
+    },
+    "abort": {
+      "already_configured": "Ta brama jest już skonfigurowana",
+      "cannot_connect": "Nie można połączyć się z TMT Chow",
+      "invalid_auth": "Uwierzytelnianie nie powiodło się"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Akumulator"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Kierunek pracy",
+        "state": {
+          "default": "Domyślny",
+          "reversed": "Odwrócony"
+        }
+      },
+      "automatic_closing": {
+        "name": "Automatyczne zamykanie",
+        "state": {
+          "off": "Wyłączone",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Tryb urządzenia zabezpieczającego",
+        "state": {
+          "mode_1": "Tryb 1",
+          "mode_2": "Tryb 2",
+          "mode_3": "Tryb 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Prędkość pracy",
+        "state": {
+          "operation_50_learning_50": "Praca 50%, nauka 50%",
+          "operation_70_learning_60": "Praca 70%, nauka 60%",
+          "operation_85_learning_70": "Praca 85%, nauka 70%",
+          "operation_100_learning_80": "Praca 100%, nauka 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Punkt zwalniania",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Prędkość zwalniania",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Przeciążenie prądowe",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Tryb furtki",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Lampa migająca",
+        "state": {
+          "off": "Wyłączone",
+          "on": "Włączone"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Reakcja na przeciążenie",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Cofnij przez 1 s, potem zatrzymaj",
+          "reverse_3s_then_stop": "Cofnij przez 3 s, potem zatrzymaj",
+          "reverse_to_end": "Cofnij do położenia krańcowego"
+        }
+      },
+      "main_operation_key": {
+        "name": "Główny przycisk sterujący",
+        "state": {
+          "key_a": "Przycisk A",
+          "key_b": "Przycisk B",
+          "key_c": "Przycisk C",
+          "key_d": "Przycisk D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Przycisk otwarcia pieszego/częściowego",
+        "state": {
+          "no_function": "Brak funkcji",
+          "key_a": "Przycisk A",
+          "key_b": "Przycisk B",
+          "key_c": "Przycisk C",
+          "key_d": "Przycisk D"
+        }
+      },
+      "external_device_key": {
+        "name": "Przycisk urządzenia zewnętrznego",
+        "state": {
+          "no_function": "Brak funkcji",
+          "key_a": "Przycisk A",
+          "key_b": "Przycisk B",
+          "key_c": "Przycisk C",
+          "key_d": "Przycisk D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Aktywacja fotokomórki",
+        "state": {
+          "off": "Wyłączone",
+          "on": "Włączone"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Aktywacja 2. fotokomórki",
+        "state": {
+          "off": "Wyłączone",
+          "on": "Włączone"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funkcja wejścia STOP",
+        "state": {
+          "off": "Wyłączone",
+          "on": "Włączone"
+        }
+      },
+      "gate_operation": {
+        "name": "Sterowanie bramą",
+        "state": {
+          "open_stop_close_stop": "Otwórz/Stop/Zamknij/Stop",
+          "open_stop_close": "Otwórz/Stop/Zamknij"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Nieobsługiwana wartość parametru"
+    },
+    "command_failed": {
+      "message": "Polecenie TMT Chow nie powiodło się"
+    },
+    "invalid_parameter_set": {
+      "message": "Brama nie zwróciła prawidłowego zestawu parametrów"
+    },
+    "unsupported_controller": {
+      "message": "Sterownik nie jest zweryfikowanym PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Nieznany parametr bramy"
+    },
+    "parameters_not_ready": {
+      "message": "Nie można zmieniać parametrów przed prawidłowym odczytem"
+    },
+    "parameter_verification_failed": {
+      "message": "Weryfikacja parametru po zapisie nie powiodła się"
+    },
+    "gate_offline": {
+      "message": "Brama jest offline"
+    },
+    "no_acknowledgement": {
+      "message": "Nie otrzymano potwierdzenia {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Brama odrzuciła polecenie: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Połączenie MQTT zostało przerwane"
+    }
+  }
+}

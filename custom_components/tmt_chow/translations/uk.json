@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Підключити обліковий запис TMT Chow",
+        "description": "Пароль використовується лише під час налаштування і не зберігається.",
+        "data": {
+          "username": "Адреса електронної пошти",
+          "password": "Пароль"
+        }
+      },
+      "device": {
+        "title": "Вибрати ворота",
+        "data": {
+          "device": "Ворота"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не вдається підключитися до TMT Chow",
+      "invalid_auth": "Неправильна адреса електронної пошти або пароль",
+      "no_devices": "Сумісні ворота ChowHUB не знайдено",
+      "unknown_device": "Вибрані ворота більше недоступні"
+    },
+    "abort": {
+      "already_configured": "Ці ворота вже налаштовані",
+      "cannot_connect": "Не вдається підключитися до TMT Chow",
+      "invalid_auth": "Помилка автентифікації"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Акумулятор"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Напрямок роботи",
+        "state": {
+          "default": "За замовчуванням",
+          "reversed": "Зворотний"
+        }
+      },
+      "automatic_closing": {
+        "name": "Автоматичне закриття",
+        "state": {
+          "off": "Вимкнено",
+          "seconds_5": "5 с",
+          "seconds_15": "15 с",
+          "seconds_30": "30 с",
+          "seconds_45": "45 с",
+          "seconds_60": "60 с",
+          "seconds_80": "80 с",
+          "seconds_120": "120 с",
+          "seconds_180": "180 с"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Режим пристрою безпеки",
+        "state": {
+          "mode_1": "Режим 1",
+          "mode_2": "Режим 2",
+          "mode_3": "Режим 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Швидкість роботи",
+        "state": {
+          "operation_50_learning_50": "Робота 50%, навчання 50%",
+          "operation_70_learning_60": "Робота 70%, навчання 60%",
+          "operation_85_learning_70": "Робота 85%, навчання 70%",
+          "operation_100_learning_80": "Робота 100%, навчання 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Точка уповільнення",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Швидкість уповільнення",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Надструм",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Пішохідний режим",
+        "state": {
+          "seconds_3": "3 с",
+          "seconds_6": "6 с",
+          "seconds_9": "9 с",
+          "seconds_12": "12 с",
+          "seconds_15": "15 с",
+          "seconds_18": "18 с"
+        }
+      },
+      "flashing_light": {
+        "name": "Миготливе світло",
+        "state": {
+          "off": "Вимкнено",
+          "on": "Увімкнено"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Реакція на надструм",
+        "state": {
+          "stop": "Стоп",
+          "reverse_1s_then_stop": "Реверс 1 с, потім стоп",
+          "reverse_3s_then_stop": "Реверс 3 с, потім стоп",
+          "reverse_to_end": "Реверс до кінцевого положення"
+        }
+      },
+      "main_operation_key": {
+        "name": "Основна кнопка керування",
+        "state": {
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Кнопка пішохідного/часткового відкриття",
+        "state": {
+          "no_function": "Без функції",
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "external_device_key": {
+        "name": "Кнопка зовнішнього пристрою",
+        "state": {
+          "no_function": "Без функції",
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Активація фотоелемента",
+        "state": {
+          "off": "Вимкнено",
+          "on": "Увімкнено"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Активація 2-го фотоелемента",
+        "state": {
+          "off": "Вимкнено",
+          "on": "Увімкнено"
+        }
+      },
+      "stop_terminal": {
+        "name": "Функція входу STOP",
+        "state": {
+          "off": "Вимкнено",
+          "on": "Увімкнено"
+        }
+      },
+      "gate_operation": {
+        "name": "Робота воріт",
+        "state": {
+          "open_stop_close_stop": "Відкрити/Stop/Закрити/Stop",
+          "open_stop_close": "Відкрити/Stop/Закрити"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Непідтримуване значення параметра"
+    },
+    "command_failed": {
+      "message": "Помилка команди TMT Chow"
+    },
+    "invalid_parameter_set": {
+      "message": "Ворота не повернули дійсний набір параметрів"
+    },
+    "unsupported_controller": {
+      "message": "Контролер не є перевіреним PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Невідомий параметр воріт"
+    },
+    "parameters_not_ready": {
+      "message": "Параметри не можна змінювати до дійсного зчитування"
+    },
+    "parameter_verification_failed": {
+      "message": "Перевірка параметра після запису не вдалася"
+    },
+    "gate_offline": {
+      "message": "Ворота не в мережі"
+    },
+    "no_acknowledgement": {
+      "message": "Не отримано підтвердження {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Ворота відхилили команду: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "З’єднання MQTT було перервано"
+    }
+  }
+}

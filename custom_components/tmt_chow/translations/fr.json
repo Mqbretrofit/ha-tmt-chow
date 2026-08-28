@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connecter le compte TMT Chow",
+        "description": "Le mot de passe est utilisé uniquement pendant la configuration et n’est pas enregistré.",
+        "data": {
+          "username": "Adresse e-mail",
+          "password": "Mot de passe"
+        }
+      },
+      "device": {
+        "title": "Sélectionner le portail",
+        "data": {
+          "device": "Portail"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter à TMT Chow",
+      "invalid_auth": "Adresse e-mail ou mot de passe incorrect",
+      "no_devices": "Aucun portail ChowHUB compatible trouvé",
+      "unknown_device": "Le portail sélectionné n’est plus disponible"
+    },
+    "abort": {
+      "already_configured": "Ce portail est déjà configuré",
+      "cannot_connect": "Impossible de se connecter à TMT Chow",
+      "invalid_auth": "Échec de l’authentification"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batterie"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Sens de fonctionnement",
+        "state": {
+          "default": "Par défaut",
+          "reversed": "Inversé"
+        }
+      },
+      "automatic_closing": {
+        "name": "Fermeture automatique",
+        "state": {
+          "off": "Désactivé",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Mode du dispositif de sécurité",
+        "state": {
+          "mode_1": "Mode 1",
+          "mode_2": "Mode 2",
+          "mode_3": "Mode 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Vitesse de fonctionnement",
+        "state": {
+          "operation_50_learning_50": "Fonctionnement 50 %, apprentissage 50 %",
+          "operation_70_learning_60": "Fonctionnement 70 %, apprentissage 60 %",
+          "operation_85_learning_70": "Fonctionnement 85 %, apprentissage 70 %",
+          "operation_100_learning_80": "Fonctionnement 100 %, apprentissage 80 %"
+        }
+      },
+      "deceleration_point": {
+        "name": "Point de ralentissement",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Vitesse de ralentissement",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Surintensité",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Mode piéton",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Feu clignotant",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Réaction à la surintensité",
+        "state": {
+          "stop": "Arrêt",
+          "reverse_1s_then_stop": "Inverser pendant 1 s puis arrêter",
+          "reverse_3s_then_stop": "Inverser pendant 3 s puis arrêter",
+          "reverse_to_end": "Inverser jusqu’à la fin de course"
+        }
+      },
+      "main_operation_key": {
+        "name": "Bouton de commande principal",
+        "state": {
+          "key_a": "Bouton A",
+          "key_b": "Bouton B",
+          "key_c": "Bouton C",
+          "key_d": "Bouton D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Bouton d’ouverture piétonne/partielle",
+        "state": {
+          "no_function": "Aucune fonction",
+          "key_a": "Bouton A",
+          "key_b": "Bouton B",
+          "key_c": "Bouton C",
+          "key_d": "Bouton D"
+        }
+      },
+      "external_device_key": {
+        "name": "Bouton du dispositif externe",
+        "state": {
+          "no_function": "Aucune fonction",
+          "key_a": "Bouton A",
+          "key_b": "Bouton B",
+          "key_c": "Bouton C",
+          "key_d": "Bouton D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Activation de la photocellule",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Activation de la 2e photocellule",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé"
+        }
+      },
+      "stop_terminal": {
+        "name": "Fonction de l’entrée STOP",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé"
+        }
+      },
+      "gate_operation": {
+        "name": "Fonctionnement du portail",
+        "state": {
+          "open_stop_close_stop": "Ouvrir/Stop/Fermer/Stop",
+          "open_stop_close": "Ouvrir/Stop/Fermer"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Valeur de paramètre non prise en charge"
+    },
+    "command_failed": {
+      "message": "Échec de la commande TMT Chow"
+    },
+    "invalid_parameter_set": {
+      "message": "Le portail n’a renvoyé aucun jeu de paramètres valide"
+    },
+    "unsupported_controller": {
+      "message": "Le contrôleur n’est pas un PS21053/PS21053C vérifié"
+    },
+    "unknown_parameter": {
+      "message": "Paramètre de portail inconnu"
+    },
+    "parameters_not_ready": {
+      "message": "Les paramètres ne peuvent pas être modifiés avant une lecture valide"
+    },
+    "parameter_verification_failed": {
+      "message": "Échec de la vérification du paramètre après écriture"
+    },
+    "gate_offline": {
+      "message": "Le portail est hors ligne"
+    },
+    "no_acknowledgement": {
+      "message": "Aucun accusé de réception {acknowledgement} reçu"
+    },
+    "command_rejected": {
+      "message": "Le portail a rejeté la commande : {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "La connexion MQTT a été interrompue"
+    }
+  }
+}

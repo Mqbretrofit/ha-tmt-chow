@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Подключить учетную запись TMT Chow",
+        "description": "Пароль используется только во время настройки и не сохраняется.",
+        "data": {
+          "username": "Адрес электронной почты",
+          "password": "Пароль"
+        }
+      },
+      "device": {
+        "title": "Выбрать ворота",
+        "data": {
+          "device": "Ворота"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удается подключиться к TMT Chow",
+      "invalid_auth": "Неверный адрес электронной почты или пароль",
+      "no_devices": "Совместимые ворота ChowHUB не найдены",
+      "unknown_device": "Выбранные ворота больше недоступны"
+    },
+    "abort": {
+      "already_configured": "Эти ворота уже настроены",
+      "cannot_connect": "Не удается подключиться к TMT Chow",
+      "invalid_auth": "Ошибка аутентификации"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Аккумулятор"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Направление работы",
+        "state": {
+          "default": "По умолчанию",
+          "reversed": "Обратное"
+        }
+      },
+      "automatic_closing": {
+        "name": "Автоматическое закрытие",
+        "state": {
+          "off": "Выкл.",
+          "seconds_5": "5 с",
+          "seconds_15": "15 с",
+          "seconds_30": "30 с",
+          "seconds_45": "45 с",
+          "seconds_60": "60 с",
+          "seconds_80": "80 с",
+          "seconds_120": "120 с",
+          "seconds_180": "180 с"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Режим устройства безопасности",
+        "state": {
+          "mode_1": "Режим 1",
+          "mode_2": "Режим 2",
+          "mode_3": "Режим 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Скорость работы",
+        "state": {
+          "operation_50_learning_50": "Работа 50%, обучение 50%",
+          "operation_70_learning_60": "Работа 70%, обучение 60%",
+          "operation_85_learning_70": "Работа 85%, обучение 70%",
+          "operation_100_learning_80": "Работа 100%, обучение 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Точка замедления",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Скорость замедления",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Перегрузка по току",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Пешеходный режим",
+        "state": {
+          "seconds_3": "3 с",
+          "seconds_6": "6 с",
+          "seconds_9": "9 с",
+          "seconds_12": "12 с",
+          "seconds_15": "15 с",
+          "seconds_18": "18 с"
+        }
+      },
+      "flashing_light": {
+        "name": "Мигающий свет",
+        "state": {
+          "off": "Выкл.",
+          "on": "Вкл."
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Реакция на перегрузку по току",
+        "state": {
+          "stop": "Стоп",
+          "reverse_1s_then_stop": "Реверс 1 с, затем стоп",
+          "reverse_3s_then_stop": "Реверс 3 с, затем стоп",
+          "reverse_to_end": "Реверс до конечного положения"
+        }
+      },
+      "main_operation_key": {
+        "name": "Основная кнопка управления",
+        "state": {
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Кнопка пешеходного/частичного открытия",
+        "state": {
+          "no_function": "Без функции",
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "external_device_key": {
+        "name": "Кнопка внешнего устройства",
+        "state": {
+          "no_function": "Без функции",
+          "key_a": "Кнопка A",
+          "key_b": "Кнопка B",
+          "key_c": "Кнопка C",
+          "key_d": "Кнопка D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Активация фотоэлемента",
+        "state": {
+          "off": "Выкл.",
+          "on": "Вкл."
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Активация 2-го фотоэлемента",
+        "state": {
+          "off": "Выкл.",
+          "on": "Вкл."
+        }
+      },
+      "stop_terminal": {
+        "name": "Функция входа STOP",
+        "state": {
+          "off": "Выкл.",
+          "on": "Вкл."
+        }
+      },
+      "gate_operation": {
+        "name": "Работа ворот",
+        "state": {
+          "open_stop_close_stop": "Открыть/Stop/Закрыть/Stop",
+          "open_stop_close": "Открыть/Stop/Закрыть"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Неподдерживаемое значение параметра"
+    },
+    "command_failed": {
+      "message": "Ошибка команды TMT Chow"
+    },
+    "invalid_parameter_set": {
+      "message": "Ворота не вернули допустимый набор параметров"
+    },
+    "unsupported_controller": {
+      "message": "Контроллер не является проверенным PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Неизвестный параметр ворот"
+    },
+    "parameters_not_ready": {
+      "message": "Параметры нельзя изменять до корректного чтения"
+    },
+    "parameter_verification_failed": {
+      "message": "Проверка параметра после записи не удалась"
+    },
+    "gate_offline": {
+      "message": "Ворота не в сети"
+    },
+    "no_acknowledgement": {
+      "message": "Не получено подтверждение {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Ворота отклонили команду: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Соединение MQTT было прервано"
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Poveži račun TMT Chow",
+        "description": "Geslo se uporablja samo med nastavitvijo in se ne shrani.",
+        "data": {
+          "username": "E-poštni naslov",
+          "password": "Geslo"
+        }
+      },
+      "device": {
+        "title": "Izberi vrata",
+        "data": {
+          "device": "Vrata"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Povezava s TMT Chow ni mogoča",
+      "invalid_auth": "Neveljaven e-poštni naslov ali geslo",
+      "no_devices": "Združljiva vrata ChowHUB niso bila najdena",
+      "unknown_device": "Izbrana vrata niso več na voljo"
+    },
+    "abort": {
+      "already_configured": "Ta vrata so že nastavljena",
+      "cannot_connect": "Povezava s TMT Chow ni mogoča",
+      "invalid_auth": "Preverjanje pristnosti ni uspelo"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Baterija"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Smer delovanja",
+        "state": {
+          "default": "Privzeto",
+          "reversed": "Obrnjeno"
+        }
+      },
+      "automatic_closing": {
+        "name": "Samodejno zapiranje",
+        "state": {
+          "off": "Izklopljeno",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Način varnostne naprave",
+        "state": {
+          "mode_1": "Način 1",
+          "mode_2": "Način 2",
+          "mode_3": "Način 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Hitrost delovanja",
+        "state": {
+          "operation_50_learning_50": "Delovanje 50 %, učenje 50 %",
+          "operation_70_learning_60": "Delovanje 70 %, učenje 60 %",
+          "operation_85_learning_70": "Delovanje 85 %, učenje 70 %",
+          "operation_100_learning_80": "Delovanje 100 %, učenje 80 %"
+        }
+      },
+      "deceleration_point": {
+        "name": "Točka upočasnitve",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Hitrost upočasnitve",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Prekomerni tok",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Način za pešce",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Utripajoča luč",
+        "state": {
+          "off": "Izklopljeno",
+          "on": "Vklopljeno"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Odziv na prekomerni tok",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Obrni za 1 s, nato ustavi",
+          "reverse_3s_then_stop": "Obrni za 3 s, nato ustavi",
+          "reverse_to_end": "Obrni do končnega položaja"
+        }
+      },
+      "main_operation_key": {
+        "name": "Glavni upravljalni gumb",
+        "state": {
+          "key_a": "Gumb A",
+          "key_b": "Gumb B",
+          "key_c": "Gumb C",
+          "key_d": "Gumb D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Gumb za pešce/delno odpiranje",
+        "state": {
+          "no_function": "Brez funkcije",
+          "key_a": "Gumb A",
+          "key_b": "Gumb B",
+          "key_c": "Gumb C",
+          "key_d": "Gumb D"
+        }
+      },
+      "external_device_key": {
+        "name": "Gumb zunanje naprave",
+        "state": {
+          "no_function": "Brez funkcije",
+          "key_a": "Gumb A",
+          "key_b": "Gumb B",
+          "key_c": "Gumb C",
+          "key_d": "Gumb D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Aktivacija fotocelice",
+        "state": {
+          "off": "Izklopljeno",
+          "on": "Vklopljeno"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Aktivacija 2. fotocelice",
+        "state": {
+          "off": "Izklopljeno",
+          "on": "Vklopljeno"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funkcija vhoda STOP",
+        "state": {
+          "off": "Izklopljeno",
+          "on": "Vklopljeno"
+        }
+      },
+      "gate_operation": {
+        "name": "Upravljanje vrat",
+        "state": {
+          "open_stop_close_stop": "Odpri/Stop/Zapri/Stop",
+          "open_stop_close": "Odpri/Stop/Zapri"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Nepodprta vrednost parametra"
+    },
+    "command_failed": {
+      "message": "Ukaz TMT Chow ni uspel"
+    },
+    "invalid_parameter_set": {
+      "message": "Vrata niso vrnila veljavnega nabora parametrov"
+    },
+    "unsupported_controller": {
+      "message": "Krmilnik ni preverjen PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Neznan parameter vrat"
+    },
+    "parameters_not_ready": {
+      "message": "Parametrov ni mogoče spreminjati pred veljavnim branjem"
+    },
+    "parameter_verification_failed": {
+      "message": "Preverjanje parametra po zapisu ni uspelo"
+    },
+    "gate_offline": {
+      "message": "Vrata niso povezana"
+    },
+    "no_acknowledgement": {
+      "message": "Potrditev {acknowledgement} ni bila prejeta"
+    },
+    "command_rejected": {
+      "message": "Vrata so zavrnila ukaz: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Povezava MQTT je bila prekinjena"
+    }
+  }
+}

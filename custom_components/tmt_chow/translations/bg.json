@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Свързване на TMT Chow акаунт",
+        "description": "Паролата се използва само по време на настройката и не се запазва.",
+        "data": {
+          "username": "Имейл адрес",
+          "password": "Парола"
+        }
+      },
+      "device": {
+        "title": "Изберете врата",
+        "data": {
+          "device": "Врата"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не може да се свърже с TMT Chow",
+      "invalid_auth": "Невалиден имейл адрес или парола",
+      "no_devices": "Не е намерена съвместима ChowHUB врата",
+      "unknown_device": "Избраната врата вече не е налична"
+    },
+    "abort": {
+      "already_configured": "Тази врата вече е конфигурирана",
+      "cannot_connect": "Не може да се свърже с TMT Chow",
+      "invalid_auth": "Неуспешно удостоверяване"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Батерия"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Посока на работа",
+        "state": {
+          "default": "По подразбиране",
+          "reversed": "Обратно"
+        }
+      },
+      "automatic_closing": {
+        "name": "Автоматично затваряне",
+        "state": {
+          "off": "Изключено",
+          "seconds_5": "5 сек",
+          "seconds_15": "15 сек",
+          "seconds_30": "30 сек",
+          "seconds_45": "45 сек",
+          "seconds_60": "60 сек",
+          "seconds_80": "80 сек",
+          "seconds_120": "120 сек",
+          "seconds_180": "180 сек"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Режим на защитното устройство",
+        "state": {
+          "mode_1": "Режим 1",
+          "mode_2": "Режим 2",
+          "mode_3": "Режим 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Скорост на работа",
+        "state": {
+          "operation_50_learning_50": "Работа 50%, обучение 50%",
+          "operation_70_learning_60": "Работа 70%, обучение 60%",
+          "operation_85_learning_70": "Работа 85%, обучение 70%",
+          "operation_100_learning_80": "Работа 100%, обучение 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Точка на забавяне",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Скорост на забавяне",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Свръхток",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Пешеходен режим",
+        "state": {
+          "seconds_3": "3 сек",
+          "seconds_6": "6 сек",
+          "seconds_9": "9 сек",
+          "seconds_12": "12 сек",
+          "seconds_15": "15 сек",
+          "seconds_18": "18 сек"
+        }
+      },
+      "flashing_light": {
+        "name": "Мигаща светлина",
+        "state": {
+          "off": "Изключено",
+          "on": "Включено"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Реакция при свръхток",
+        "state": {
+          "stop": "Стоп",
+          "reverse_1s_then_stop": "Обратно за 1 сек, после стоп",
+          "reverse_3s_then_stop": "Обратно за 3 сек, после стоп",
+          "reverse_to_end": "Обратно до крайно положение"
+        }
+      },
+      "main_operation_key": {
+        "name": "Основен бутон за управление",
+        "state": {
+          "key_a": "Бутон A",
+          "key_b": "Бутон B",
+          "key_c": "Бутон C",
+          "key_d": "Бутон D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Бутон за пешеходно/частично отваряне",
+        "state": {
+          "no_function": "Без функция",
+          "key_a": "Бутон A",
+          "key_b": "Бутон B",
+          "key_c": "Бутон C",
+          "key_d": "Бутон D"
+        }
+      },
+      "external_device_key": {
+        "name": "Бутон за външно устройство",
+        "state": {
+          "no_function": "Без функция",
+          "key_a": "Бутон A",
+          "key_b": "Бутон B",
+          "key_c": "Бутон C",
+          "key_d": "Бутон D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Активиране на фотоклетка",
+        "state": {
+          "off": "Изключено",
+          "on": "Включено"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Активиране на 2-ра фотоклетка",
+        "state": {
+          "off": "Изключено",
+          "on": "Включено"
+        }
+      },
+      "stop_terminal": {
+        "name": "Функция на вход STOP",
+        "state": {
+          "off": "Изключено",
+          "on": "Включено"
+        }
+      },
+      "gate_operation": {
+        "name": "Управление на вратата",
+        "state": {
+          "open_stop_close_stop": "Отвори/Stop/Затвори/Stop",
+          "open_stop_close": "Отвори/Stop/Затвори"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Неподдържана стойност на параметъра"
+    },
+    "command_failed": {
+      "message": "Командата на TMT Chow е неуспешна"
+    },
+    "invalid_parameter_set": {
+      "message": "Вратата не върна валиден набор от параметри"
+    },
+    "unsupported_controller": {
+      "message": "Контролерът не е проверен PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Неизвестен параметър на вратата"
+    },
+    "parameters_not_ready": {
+      "message": "Параметрите не могат да се променят преди валидно прочитане"
+    },
+    "parameter_verification_failed": {
+      "message": "Проверката на параметъра след запис е неуспешна"
+    },
+    "gate_offline": {
+      "message": "Вратата е офлайн"
+    },
+    "no_acknowledgement": {
+      "message": "Не е получено потвърждение {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Вратата отхвърли командата: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "MQTT връзката беше прекъсната"
+    }
+  }
+}

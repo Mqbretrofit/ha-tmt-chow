@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "TMT-Chow-Konto verbinden",
+        "description": "Das Passwort wird nur während der Einrichtung verwendet und nicht gespeichert.",
+        "data": {
+          "username": "E-Mail-Adresse",
+          "password": "Passwort"
+        }
+      },
+      "device": {
+        "title": "Tor auswählen",
+        "data": {
+          "device": "Tor"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zu TMT Chow nicht möglich",
+      "invalid_auth": "Ungültige E-Mail-Adresse oder ungültiges Passwort",
+      "no_devices": "Kein kompatibles ChowHUB-Tor gefunden",
+      "unknown_device": "Das ausgewählte Tor ist nicht mehr verfügbar"
+    },
+    "abort": {
+      "already_configured": "Dieses Tor ist bereits konfiguriert",
+      "cannot_connect": "Verbindung zu TMT Chow nicht möglich",
+      "invalid_auth": "Authentifizierung fehlgeschlagen"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batterie"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Betriebsrichtung",
+        "state": {
+          "default": "Standard",
+          "reversed": "Umgekehrt"
+        }
+      },
+      "automatic_closing": {
+        "name": "Automatisches Schließen",
+        "state": {
+          "off": "Aus",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Sicherheitsgerätemodus",
+        "state": {
+          "mode_1": "Modus 1",
+          "mode_2": "Modus 2",
+          "mode_3": "Modus 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Betriebsgeschwindigkeit",
+        "state": {
+          "operation_50_learning_50": "Betrieb 50 %, Lernen 50 %",
+          "operation_70_learning_60": "Betrieb 70 %, Lernen 60 %",
+          "operation_85_learning_70": "Betrieb 85 %, Lernen 70 %",
+          "operation_100_learning_80": "Betrieb 100 %, Lernen 80 %"
+        }
+      },
+      "deceleration_point": {
+        "name": "Abbremsposition",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Abbremsgeschwindigkeit",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Überstrom",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Fußgängermodus",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Blinkleuchte",
+        "state": {
+          "off": "Aus",
+          "on": "Ein"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Überstromreaktion",
+        "state": {
+          "stop": "Stopp",
+          "reverse_1s_then_stop": "1 s umkehren, dann stoppen",
+          "reverse_3s_then_stop": "3 s umkehren, dann stoppen",
+          "reverse_to_end": "Bis zur Endlage umkehren"
+        }
+      },
+      "main_operation_key": {
+        "name": "Hauptbedientaste",
+        "state": {
+          "key_a": "Taste A",
+          "key_b": "Taste B",
+          "key_c": "Taste C",
+          "key_d": "Taste D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Taste für Fußgänger-/Teilöffnung",
+        "state": {
+          "no_function": "Keine Funktion",
+          "key_a": "Taste A",
+          "key_b": "Taste B",
+          "key_c": "Taste C",
+          "key_d": "Taste D"
+        }
+      },
+      "external_device_key": {
+        "name": "Taste für externes Gerät",
+        "state": {
+          "no_function": "Keine Funktion",
+          "key_a": "Taste A",
+          "key_b": "Taste B",
+          "key_c": "Taste C",
+          "key_d": "Taste D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Lichtschranke aktivieren",
+        "state": {
+          "off": "Aus",
+          "on": "Ein"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "2. Lichtschranke aktivieren",
+        "state": {
+          "off": "Aus",
+          "on": "Ein"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funktion des STOP-Eingangs",
+        "state": {
+          "off": "Aus",
+          "on": "Ein"
+        }
+      },
+      "gate_operation": {
+        "name": "Torsteuerung",
+        "state": {
+          "open_stop_close_stop": "Öffnen/Stop/Schließen/Stop",
+          "open_stop_close": "Öffnen/Stop/Schließen"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Nicht unterstützter Parameterwert"
+    },
+    "command_failed": {
+      "message": "TMT-Chow-Befehl fehlgeschlagen"
+    },
+    "invalid_parameter_set": {
+      "message": "Das Tor hat keinen gültigen Parametersatz zurückgegeben"
+    },
+    "unsupported_controller": {
+      "message": "Der Controller ist kein verifizierter PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Unbekannter Torparameter"
+    },
+    "parameters_not_ready": {
+      "message": "Parameter können erst nach einem gültigen Lesen geändert werden"
+    },
+    "parameter_verification_failed": {
+      "message": "Parameterprüfung nach dem Schreiben fehlgeschlagen"
+    },
+    "gate_offline": {
+      "message": "Das Tor ist offline"
+    },
+    "no_acknowledgement": {
+      "message": "Keine Bestätigung {acknowledgement} empfangen"
+    },
+    "command_rejected": {
+      "message": "Das Tor hat den Befehl abgelehnt: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Die MQTT-Verbindung wurde unterbrochen"
+    }
+  }
+}

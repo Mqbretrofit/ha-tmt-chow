@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pripojiť účet TMT Chow",
+        "description": "Heslo sa používa iba počas nastavenia a neukladá sa.",
+        "data": {
+          "username": "E-mailová adresa",
+          "password": "Heslo"
+        }
+      },
+      "device": {
+        "title": "Vybrať bránu",
+        "data": {
+          "device": "Brána"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nedá sa pripojiť k TMT Chow",
+      "invalid_auth": "Neplatná e-mailová adresa alebo heslo",
+      "no_devices": "Nenašla sa kompatibilná brána ChowHUB",
+      "unknown_device": "Vybraná brána už nie je dostupná"
+    },
+    "abort": {
+      "already_configured": "Táto brána je už nakonfigurovaná",
+      "cannot_connect": "Nedá sa pripojiť k TMT Chow",
+      "invalid_auth": "Overenie zlyhalo"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batéria"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Smer prevádzky",
+        "state": {
+          "default": "Predvolené",
+          "reversed": "Obrátené"
+        }
+      },
+      "automatic_closing": {
+        "name": "Automatické zatváranie",
+        "state": {
+          "off": "Vypnuté",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Režim bezpečnostného zariadenia",
+        "state": {
+          "mode_1": "Režim 1",
+          "mode_2": "Režim 2",
+          "mode_3": "Režim 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Prevádzková rýchlosť",
+        "state": {
+          "operation_50_learning_50": "Prevádzka 50 %, učenie 50 %",
+          "operation_70_learning_60": "Prevádzka 70 %, učenie 60 %",
+          "operation_85_learning_70": "Prevádzka 85 %, učenie 70 %",
+          "operation_100_learning_80": "Prevádzka 100 %, učenie 80 %"
+        }
+      },
+      "deceleration_point": {
+        "name": "Bod spomalenia",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Rýchlosť spomalenia",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Nadprúd",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Režim pre chodcov",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Blikajúce svetlo",
+        "state": {
+          "off": "Vypnuté",
+          "on": "Zapnuté"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Reakcia na nadprúd",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Obrátiť na 1 s, potom zastaviť",
+          "reverse_3s_then_stop": "Obrátiť na 3 s, potom zastaviť",
+          "reverse_to_end": "Obrátiť až do koncovej polohy"
+        }
+      },
+      "main_operation_key": {
+        "name": "Hlavné ovládacie tlačidlo",
+        "state": {
+          "key_a": "Tlačidlo A",
+          "key_b": "Tlačidlo B",
+          "key_c": "Tlačidlo C",
+          "key_d": "Tlačidlo D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Tlačidlo pešieho/čiastočného otvorenia",
+        "state": {
+          "no_function": "Bez funkcie",
+          "key_a": "Tlačidlo A",
+          "key_b": "Tlačidlo B",
+          "key_c": "Tlačidlo C",
+          "key_d": "Tlačidlo D"
+        }
+      },
+      "external_device_key": {
+        "name": "Tlačidlo externého zariadenia",
+        "state": {
+          "no_function": "Bez funkcie",
+          "key_a": "Tlačidlo A",
+          "key_b": "Tlačidlo B",
+          "key_c": "Tlačidlo C",
+          "key_d": "Tlačidlo D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Aktivácia fotobunky",
+        "state": {
+          "off": "Vypnuté",
+          "on": "Zapnuté"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Aktivácia 2. fotobunky",
+        "state": {
+          "off": "Vypnuté",
+          "on": "Zapnuté"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funkcia vstupu STOP",
+        "state": {
+          "off": "Vypnuté",
+          "on": "Zapnuté"
+        }
+      },
+      "gate_operation": {
+        "name": "Ovládanie brány",
+        "state": {
+          "open_stop_close_stop": "Otvoriť/Stop/Zatvoriť/Stop",
+          "open_stop_close": "Otvoriť/Stop/Zatvoriť"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Nepodporovaná hodnota parametra"
+    },
+    "command_failed": {
+      "message": "Príkaz TMT Chow zlyhal"
+    },
+    "invalid_parameter_set": {
+      "message": "Brána nevrátila platnú sadu parametrov"
+    },
+    "unsupported_controller": {
+      "message": "Riadiaca jednotka nie je overený PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Neznámy parameter brány"
+    },
+    "parameters_not_ready": {
+      "message": "Parametre nemožno meniť pred platným načítaním"
+    },
+    "parameter_verification_failed": {
+      "message": "Overenie parametra po zápise zlyhalo"
+    },
+    "gate_offline": {
+      "message": "Brána je offline"
+    },
+    "no_acknowledgement": {
+      "message": "Nebolo prijaté potvrdenie {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Brána odmietla príkaz: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Pripojenie MQTT bolo prerušené"
+    }
+  }
+}

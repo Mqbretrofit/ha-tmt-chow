@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Σύνδεση λογαριασμού TMT Chow",
+        "description": "Ο κωδικός πρόσβασης χρησιμοποιείται μόνο κατά τη ρύθμιση και δεν αποθηκεύεται.",
+        "data": {
+          "username": "Διεύθυνση email",
+          "password": "Κωδικός πρόσβασης"
+        }
+      },
+      "device": {
+        "title": "Επιλογή πύλης",
+        "data": {
+          "device": "Πύλη"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Δεν είναι δυνατή η σύνδεση στο TMT Chow",
+      "invalid_auth": "Μη έγκυρη διεύθυνση email ή κωδικός πρόσβασης",
+      "no_devices": "Δεν βρέθηκε συμβατή πύλη ChowHUB",
+      "unknown_device": "Η επιλεγμένη πύλη δεν είναι πλέον διαθέσιμη"
+    },
+    "abort": {
+      "already_configured": "Αυτή η πύλη έχει ήδη ρυθμιστεί",
+      "cannot_connect": "Δεν είναι δυνατή η σύνδεση στο TMT Chow",
+      "invalid_auth": "Η πιστοποίηση απέτυχε"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Μπαταρία"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Κατεύθυνση λειτουργίας",
+        "state": {
+          "default": "Προεπιλογή",
+          "reversed": "Αντίστροφη"
+        }
+      },
+      "automatic_closing": {
+        "name": "Αυτόματο κλείσιμο",
+        "state": {
+          "off": "Απενεργοποιημένο",
+          "seconds_5": "5 δ",
+          "seconds_15": "15 δ",
+          "seconds_30": "30 δ",
+          "seconds_45": "45 δ",
+          "seconds_60": "60 δ",
+          "seconds_80": "80 δ",
+          "seconds_120": "120 δ",
+          "seconds_180": "180 δ"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Λειτουργία συσκευής ασφαλείας",
+        "state": {
+          "mode_1": "Λειτουργία 1",
+          "mode_2": "Λειτουργία 2",
+          "mode_3": "Λειτουργία 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Ταχύτητα λειτουργίας",
+        "state": {
+          "operation_50_learning_50": "Λειτουργία 50%, εκμάθηση 50%",
+          "operation_70_learning_60": "Λειτουργία 70%, εκμάθηση 60%",
+          "operation_85_learning_70": "Λειτουργία 85%, εκμάθηση 70%",
+          "operation_100_learning_80": "Λειτουργία 100%, εκμάθηση 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Σημείο επιβράδυνσης",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Ταχύτητα επιβράδυνσης",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Υπερένταση",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Λειτουργία πεζού",
+        "state": {
+          "seconds_3": "3 δ",
+          "seconds_6": "6 δ",
+          "seconds_9": "9 δ",
+          "seconds_12": "12 δ",
+          "seconds_15": "15 δ",
+          "seconds_18": "18 δ"
+        }
+      },
+      "flashing_light": {
+        "name": "Αναλάμπων φανός",
+        "state": {
+          "off": "Απενεργοποιημένο",
+          "on": "Ενεργοποιημένο"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Αντίδραση υπερέντασης",
+        "state": {
+          "stop": "Στοπ",
+          "reverse_1s_then_stop": "Αντιστροφή για 1 δ και μετά στοπ",
+          "reverse_3s_then_stop": "Αντιστροφή για 3 δ και μετά στοπ",
+          "reverse_to_end": "Αντιστροφή έως την τελική θέση"
+        }
+      },
+      "main_operation_key": {
+        "name": "Κύριο κουμπί λειτουργίας",
+        "state": {
+          "key_a": "Κουμπί A",
+          "key_b": "Κουμπί B",
+          "key_c": "Κουμπί C",
+          "key_d": "Κουμπί D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Κουμπί πεζού/μερικού ανοίγματος",
+        "state": {
+          "no_function": "Χωρίς λειτουργία",
+          "key_a": "Κουμπί A",
+          "key_b": "Κουμπί B",
+          "key_c": "Κουμπί C",
+          "key_d": "Κουμπί D"
+        }
+      },
+      "external_device_key": {
+        "name": "Κουμπί εξωτερικής συσκευής",
+        "state": {
+          "no_function": "Χωρίς λειτουργία",
+          "key_a": "Κουμπί A",
+          "key_b": "Κουμπί B",
+          "key_c": "Κουμπί C",
+          "key_d": "Κουμπί D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Ενεργοποίηση φωτοκυττάρου",
+        "state": {
+          "off": "Απενεργοποιημένο",
+          "on": "Ενεργοποιημένο"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Ενεργοποίηση 2ου φωτοκυττάρου",
+        "state": {
+          "off": "Απενεργοποιημένο",
+          "on": "Ενεργοποιημένο"
+        }
+      },
+      "stop_terminal": {
+        "name": "Λειτουργία εισόδου STOP",
+        "state": {
+          "off": "Απενεργοποιημένο",
+          "on": "Ενεργοποιημένο"
+        }
+      },
+      "gate_operation": {
+        "name": "Λειτουργία πύλης",
+        "state": {
+          "open_stop_close_stop": "Άνοιγμα/Stop/Κλείσιμο/Stop",
+          "open_stop_close": "Άνοιγμα/Stop/Κλείσιμο"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Μη υποστηριζόμενη τιμή παραμέτρου"
+    },
+    "command_failed": {
+      "message": "Η εντολή TMT Chow απέτυχε"
+    },
+    "invalid_parameter_set": {
+      "message": "Η πύλη δεν επέστρεψε έγκυρο σύνολο παραμέτρων"
+    },
+    "unsupported_controller": {
+      "message": "Ο ελεγκτής δεν είναι επαληθευμένος PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Άγνωστη παράμετρος πύλης"
+    },
+    "parameters_not_ready": {
+      "message": "Οι παράμετροι δεν μπορούν να αλλάξουν πριν από έγκυρη ανάγνωση"
+    },
+    "parameter_verification_failed": {
+      "message": "Η επαλήθευση παραμέτρου μετά την εγγραφή απέτυχε"
+    },
+    "gate_offline": {
+      "message": "Η πύλη είναι εκτός σύνδεσης"
+    },
+    "no_acknowledgement": {
+      "message": "Δεν λήφθηκε επιβεβαίωση {acknowledgement}"
+    },
+    "command_rejected": {
+      "message": "Η πύλη απέρριψε την εντολή: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "Η σύνδεση MQTT διακόπηκε"
+    }
+  }
+}

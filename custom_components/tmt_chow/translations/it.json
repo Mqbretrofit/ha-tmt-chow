@@ -1,0 +1,234 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Collega account TMT Chow",
+        "description": "La password viene utilizzata solo durante la configurazione e non viene salvata.",
+        "data": {
+          "username": "Indirizzo e-mail",
+          "password": "Password"
+        }
+      },
+      "device": {
+        "title": "Seleziona cancello",
+        "data": {
+          "device": "Cancello"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi a TMT Chow",
+      "invalid_auth": "Indirizzo e-mail o password non validi",
+      "no_devices": "Nessun cancello ChowHUB compatibile trovato",
+      "unknown_device": "Il cancello selezionato non è più disponibile"
+    },
+    "abort": {
+      "already_configured": "Questo cancello è già configurato",
+      "cannot_connect": "Impossibile connettersi a TMT Chow",
+      "invalid_auth": "Autenticazione non riuscita"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batteria"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Direzione di funzionamento",
+        "state": {
+          "default": "Predefinito",
+          "reversed": "Invertito"
+        }
+      },
+      "automatic_closing": {
+        "name": "Chiusura automatica",
+        "state": {
+          "off": "Disattivato",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Modalità dispositivo di sicurezza",
+        "state": {
+          "mode_1": "Modalità 1",
+          "mode_2": "Modalità 2",
+          "mode_3": "Modalità 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Velocità di funzionamento",
+        "state": {
+          "operation_50_learning_50": "Funzionamento 50%, apprendimento 50%",
+          "operation_70_learning_60": "Funzionamento 70%, apprendimento 60%",
+          "operation_85_learning_70": "Funzionamento 85%, apprendimento 70%",
+          "operation_100_learning_80": "Funzionamento 100%, apprendimento 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Punto di decelerazione",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Velocità di decelerazione",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Sovracorrente",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Modalità pedonale",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Luce lampeggiante",
+        "state": {
+          "off": "Disattivato",
+          "on": "Attivato"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Reazione alla sovracorrente",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Inverti per 1 s, poi arresta",
+          "reverse_3s_then_stop": "Inverti per 3 s, poi arresta",
+          "reverse_to_end": "Inverti fino al finecorsa"
+        }
+      },
+      "main_operation_key": {
+        "name": "Pulsante di comando principale",
+        "state": {
+          "key_a": "Pulsante A",
+          "key_b": "Pulsante B",
+          "key_c": "Pulsante C",
+          "key_d": "Pulsante D"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Pulsante apertura pedonale/parziale",
+        "state": {
+          "no_function": "Nessuna funzione",
+          "key_a": "Pulsante A",
+          "key_b": "Pulsante B",
+          "key_c": "Pulsante C",
+          "key_d": "Pulsante D"
+        }
+      },
+      "external_device_key": {
+        "name": "Pulsante dispositivo esterno",
+        "state": {
+          "no_function": "Nessuna funzione",
+          "key_a": "Pulsante A",
+          "key_b": "Pulsante B",
+          "key_c": "Pulsante C",
+          "key_d": "Pulsante D"
+        }
+      },
+      "photocell_activation": {
+        "name": "Attivazione fotocellula",
+        "state": {
+          "off": "Disattivato",
+          "on": "Attivato"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "Attivazione 2ª fotocellula",
+        "state": {
+          "off": "Disattivato",
+          "on": "Attivato"
+        }
+      },
+      "stop_terminal": {
+        "name": "Funzione ingresso STOP",
+        "state": {
+          "off": "Disattivato",
+          "on": "Attivato"
+        }
+      },
+      "gate_operation": {
+        "name": "Funzionamento cancello",
+        "state": {
+          "open_stop_close_stop": "Apri/Stop/Chiudi/Stop",
+          "open_stop_close": "Apri/Stop/Chiudi"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Valore del parametro non supportato"
+    },
+    "command_failed": {
+      "message": "Comando TMT Chow non riuscito"
+    },
+    "invalid_parameter_set": {
+      "message": "Il cancello non ha restituito un set di parametri valido"
+    },
+    "unsupported_controller": {
+      "message": "Il controller non è un PS21053/PS21053C verificato"
+    },
+    "unknown_parameter": {
+      "message": "Parametro del cancello sconosciuto"
+    },
+    "parameters_not_ready": {
+      "message": "I parametri non possono essere modificati prima di una lettura valida"
+    },
+    "parameter_verification_failed": {
+      "message": "Verifica del parametro non riuscita dopo la scrittura"
+    },
+    "gate_offline": {
+      "message": "Il cancello è offline"
+    },
+    "no_acknowledgement": {
+      "message": "Nessuna conferma {acknowledgement} ricevuta"
+    },
+    "command_rejected": {
+      "message": "Il cancello ha rifiutato il comando: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "La connessione MQTT è stata interrotta"
+    }
+  }
+}
