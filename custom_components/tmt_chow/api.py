@@ -13,12 +13,14 @@ from aiohttp import ClientError, ClientSession
 from .const import (
     AUTH_MODE_KAITRON,
     AUTH_MODE_TMT,
+    GATEPRO_APP_TYPE_INDEX,
     BASE_URL,
     CERTIFICATE_PATH,
     DEVICES_PATH,
     KAITRON_BASE_URL,
     KAITRON_LOGIN_PATH,
     LOGIN_PATH,
+    TMT_APP_TYPE_INDEX,
     OAUTH_CLIENT,
     POLICY_PATH,
 )
@@ -133,12 +135,19 @@ class TmtChowApi:
         GatePRO Smart authenticates directly against the Kaitron token endpoint,
         then uses the returned bearer token with the normal TMT user/device APIs.
         """
+        if auth_mode == AUTH_MODE_TMT:
+            app_type_index = TMT_APP_TYPE_INDEX
+        elif auth_mode == AUTH_MODE_KAITRON:
+            app_type_index = GATEPRO_APP_TYPE_INDEX
+        else:
+            raise TmtApiError(f"Unsupported authentication mode: {auth_mode}")
+
         login_payload = {
             "username": username,
             "password": password,
             "grant_type": "password",
             "scope": "user",
-            "app_type_index": 1,
+            "app_type_index": app_type_index,
         }
 
         if auth_mode == AUTH_MODE_TMT:
@@ -158,9 +167,6 @@ class TmtChowApi:
                 base_url=KAITRON_BASE_URL,
             )
             backend = "gatepro_kaitron"
-        else:
-            raise TmtApiError(f"Unsupported authentication mode: {auth_mode}")
-
         token = _value(payload, "access_token", "token")
         if not isinstance(token, str) or not token:
             raise TmtAuthError(
