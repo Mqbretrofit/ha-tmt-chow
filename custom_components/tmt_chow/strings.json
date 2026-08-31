@@ -1,0 +1,235 @@
+{
+  "title": "TMT Chow",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect TMT Chow account",
+        "description": "Choose the app/account type you use. TMT Chow! uses the TMT installer login; GatePRO Smart uses the Kaitron login. The password is used only during setup and is not saved.",
+        "data": {
+          "username": "Username / nickname",
+          "password": "Password",
+          "auth_mode": "Login method"
+        }
+      },
+      "device": {
+        "title": "Select gate",
+        "data": {
+          "device": "Gate"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to TMT Chow",
+      "invalid_auth": "Invalid username or password",
+      "no_devices": "No compatible ChowHUB gate was found",
+      "unknown_device": "The selected gate is no longer available"
+    },
+    "abort": {
+      "already_configured": "This gate is already configured",
+      "cannot_connect": "Cannot connect to TMT Chow",
+      "invalid_auth": "Authentication failed"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      }
+    },
+    "select": {
+      "operation_direction": {
+        "name": "Operation direction",
+        "state": {
+          "default": "Default",
+          "reversed": "Reversed"
+        }
+      },
+      "automatic_closing": {
+        "name": "Automatic closing",
+        "state": {
+          "off": "Off",
+          "seconds_5": "5 s",
+          "seconds_15": "15 s",
+          "seconds_30": "30 s",
+          "seconds_45": "45 s",
+          "seconds_60": "60 s",
+          "seconds_80": "80 s",
+          "seconds_120": "120 s",
+          "seconds_180": "180 s"
+        }
+      },
+      "safety_device_mode": {
+        "name": "Safety device mode",
+        "state": {
+          "mode_1": "Mode 1",
+          "mode_2": "Mode 2",
+          "mode_3": "Mode 3"
+        }
+      },
+      "operation_speed": {
+        "name": "Operation speed",
+        "state": {
+          "operation_50_learning_50": "Operation 50%, learning 50%",
+          "operation_70_learning_60": "Operation 70%, learning 60%",
+          "operation_85_learning_70": "Operation 85%, learning 70%",
+          "operation_100_learning_80": "Operation 100%, learning 80%"
+        }
+      },
+      "deceleration_point": {
+        "name": "Deceleration point",
+        "state": {
+          "percent_75": "75%",
+          "percent_80": "80%",
+          "percent_85": "85%",
+          "percent_90": "90%",
+          "percent_95": "95%"
+        }
+      },
+      "deceleration_speed": {
+        "name": "Deceleration speed",
+        "state": {
+          "percent_80": "80%",
+          "percent_60": "60%",
+          "percent_40": "40%",
+          "percent_25": "25%"
+        }
+      },
+      "overcurrent": {
+        "name": "Overcurrent",
+        "state": {
+          "amp_2": "2 A",
+          "amp_3": "3 A",
+          "amp_4": "4 A",
+          "amp_5": "5 A",
+          "amp_6": "6 A",
+          "amp_7": "7 A",
+          "amp_8": "8 A",
+          "amp_9": "9 A",
+          "amp_10": "10 A",
+          "amp_11": "11 A",
+          "amp_12": "12 A",
+          "amp_13": "13 A"
+        }
+      },
+      "pedestrian_mode": {
+        "name": "Pedestrian mode",
+        "state": {
+          "seconds_3": "3 s",
+          "seconds_6": "6 s",
+          "seconds_9": "9 s",
+          "seconds_12": "12 s",
+          "seconds_15": "15 s",
+          "seconds_18": "18 s"
+        }
+      },
+      "flashing_light": {
+        "name": "Flashing light",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "overcurrent_reaction": {
+        "name": "Overcurrent reaction",
+        "state": {
+          "stop": "Stop",
+          "reverse_1s_then_stop": "Reverse for 1 s, then stop",
+          "reverse_3s_then_stop": "Reverse for 3 s, then stop",
+          "reverse_to_end": "Reverse to end position"
+        }
+      },
+      "main_operation_key": {
+        "name": "Main operation button",
+        "state": {
+          "key_a": "A button",
+          "key_b": "B button",
+          "key_c": "C button",
+          "key_d": "D button"
+        }
+      },
+      "pedestrian_key": {
+        "name": "Pedestrian/partial opening button",
+        "state": {
+          "no_function": "No function",
+          "key_a": "A button",
+          "key_b": "B button",
+          "key_c": "C button",
+          "key_d": "D button"
+        }
+      },
+      "external_device_key": {
+        "name": "External device button",
+        "state": {
+          "no_function": "No function",
+          "key_a": "A button",
+          "key_b": "B button",
+          "key_c": "C button",
+          "key_d": "D button"
+        }
+      },
+      "photocell_activation": {
+        "name": "Photocell activation",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "photocell_2_activation": {
+        "name": "2nd photocell activation",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "stop_terminal": {
+        "name": "STOP input function",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "gate_operation": {
+        "name": "Gate operation",
+        "state": {
+          "open_stop_close_stop": "Open/Stop/Close/Stop",
+          "open_stop_close": "Open/Stop/Close"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unsupported_parameter_value": {
+      "message": "Unsupported parameter value"
+    },
+    "command_failed": {
+      "message": "TMT Chow command failed"
+    },
+    "invalid_parameter_set": {
+      "message": "The gate returned no valid parameter set"
+    },
+    "unsupported_controller": {
+      "message": "The controller is not a verified PS21053/PS21053C"
+    },
+    "unknown_parameter": {
+      "message": "Unknown gate parameter"
+    },
+    "parameters_not_ready": {
+      "message": "Parameters cannot be changed before a valid read"
+    },
+    "parameter_verification_failed": {
+      "message": "Parameter verification failed after writing"
+    },
+    "gate_offline": {
+      "message": "The gate is offline"
+    },
+    "no_acknowledgement": {
+      "message": "No {acknowledgement} acknowledgement was received"
+    },
+    "command_rejected": {
+      "message": "The gate rejected the command: {response}"
+    },
+    "mqtt_disconnected": {
+      "message": "The MQTT connection was interrupted"
+    }
+  }
+}
