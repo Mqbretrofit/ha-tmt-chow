@@ -7,7 +7,8 @@
         "description": "La contraseña se utiliza solo durante la configuración y no se guarda.",
         "data": {
           "username": "Dirección de correo electrónico",
-          "password": "Contraseña"
+          "password": "Contraseña",
+          "auth_mode": "Método de inicio de sesión"
         }
       },
       "device": {
