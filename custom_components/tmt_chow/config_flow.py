@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -31,6 +33,15 @@ from .const import (
 )
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def _fingerprint(value: str | None) -> str:
+    if not value:
+        return "none"
+    return hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()[:12]
+
+
 class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a gate from the TMT cloud account."""
 
@@ -49,19 +60,59 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._api = TmtChowApi(async_get_clientsession(self.hass))
             self._auth_mode = user_input[CONF_AUTH_MODE]
+            username = str(user_input[CONF_USERNAME])
+            password = str(user_input[CONF_PASSWORD])
+            _LOGGER.warning(
+                "TMTDIAG CONFIG_FLOW_LOGIN_SUBMIT auth_mode=%s username_len=%s "
+                "username_sha256=%s password_len=%s",
+                self._auth_mode,
+                len(username),
+                _fingerprint(username),
+                len(password),
+            )
             try:
                 await self._api.async_login(
-                    user_input[CONF_USERNAME],
-                    user_input[CONF_PASSWORD],
+                    username,
+                    password,
                     user_input[CONF_AUTH_MODE],
                 )
                 devices = await self._api.async_get_devices()
-            except TmtAuthError:
+            except TmtAuthError as err:
+                _LOGGER.warning(
+                    "TMTDIAG CONFIG_FLOW_AUTH_ERROR auth_mode=%s "
+                    "username_sha256=%s error=%s",
+                    self._auth_mode,
+                    _fingerprint(username),
+                    err,
+                )
                 errors["base"] = "invalid_auth"
-            except TmtApiError:
+            except TmtApiError as err:
+                _LOGGER.warning(
+                    "TMTDIAG CONFIG_FLOW_API_ERROR auth_mode=%s "
+                    "username_sha256=%s error_type=%s error=%s",
+                    self._auth_mode,
+                    _fingerprint(username),
+                    type(err).__name__,
+                    err,
+                )
+                errors["base"] = "cannot_connect"
+            except Exception as err:
+                _LOGGER.exception(
+                    "TMTDIAG CONFIG_FLOW_UNEXPECTED_ERROR auth_mode=%s "
+                    "username_sha256=%s error_type=%s",
+                    self._auth_mode,
+                    _fingerprint(username),
+                    type(err).__name__,
+                )
                 errors["base"] = "cannot_connect"
             else:
                 self._devices = {device.uuid: device for device in devices}
+                _LOGGER.warning(
+                    "TMTDIAG CONFIG_FLOW_LOGIN_AND_DEVICE_QUERY_OK auth_mode=%s "
+                    "device_count=%s",
+                    self._auth_mode,
+                    len(self._devices),
+                )
                 if not self._devices:
                     errors["base"] = "no_devices"
                 elif len(self._devices) == 1:
@@ -126,11 +177,25 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured()
         if self._api is None:
             return self.async_abort(reason="cannot_connect")
+        _LOGGER.warning(
+            "TMTDIAG CONFIG_FLOW_FINISH_START auth_mode=%s device_role=%s "
+            "device_type=%s product_type=%s",
+            self._auth_mode,
+            device.role,
+            device.device_type,
+            device.product_type,
+        )
         try:
             credentials = await self._api.async_bootstrap_aws(device)
-        except TmtAuthError:
+        except TmtAuthError as err:
+            _LOGGER.warning("TMTDIAG CONFIG_FLOW_BOOTSTRAP_AUTH_ERROR error=%s", err)
             return self.async_abort(reason="invalid_auth")
-        except TmtApiError:
+        except TmtApiError as err:
+            _LOGGER.warning(
+                "TMTDIAG CONFIG_FLOW_BOOTSTRAP_API_ERROR error_type=%s error=%s",
+                type(err).__name__,
+                err,
+            )
             return self.async_abort(reason="cannot_connect")
 
         return self.async_create_entry(
