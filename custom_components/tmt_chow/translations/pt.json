@@ -7,7 +7,8 @@
         "description": "A palavra-passe é utilizada apenas durante a configuração e não é guardada.",
         "data": {
           "username": "Endereço de e-mail",
-          "password": "Palavra-passe"
+          "password": "Palavra-passe",
+          "auth_mode": "Método de início de sessão"
         }
       },
       "device": {
