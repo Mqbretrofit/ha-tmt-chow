@@ -7,7 +7,8 @@
         "description": "Heslo se používá pouze během nastavení a neukládá se.",
         "data": {
           "username": "E-mailová adresa",
-          "password": "Heslo"
+          "password": "Heslo",
+          "auth_mode": "Způsob přihlášení"
         }
       },
       "device": {
