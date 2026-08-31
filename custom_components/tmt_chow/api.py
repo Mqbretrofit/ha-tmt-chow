@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json as jsonlib
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -32,21 +33,26 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_REDACT_KEYS = {
+_SECRET_KEY_MARKERS = (
     "authorization",
     "password",
-    "access_token",
-    "refresh_token",
+    "passwd",
+    "pwd",
     "token",
+    "secret",
     "privatekey",
-    "private_key",
     "certificatepem",
-    "certificate_pem",
     "certificatearn",
-    "certificate_arn",
-    "user_certificatearn",
-    "set-cookie",
     "cookie",
+)
+_PERSONAL_KEYS = {
+    "username",
+    "user",
+    "nickname",
+    "email",
+    "account",
+    "accountid",
+    "userid",
 }
 _SAFE_RESPONSE_HEADERS = (
     "content-type",
@@ -54,7 +60,6 @@ _SAFE_RESPONSE_HEADERS = (
     "date",
     "server",
     "via",
-    "location",
     "x-request-id",
     "x-correlation-id",
     "cf-ray",
@@ -112,21 +117,63 @@ def _fingerprint(value: str | None) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
-def _redact(value: Any, key: str | None = None) -> Any:
-    """Recursively redact secrets while preserving response structure."""
-    normalized = (key or "").lower().replace("-", "_")
-    if normalized in {item.replace("-", "_") for item in _REDACT_KEYS}:
+def _normalized_key(key: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (key or "").lower())
+
+
+def _scrub_string(value: str, sensitive_values: tuple[str, ...] = ()) -> str:
+    """Remove submitted credentials and common inline credential formats."""
+    scrubbed = value
+    for sensitive in sensitive_values:
+        if sensitive:
+            scrubbed = scrubbed.replace(sensitive, "<redacted-submitted-value>")
+    scrubbed = re.sub(
+        r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+",
+        "<redacted-authorization>",
+        scrubbed,
+    )
+    scrubbed = re.sub(
+        r"(?i)(access[_-]?token|refresh[_-]?token|id[_-]?token|password|"
+        r"client[_-]?secret)\s*[:=]\s*[\"']?[^\s,}\"']+",
+        r"\1=<redacted>",
+        scrubbed,
+    )
+    scrubbed = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "<redacted-email>",
+        scrubbed,
+    )
+    if len(scrubbed) > 4000:
+        return scrubbed[:4000] + f"... <truncated {len(scrubbed) - 4000} chars>"
+    return scrubbed
+
+
+def _redact(
+    value: Any,
+    key: str | None = None,
+    sensitive_values: tuple[str, ...] = (),
+) -> Any:
+    """Recursively redact secrets and personal identifiers."""
+    normalized = _normalized_key(key)
+    if any(marker in normalized for marker in _SECRET_KEY_MARKERS):
         if isinstance(value, str):
             return f"<redacted len={len(value)}>"
         return "<redacted>"
+    if normalized in _PERSONAL_KEYS:
+        if isinstance(value, str):
+            return f"<redacted personal len={len(value)} sha256={_fingerprint(value)}>"
+        return "<redacted personal>"
     if isinstance(value, dict):
-        return {str(k): _redact(v, str(k)) for k, v in value.items()}
+        return {
+            str(k): _redact(v, str(k), sensitive_values)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
-        return [_redact(v) for v in value]
+        return [_redact(v, sensitive_values=sensitive_values) for v in value]
     if isinstance(value, tuple):
-        return tuple(_redact(v) for v in value)
-    if isinstance(value, str) and len(value) > 4000:
-        return value[:4000] + f"... <truncated {len(value) - 4000} chars>"
+        return tuple(_redact(v, sensitive_values=sensitive_values) for v in value)
+    if isinstance(value, str):
+        return _scrub_string(value, sensitive_values)
     return value
 
 
@@ -169,6 +216,7 @@ class TmtChowApi:
     def __init__(self, session: ClientSession) -> None:
         self._session = session
         self._access_token: str | None = None
+        self._diagnostic_sensitive_values: tuple[str, ...] = ()
 
     async def _request(
         self,
@@ -253,16 +301,22 @@ class TmtChowApi:
                     {
                         "status": item.status,
                         "url": str(item.url),
-                        "location": item.headers.get("Location"),
+                        "location_present": bool(item.headers.get("Location")),
                     }
                     for item in response.history
                 ]
 
                 safe_body: Any
                 if isinstance(payload, (dict, list)):
-                    safe_body = _redact(payload)
+                    safe_body = _redact(
+                        payload,
+                        sensitive_values=self._diagnostic_sensitive_values,
+                    )
                 else:
-                    safe_body = _redact(raw_text)
+                    safe_body = _redact(
+                        raw_text,
+                        sensitive_values=self._diagnostic_sensitive_values,
+                    )
 
                 _LOGGER.debug(
                     "TMTDIAG response id=%s phase=%s status=%s reason=%r "
@@ -411,6 +465,9 @@ class TmtChowApi:
             )
             raise TmtApiError(f"Unsupported authentication mode: {auth_mode}")
 
+        self._diagnostic_sensitive_values = tuple(
+            value for value in (username, password) if value
+        )
         username_fp = _fingerprint(username)
         _LOGGER.warning(
             "TMTDIAG LOGIN_ATTEMPT backend=%s auth_mode=%s base_url=%s path=%s "
