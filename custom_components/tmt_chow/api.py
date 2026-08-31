@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin
@@ -10,13 +11,20 @@ from urllib.parse import urljoin
 from aiohttp import ClientError, ClientSession
 
 from .const import (
+    AUTH_MODE_KAITRON,
+    AUTH_MODE_TMT,
     BASE_URL,
     CERTIFICATE_PATH,
     DEVICES_PATH,
+    KAITRON_BASE_URL,
+    KAITRON_LOGIN_PATH,
     LOGIN_PATH,
     OAUTH_CLIENT,
     POLICY_PATH,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class TmtApiError(Exception):
@@ -76,6 +84,7 @@ class TmtChowApi:
         *,
         json: dict[str, Any] | None = None,
         basic_auth: bool = False,
+        base_url: str = BASE_URL,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -90,7 +99,7 @@ class TmtChowApi:
         try:
             async with self._session.request(
                 method,
-                urljoin(BASE_URL, path),
+                urljoin(base_url, path),
                 headers=headers,
                 json=json,
                 timeout=30,
@@ -112,23 +121,54 @@ class TmtChowApi:
         except (ClientError, TimeoutError) as err:
             raise TmtApiError("Cannot connect to the TMT API") from err
 
-    async def async_login(self, email: str, password: str) -> None:
-        payload = await self._request(
-            "POST",
-            LOGIN_PATH,
-            json={
-                "username": email,
-                "password": password,
-                "grant_type": "password",
-                "scope": "user",
-                "app_type_index": 1,
-            },
-            basic_auth=True,
-        )
-        token = _value(payload, "access_token")
+    async def async_login(
+        self,
+        username: str,
+        password: str,
+        auth_mode: str = AUTH_MODE_TMT,
+    ) -> None:
+        """Authenticate using the selected official app backend.
+
+        TMT Chow uses the installer.tmt-automation.com OAuth endpoint.
+        GatePRO Smart authenticates directly against the Kaitron token endpoint,
+        then uses the returned bearer token with the normal TMT user/device APIs.
+        """
+        login_payload = {
+            "username": username,
+            "password": password,
+            "grant_type": "password",
+            "scope": "user",
+            "app_type_index": 1,
+        }
+
+        if auth_mode == AUTH_MODE_TMT:
+            payload = await self._request(
+                "POST",
+                LOGIN_PATH,
+                json=login_payload,
+                basic_auth=True,
+            )
+            backend = "tmt_chow"
+        elif auth_mode == AUTH_MODE_KAITRON:
+            payload = await self._request(
+                "POST",
+                KAITRON_LOGIN_PATH,
+                json=login_payload,
+                basic_auth=True,
+                base_url=KAITRON_BASE_URL,
+            )
+            backend = "gatepro_kaitron"
+        else:
+            raise TmtApiError(f"Unsupported authentication mode: {auth_mode}")
+
+        token = _value(payload, "access_token", "token")
         if not isinstance(token, str) or not token:
-            raise TmtAuthError("The TMT response did not contain an access token")
+            raise TmtAuthError(
+                f"The {backend} login response did not contain an access token"
+            )
+
         self._access_token = token
+        _LOGGER.debug("TMT Chow authenticated via %s backend", backend)
 
     async def async_get_devices(self) -> list[TmtDevice]:
         payload = await self._request("GET", DEVICES_PATH)
