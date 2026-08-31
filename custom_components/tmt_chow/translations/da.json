@@ -7,7 +7,8 @@
         "description": "Adgangskoden bruges kun under opsætningen og gemmes ikke.",
         "data": {
           "username": "E-mailadresse",
-          "password": "Adgangskode"
+          "password": "Adgangskode",
+          "auth_mode": "Loginmetode"
         }
       },
       "device": {
