@@ -4,10 +4,11 @@
     "step": {
       "user": {
         "title": "Connect TMT Chow account",
-        "description": "The password is used only during setup and is not saved.",
+        "description": "Choose the app/account type you use. TMT Chow! uses the TMT installer login; GatePRO Smart uses the Kaitron login. The password is used only during setup and is not saved.",
         "data": {
-          "username": "Email address",
-          "password": "Password"
+          "username": "Username / nickname",
+          "password": "Password",
+          "auth_mode": "Login method"
         }
       },
       "device": {
@@ -19,7 +20,7 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to TMT Chow",
-      "invalid_auth": "Invalid email address or password",
+      "invalid_auth": "Invalid username or password",
       "no_devices": "No compatible ChowHUB gate was found",
       "unknown_device": "The selected gate is no longer available"
     },
