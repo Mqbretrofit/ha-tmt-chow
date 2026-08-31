@@ -7,7 +7,8 @@
         "description": "Parola yalnızca kurulum sırasında kullanılır ve kaydedilmez.",
         "data": {
           "username": "E-posta adresi",
-          "password": "Parola"
+          "password": "Parola",
+          "auth_mode": "Giriş yöntemi"
         }
       },
       "device": {
