@@ -7,7 +7,8 @@
         "description": "Hasło jest używane tylko podczas konfiguracji i nie jest zapisywane.",
         "data": {
           "username": "Adres e-mail",
-          "password": "Hasło"
+          "password": "Hasło",
+          "auth_mode": "Metoda logowania"
         }
       },
       "device": {
