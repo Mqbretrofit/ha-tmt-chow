@@ -7,7 +7,8 @@
         "description": "Geslo se uporablja samo med nastavitvijo in se ne shrani.",
         "data": {
           "username": "E-poštni naslov",
-          "password": "Geslo"
+          "password": "Geslo",
+          "auth_mode": "Način prijave"
         }
       },
       "device": {
