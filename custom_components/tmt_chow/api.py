@@ -14,6 +14,7 @@ from .const import (
     AUTH_MODE_KAITRON,
     AUTH_MODE_TMT,
     GATEPRO_APP_TYPE_INDEX,
+    GATEPRO_LEGACY_APP_TYPE_INDEX,
     BASE_URL,
     CERTIFICATE_PATH,
     DEVICES_PATH,
@@ -159,14 +160,30 @@ class TmtChowApi:
             )
             backend = "tmt_chow"
         elif auth_mode == AUTH_MODE_KAITRON:
-            payload = await self._request(
-                "POST",
-                KAITRON_LOGIN_PATH,
-                json=login_payload,
-                basic_auth=True,
-                base_url=KAITRON_BASE_URL,
-            )
-            backend = "gatepro_kaitron"
+            try:
+                payload = await self._request(
+                    "POST",
+                    KAITRON_LOGIN_PATH,
+                    json=login_payload,
+                    basic_auth=True,
+                    base_url=KAITRON_BASE_URL,
+                )
+                backend = "gatepro_kaitron"
+            except TmtAuthError:
+                # GatePRO Smart 1.0.0 sends app_type_index=0. Keep the
+                # previously tested value as a compatibility fallback only.
+                legacy_payload = {
+                    **login_payload,
+                    "app_type_index": GATEPRO_LEGACY_APP_TYPE_INDEX,
+                }
+                payload = await self._request(
+                    "POST",
+                    KAITRON_LOGIN_PATH,
+                    json=legacy_payload,
+                    basic_auth=True,
+                    base_url=KAITRON_BASE_URL,
+                )
+                backend = "gatepro_kaitron_legacy"
         token = _value(payload, "access_token", "token")
         if not isinstance(token, str) or not token:
             raise TmtAuthError(
