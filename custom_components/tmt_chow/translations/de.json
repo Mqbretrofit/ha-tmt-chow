@@ -7,7 +7,8 @@
         "description": "Das Passwort wird nur während der Einrichtung verwendet und nicht gespeichert.",
         "data": {
           "username": "E-Mail-Adresse",
-          "password": "Passwort"
+          "password": "Passwort",
+          "auth_mode": "Anmeldemethode"
         }
       },
       "device": {
