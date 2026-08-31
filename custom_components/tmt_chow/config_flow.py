@@ -8,10 +8,14 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_DEVICE, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TmtApiError, TmtAuthError, TmtChowApi, TmtDevice
 from .const import (
+    AUTH_MODE_KAITRON,
+    AUTH_MODE_TMT,
+    CONF_AUTH_MODE,
     CONF_CERTIFICATE_ARN,
     CONF_CERTIFICATE_PEM,
     CONF_DEVICE_TYPE,
@@ -35,6 +39,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._api: TmtChowApi | None = None
         self._devices: dict[str, TmtDevice] = {}
+        self._auth_mode: str = AUTH_MODE_TMT
 
     async def async_step_user(
         self,
@@ -43,10 +48,12 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._api = TmtChowApi(async_get_clientsession(self.hass))
+            self._auth_mode = user_input[CONF_AUTH_MODE]
             try:
                 await self._api.async_login(
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
+                    user_input[CONF_AUTH_MODE],
                 )
                 devices = await self._api.async_get_devices()
             except TmtAuthError:
@@ -66,6 +73,20 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_AUTH_MODE, default=AUTH_MODE_TMT): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=AUTH_MODE_TMT, label="TMT Chow!"
+                                ),
+                                selector.SelectOptionDict(
+                                    value=AUTH_MODE_KAITRON,
+                                    label="GatePRO Smart / Kaitron",
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Required(CONF_USERNAME): str,
                     vol.Required(CONF_PASSWORD): str,
                 }
@@ -116,6 +137,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
             title=device.name,
             data={
                 CONF_NAME: device.name,
+                CONF_AUTH_MODE: self._auth_mode,
                 CONF_UUID: device.uuid,
                 CONF_ENDPOINT: credentials.endpoint,
                 CONF_THING_NAME: credentials.thing_name,
