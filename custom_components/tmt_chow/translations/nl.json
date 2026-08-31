@@ -7,7 +7,8 @@
         "description": "Het wachtwoord wordt alleen tijdens de configuratie gebruikt en niet opgeslagen.",
         "data": {
           "username": "E-mailadres",
-          "password": "Wachtwoord"
+          "password": "Wachtwoord",
+          "auth_mode": "Aanmeldmethode"
         }
       },
       "device": {
