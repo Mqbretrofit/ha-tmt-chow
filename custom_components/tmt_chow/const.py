@@ -11,6 +11,12 @@ PLATFORMS: Final = [Platform.COVER, Platform.SELECT, Platform.SENSOR]
 
 BASE_URL: Final = "https://installer.tmt-automation.com/"
 LOGIN_PATH: Final = "v4.0/user/outh2/token/"
+KAITRON_BASE_URL: Final = "https://chowmeet.kaitron.com/"
+KAITRON_LOGIN_PATH: Final = "__api__/tmt/token"
+
+AUTH_MODE_TMT: Final = "tmt_chow"
+AUTH_MODE_KAITRON: Final = "gatepro_kaitron"
+CONF_AUTH_MODE: Final = "auth_mode"
 DEVICES_PATH: Final = "v4.0/user/devices/"
 CERTIFICATE_PATH: Final = "v4.0/devices/iot/user/certificate/"
 POLICY_PATH: Final = "v4.0/devices/iot/device/policy/"
