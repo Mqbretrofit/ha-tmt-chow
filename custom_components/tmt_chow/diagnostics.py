@@ -36,7 +36,8 @@ async def async_get_config_entry_diagnostics(
             "model_parameter_schema_id": hub.model_parameter_schema_id,
             "model_parameter_count": hub.model_parameter_count,
             "model_parameter_schema": hub.model_parameter_schema,
-            "parameter_schema_verified": hub.parameter_schema_verified,
+            "parameter_write_schema_verified": hub.parameter_schema_verified,
+            "model_parameter_schema_available": hub.model_parameter_schema is not None,
             "model_parameter_schema_count": (
                 len(hub.model_parameter_schema)
                 if hub.model_parameter_schema is not None
