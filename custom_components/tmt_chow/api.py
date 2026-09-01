@@ -320,7 +320,7 @@ class TmtChowApi:
         url = urljoin(base_url, path)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.8-shared-device-support",
+            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.12-ps22087b-parameters",
         }
         if basic_auth:
             encoded = base64.b64encode(OAUTH_CLIENT.encode()).decode()
