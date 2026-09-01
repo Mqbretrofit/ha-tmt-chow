@@ -128,3 +128,93 @@ def encode_parameter_write(values: tuple[int, ...]) -> str:
     if not validate_parameter_values(values):
         raise ValueError("Invalid PS21053 parameter set")
     return "WP,1:" + ",".join(str(value) for value in values)
+
+
+# P710U / PS22087B parameter profile verified against the PowerTech PG
+# series P710U manual. Function keys B and D are not documented in that
+# manual; if a controller reports them they are exposed read-only as raw
+# values rather than guessed.
+P710U_FUNCTIONS: dict[str, tuple[str, dict[int, str]]] = {
+    "1": ("Deceleration trigger distance", {
+        1: "75%", 2: "80%", 3: "85%", 4: "90%", 5: "95%",
+    }),
+    "2": ("Full-open remote button", {
+        0: "Disabled", 1: "Button A", 2: "Button B", 3: "Button C", 4: "Button D",
+    }),
+    "3": ("Integrated-light remote button", {
+        0: "Disabled", 1: "Button A", 2: "Button B", 3: "Button C", 4: "Button D",
+    }),
+    "4": ("External-control remote button", {
+        0: "Disabled", 1: "Button A", 2: "Button B", 3: "Button C", 4: "Button D",
+    }),
+    "5": ("Photocell activation", {
+        0: "Disabled", 1: "Enabled", 2: "Enabled on closing only",
+    }),
+    "6": ("Buzzer alarm", {
+        1: "Disabled", 2: "Enabled",
+    }),
+    "7": ("Automatic closing", {
+        1: "Disabled", 2: "30 seconds", 3: "60 seconds", 4: "90 seconds",
+        5: "120 seconds", 6: "150 seconds", 7: "180 seconds",
+        8: "210 seconds", 9: "240 seconds",
+    }),
+    "8": ("Integrated light duration", {
+        1: "Disabled", 2: "1 minute", 3: "2 minutes", 4: "3 minutes",
+    }),
+    "9": ("Overcurrent reaction", {
+        1: "Stop",
+        2: "Opening: stop / Closing: reverse 10 cm",
+        3: "Full reverse",
+    }),
+    "A": ("Overcurrent adjustment", {
+        0: "+0.2 A", 1: "+0.4 A", 2: "+0.5 A", 3: "+0.6 A",
+        4: "+0.8 A", 5: "+1.0 A", 6: "+1.2 A", 7: "+1.4 A",
+        8: "+1.6 A", 9: "+1.8 A",
+    }),
+    "C": ("Opening current limit", {
+        1: "2 A", 2: "3 A", 3: "4 A", 4: "5 A",
+        5: "6 A", 6: "7 A", 7: "8 A",
+    }),
+    "E": ("Closing current limit", {
+        1: "2 A", 2: "3 A", 3: "4 A", 4: "5 A",
+        5: "6 A", 6: "7 A", 7: "8 A",
+    }),
+    "F": ("+24 V terminal power", {
+        1: "Continuous power", 2: "Standby mode",
+    }),
+}
+
+_READ_FUNCTION_RE = re.compile(r"(?:^|\\b)ACK READ FUNCTION,([^;\\r\\n]+)")
+
+
+def parse_read_function_response(payload: str) -> dict[str, int] | None:
+    """Parse ACK READ FUNCTION,key:value,... while preserving key order."""
+    match = _READ_FUNCTION_RE.search(payload)
+    if not match:
+        return None
+    result: dict[str, int] = {}
+    for item in match.group(1).split(","):
+        if ":" not in item:
+            return None
+        key, raw_value = item.split(":", 1)
+        key = key.strip().upper()
+        try:
+            value = int(raw_value.strip(), 10)
+        except ValueError:
+            return None
+        if not key or value < 0 or value > 255:
+            return None
+        result[key] = value
+    return result or None
+
+
+def encode_write_function(values: dict[str, int]) -> str:
+    """Build the full P710U WRITE FUNCTION payload from current values."""
+    if not values:
+        raise ValueError("Empty P710U function set")
+    parts: list[str] = []
+    for key, value in values.items():
+        if not key or not 0 <= value <= 255:
+            raise ValueError("Invalid P710U function value")
+        parts.append(f"{key}:{value}")
+    return "WRITE FUNCTION," + ",".join(parts)
