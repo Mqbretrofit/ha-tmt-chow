@@ -20,6 +20,7 @@ FAMILY_SWING: Final = "swing"
 FAMILY_GARAGE: Final = "garage"
 FAMILY_TUBEMOTOR: Final = "tubemotor"
 FAMILY_ACCESSORIES: Final = "accessories"
+FAMILY_IPCAM: Final = "ipcam"
 
 SLIDING_CONTROLLERS: Final = frozenset({
     "A510", "A520U", "P500BH", "P520U", "P550SA", "P600H",
@@ -81,6 +82,11 @@ GARAGE_CONTROLLERS: Final = frozenset({
 
 TUBEMOTOR_CONTROLLERS: Final = frozenset({"AOK1"})
 
+IPCAM_CONTROLLERS: Final = frozenset({
+    "BULLET1", "DOME1", "DOME2", "HC1", "ICI1", "ICO1", "ICO3",
+    "SC1", "SC3", "TCB1", "TCB2", "TUYA", "TUYABELL",
+})
+
 ACCESSORY_CONTROLLERS: Final = frozenset({
     "CHOWHUB", "LEDLIGHT", "RELAYSTRIGGER",
     "NP18043", "NP19023", "PS19031", "PS20027", "PS20052", "PS20059",
@@ -93,6 +99,7 @@ CONTROLLER_FAMILIES: Final = {
     FAMILY_GARAGE: GARAGE_CONTROLLERS,
     FAMILY_TUBEMOTOR: TUBEMOTOR_CONTROLLERS,
     FAMILY_ACCESSORIES: ACCESSORY_CONTROLLERS,
+    FAMILY_IPCAM: IPCAM_CONTROLLERS,
 }
 
 GATE_FAMILIES: Final = frozenset({
@@ -100,6 +107,11 @@ GATE_FAMILIES: Final = frozenset({
     FAMILY_SWING,
     FAMILY_GARAGE,
 })
+
+# Product type is cloud metadata and is deliberately NOT used to select a
+# controller family.  We have observed both 112 and 118 in the supported app
+# ecosystem, and future values must remain accepted without code changes.
+OBSERVED_PRODUCT_TYPES: Final = frozenset({"112", "118"})
 
 VERIFIED_PARAMETER_CONTROLLERS: Final = frozenset({
     "PS21053",
