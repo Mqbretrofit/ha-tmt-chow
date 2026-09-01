@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import contextlib
+import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -37,6 +39,33 @@ from .protocol import (
 
 _LOGGER = logging.getLogger(__name__)
 _SUPPORTED_CONTROLLERS = {"PS21053", "PS21053C"}
+
+
+def _diag_text(payload: str) -> str:
+    """Return a useful, privacy-safe MQTT payload preview."""
+    text = payload.replace("\r", "\\r").replace("\n", "\\n")
+    text = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "<redacted-email>",
+        text,
+    )
+    text = re.sub(
+        r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+        "<redacted-ip>",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b",
+        "<redacted-mac>",
+        text,
+    )
+    if len(text) > 700:
+        return text[:700] + f"... <truncated {len(text) - 700} chars>"
+    return text
+
+
+def _diag_hash(payload: str) -> str:
+    return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
 class TmtCommandError(Exception):
@@ -139,7 +168,22 @@ class TmtChowHub:
 
     async def async_start(self) -> None:
         self._stopping = False
+        _LOGGER.warning(
+            "TMTDIAG HUB_START product_type=%s rx_topic=%s tx_topic=%s "
+            "position_topic=%s shadow_get_topic=%s",
+            self.product_type,
+            self.rx_topic,
+            self.tx_topic,
+            self.position_topic,
+            self.shadow_get_topic,
+        )
         await self._mqtt.async_start()
+        _LOGGER.warning(
+            "TMTDIAG HUB_MQTT_READY connected=%s device_online=%s state_synchronized=%s",
+            self._mqtt.connected,
+            self.device_online,
+            self._state_synchronized,
+        )
         try:
             await self.async_refresh_parameters()
         except TmtCommandError as err:
@@ -194,8 +238,23 @@ class TmtChowHub:
 
     async def async_refresh_parameters(self) -> None:
         async with self._transaction_lock:
+            _LOGGER.warning(
+                "TMTDIAG PARAM_READ_START controller_type=%r supports_parameters=%s "
+                "device_online=%s mqtt_connected=%s",
+                self.controller_type,
+                self.supports_parameters,
+                self.device_online,
+                self._mqtt.connected,
+            )
             response = await self._async_exchange("c=RP,1", "ACK RP,1")
             parsed = parse_parameter_response(response)
+            _LOGGER.warning(
+                "TMTDIAG PARAM_READ_RESPONSE len=%s sha256=%s parsed=%s payload=%s",
+                len(response),
+                _diag_hash(response),
+                parsed is not None,
+                _diag_text(response),
+            )
             if parsed is None:
                 raise TmtCommandError(
                     "The gate returned no valid parameter set",
@@ -250,6 +309,17 @@ class TmtChowHub:
             )
 
     async def _async_exchange(self, payload: str, expected: str) -> str:
+        _LOGGER.warning(
+            "TMTDIAG MQTT_EXCHANGE_START expected=%r mqtt_connected=%s "
+            "device_online=%s topic=%s payload_len=%s payload_sha256=%s payload=%s",
+            expected,
+            self._mqtt.connected,
+            self.device_online,
+            self.rx_topic,
+            len(payload),
+            _diag_hash(payload),
+            _diag_text(payload),
+        )
         if not self._mqtt.connected or self.device_online is False:
             raise TmtCommandError(
                 "The gate is offline",
@@ -262,8 +332,32 @@ class TmtChowHub:
         try:
             # Deliberately one publish only. A timeout never causes command retry.
             await self._mqtt.async_publish(self.rx_topic, payload)
-            return await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
+            _LOGGER.warning(
+                "TMTDIAG MQTT_EXCHANGE_PUBLISHED expected=%r waiter_count=%s",
+                expected,
+                len(self._waiters),
+            )
+            response = await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
+            _LOGGER.warning(
+                "TMTDIAG MQTT_EXCHANGE_ACK expected=%r response_len=%s "
+                "response_sha256=%s response=%s",
+                expected,
+                len(response),
+                _diag_hash(response),
+                _diag_text(response),
+            )
+            return response
         except (MqttError, TimeoutError) as err:
+            _LOGGER.warning(
+                "TMTDIAG MQTT_EXCHANGE_FAILURE expected=%r error_type=%s error=%s "
+                "mqtt_connected=%s device_online=%s waiter_count=%s",
+                expected,
+                type(err).__name__,
+                err,
+                self._mqtt.connected,
+                self.device_online,
+                len(self._waiters),
+            )
             raise TmtCommandError(
                 f"No {expected} acknowledgement",
                 translation_key="no_acknowledgement",
@@ -295,13 +389,32 @@ class TmtChowHub:
 
     async def _async_message(self, topic: str, payload: str) -> None:
         self._last_message_monotonic = time.monotonic()
+        _LOGGER.warning(
+            "TMTDIAG MQTT_MESSAGE topic=%s payload_len=%s payload_sha256=%s payload=%s",
+            topic,
+            len(payload),
+            _diag_hash(payload),
+            _diag_text(payload),
+        )
         if topic == self.tx_topic:
             self.attributes[ATTR_LAST_RESPONSE] = payload
             parsed_parameters = parse_parameter_response(payload)
+            _LOGGER.warning(
+                "TMTDIAG MQTT_TX_PARSE parameter_parse=%s ack_rs_parse_pending=%s "
+                "contains_nak=%s waiter_expectations=%s",
+                parsed_parameters is not None,
+                True,
+                "NAK" in payload,
+                [expected for expected, future in self._waiters if not future.done()],
+            )
             if parsed_parameters is not None:
                 self.parameters = parsed_parameters
                 self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, parsed_parameters))
             status = parse_ack_rs(payload)
+            _LOGGER.warning(
+                "TMTDIAG MQTT_TX_STATUS_PARSE parsed=%s",
+                status is not None,
+            )
             if status is not None:
                 self._apply_status(status)
             if "NAK" in payload:
@@ -317,6 +430,11 @@ class TmtChowHub:
             else:
                 for expected, future in tuple(self._waiters):
                     if expected in payload and not future.done():
+                        _LOGGER.warning(
+                            "TMTDIAG MQTT_WAITER_MATCH expected=%r payload_sha256=%s",
+                            expected,
+                            _diag_hash(payload),
+                        )
                         future.set_result(payload)
         elif topic == self.position_topic:
             position = parse_position(payload)
@@ -328,6 +446,14 @@ class TmtChowHub:
             except (TypeError, ValueError):
                 document = {}
             reported = extract_shadow_reported(document)
+            _LOGGER.warning(
+                "TMTDIAG SHADOW_PARSE topic=%s json_valid=%s reported_present=%s "
+                "reported_keys=%s",
+                topic,
+                bool(document),
+                bool(reported),
+                sorted(str(key) for key in reported.keys()) if reported else [],
+            )
             if reported:
                 self._apply_reported(reported)
         self._notify()
@@ -365,6 +491,14 @@ class TmtChowHub:
             fields = [field.strip().upper() for field in device_info.split(",")]
             if len(fields) >= 2:
                 self.controller_type = fields[1]
+                _LOGGER.warning(
+                    "TMTDIAG CONTROLLER_IDENTIFIED controller_type=%s "
+                    "supported_controller=%s dev_info_len=%s dev_info_sha256=%s",
+                    self.controller_type,
+                    self.controller_type in _SUPPORTED_CONTROLLERS,
+                    len(device_info),
+                    _diag_hash(device_info),
+                )
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
             candidate = "ACK RP,1:" + parameter_payload.lstrip(":")
@@ -408,6 +542,12 @@ class TmtChowHub:
             self.movement = None
 
     def _mqtt_state_changed(self, connected: bool) -> None:
+        _LOGGER.warning(
+            "TMTDIAG MQTT_STATE connected=%s device_online=%s state_synchronized=%s",
+            connected,
+            self.device_online,
+            self._state_synchronized,
+        )
         if connected:
             self._state_synchronized = False
             if self._availability_expiry_task:
