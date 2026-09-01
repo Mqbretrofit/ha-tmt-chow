@@ -120,3 +120,32 @@ For PS21053/PS21053C the extracted capability set is:
 Unknown/new model names intentionally receive no optional capability merely
 from their family or product_type. This avoids exposing a control that the
 vendor app itself would hide.
+
+
+## Per-model parameter schemas
+
+The Android `PkParameter` constructors were resolved for every concrete gate
+controller class, including inherited definitions. The TMT Chow 3.1.4 APK and
+gatePRO Smart! 1.0.0 XAPK produce the same logical parameter matrix for all
+217 gate-controller models.
+
+Extracted coverage:
+- 217 gate models with parameter definitions
+- 170 unique ordered parameter schemas
+- 856 unique parameter specifications after deduplication
+- schema sizes range from 4 to 38 UI parameters
+- option, numeric, bit and bitfield parameter constructors are represented
+- parameter names, option-list resource keys, English option values, defaults,
+  levels, offsets, range limits, increments, multipliers, units and bit metadata
+  are retained where present in the vendor apps
+
+The generated data lives in
+`custom_components/tmt_chow/model_parameter_schemas.py`. Runtime diagnostics
+now include the exact schema selected for the detected `device_type`.
+
+This is intentionally separate from write verification. The APK definition is
+authoritative for the model/UI schema, while enabling a Home Assistant write
+path also requires matching the vendor UART packing/encoding rules for that
+model. PS21053/PS21053C remain the only models whose current 17-value write
+path is enabled until the remaining UART packing variants are implemented and
+validated.
