@@ -16,18 +16,27 @@
         "data": {
           "device": "Kapu"
         }
+      },
+      "activation": {
+        "title": "Fiókaktiválás szükséges",
+        "description": "A TMT Chow szerint ez a fiók nincs aktiválva. Add meg azt az e-mail-címet, amelyre a hivatalos TMT aktiváló linket kéred.",
+        "data": {
+          "email": "Aktiválási e-mail-cím"
+        }
       }
     },
     "error": {
       "cannot_connect": "Nem lehet kapcsolódni a TMT Chow szolgáltatáshoz",
       "invalid_auth": "Hibás felhasználónév vagy jelszó",
       "no_devices": "Nem található kompatibilis ChowHUB kapu",
-      "unknown_device": "A kiválasztott kapu már nem érhető el"
+      "unknown_device": "A kiválasztott kapu már nem érhető el",
+      "activation_failed": "A TMT elutasította az aktiválólevél-kérést"
     },
     "abort": {
       "already_configured": "Ez a kapu már be van állítva",
       "cannot_connect": "Nem lehet kapcsolódni a TMT Chow szolgáltatáshoz",
-      "invalid_auth": "Sikertelen hitelesítés"
+      "invalid_auth": "Sikertelen hitelesítés",
+      "activation_email_sent": "A TMT elfogadta az aktiválási kérést. Ellenőrizd a beérkezett és a spam mappát, nyisd meg az aktiváló linket, majd add hozzá újra az integrációt."
     }
   },
   "entity": {
