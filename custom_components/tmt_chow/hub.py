@@ -650,7 +650,9 @@ class TmtChowHub:
         if isinstance(device_info, str):
             fields = [field.strip().upper() for field in device_info.split(",")]
             if len(fields) >= 2:
+                self.proposal_code = fields[0]
                 self.controller_type = fields[1]
+                self._identity_event.set()
                 _LOGGER.warning(
                     "TMTDIAG CONTROLLER_IDENTIFIED controller_type=%s "
                     "supported_controller=%s dev_info_len=%s dev_info_sha256=%s",
