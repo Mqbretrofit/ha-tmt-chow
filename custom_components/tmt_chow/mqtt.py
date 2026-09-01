@@ -101,6 +101,12 @@ class AsyncMqttClient:
 
     async def async_publish(self, topic: str, payload: str) -> None:
         """Publish exactly once at QoS 0; never queue or retry commands."""
+        _LOGGER.warning(
+            "TMTDIAG MQTT_PUBLISH topic=%s payload_len=%s connected=%s",
+            topic,
+            len(payload),
+            self.connected,
+        )
         if not self.connected:
             raise MqttError("AWS IoT is not connected")
         body = _utf8(topic) + payload.encode("utf-8")
@@ -121,6 +127,12 @@ class AsyncMqttClient:
                 await asyncio.sleep(MQTT_RECONNECT_SECONDS)
 
     async def _connect(self) -> None:
+        _LOGGER.warning(
+            "TMTDIAG MQTT_CONNECT_START endpoint=%s port=%s topic_count=%s",
+            self._endpoint,
+            MQTT_PORT,
+            len(self._topics),
+        )
         context = await asyncio.to_thread(self._build_ssl_context)
         self._reader, self._writer = await asyncio.wait_for(
             asyncio.open_connection(
@@ -136,6 +148,10 @@ class AsyncMqttClient:
         header, body = await asyncio.wait_for(self._read_packet(), timeout=10)
         if header >> 4 != 2 or len(body) < 2 or body[1] != 0:
             raise MqttError("AWS IoT rejected MQTT CONNECT")
+        _LOGGER.warning(
+            "TMTDIAG MQTT_CONNACK_OK return_code=%s",
+            body[1] if len(body) >= 2 else None,
+        )
         await self._subscribe()
         self._connected.set()
         self._state_callback(True)
@@ -175,6 +191,12 @@ class AsyncMqttClient:
             or response[:2] != self._packet_id.to_bytes(2, "big")
         ):
             raise MqttError("Invalid MQTT SUBACK")
+        _LOGGER.warning(
+            "TMTDIAG MQTT_SUBACK packet_id=%s result_codes=%s topics=%s",
+            self._packet_id,
+            list(response[2:]),
+            list(self._topics),
+        )
         if any(code == 0x80 for code in response[2:]):
             raise MqttError("AWS IoT rejected an MQTT subscription")
 
