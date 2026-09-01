@@ -11,6 +11,7 @@ PLATFORMS: Final = [Platform.COVER, Platform.SELECT, Platform.SENSOR]
 
 BASE_URL: Final = "https://installer.tmt-automation.com/"
 LOGIN_PATH: Final = "v4.0/user/outh2/token/"
+ACTIVATION_EMAIL_PATH: Final = "v4.0/user/send/activation/email"
 KAITRON_BASE_URL: Final = "https://chowmeet.kaitron.com/"
 KAITRON_LOGIN_PATH: Final = "__api__/tmt/token"
 
