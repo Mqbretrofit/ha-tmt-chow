@@ -32,6 +32,11 @@ from .controller_types import (
     normalize_controller_type,
 )
 from .model_parameter_schemas import parameter_schema_for
+from .model_parameters import (
+    get_model_parameter_count,
+    get_model_parameter_schema,
+    get_model_parameter_schema_id,
+)
 from .mqtt import AsyncMqttClient, MqttError
 from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
 from .protocol import (
@@ -84,6 +89,15 @@ class TmtChowHub:
         self.controller_type: str | None = initial_controller_type or None
         self.controller_family: str | None = controller_family(self.controller_type)
         self.controller_capabilities: frozenset[str] = controller_capabilities(
+            self.controller_type
+        )
+        self.model_parameter_schema: tuple[dict, ...] = get_model_parameter_schema(
+            self.controller_type
+        )
+        self.model_parameter_schema_id: str | None = get_model_parameter_schema_id(
+            self.controller_type
+        )
+        self.model_parameter_count: int = get_model_parameter_count(
             self.controller_type
         )
         self.model_parameter_schema = parameter_schema_for(self.controller_type)
@@ -397,6 +411,15 @@ class TmtChowHub:
                 self.controller_type = normalize_controller_type(fields[1]) or None
                 self.controller_family = controller_family(self.controller_type)
                 self.controller_capabilities = controller_capabilities(
+                    self.controller_type
+                )
+                self.model_parameter_schema = get_model_parameter_schema(
+                    self.controller_type
+                )
+                self.model_parameter_schema_id = get_model_parameter_schema_id(
+                    self.controller_type
+                )
+                self.model_parameter_count = get_model_parameter_count(
                     self.controller_type
                 )
                 self.model_parameter_schema = parameter_schema_for(
