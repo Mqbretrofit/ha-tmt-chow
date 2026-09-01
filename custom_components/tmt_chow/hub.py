@@ -28,7 +28,14 @@ from .const import (
     SHADOW_REFRESH_SECONDS,
 )
 from .mqtt import AsyncMqttClient, MqttError
-from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
+from .parameters import (
+    PARAMETERS,
+    P710U_FUNCTIONS,
+    encode_parameter_write,
+    encode_write_function,
+    parse_parameter_response,
+    parse_read_function_response,
+)
 from .protocol import (
     GateStatus,
     decode_dev_status,
@@ -107,6 +114,8 @@ class TmtChowHub:
         self.product_type = product_type
         self.device_type = device_type
         self.controller_type: str | None = None
+        self.proposal_code: str | None = None
+        self.function_values: dict[str, int] = {}
         self.position: int | None = None
         self.battery_percent: int | None = None
         self.movement: str | None = None
@@ -124,6 +133,7 @@ class TmtChowHub:
         self._last_message_monotonic: float | None = None
         self._last_shadow_monotonic: float | None = None
         self._state_synchronized = False
+        self._identity_event = asyncio.Event()
         self._stopping = False
 
         # TMT uses the device UUID as the topic/Shadow thing identifier.
@@ -218,6 +228,20 @@ class TmtChowHub:
             await self.async_refresh_parameters()
         except TmtCommandError as err:
             _LOGGER.warning("Initial TMT parameter read failed: %s", err)
+
+        # DEV INFO normally arrives from Shadow while the first RP,1 read is
+        # in flight. Wait briefly so UART-v2 P710U controllers can immediately
+        # switch to their official READ FUNCTION parameter protocol.
+        if self.controller_type is None:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._identity_event.wait(), timeout=3)
+
+        if self.controller_type == "PS22087B":
+            try:
+                await self.async_refresh_functions()
+            except TmtCommandError as err:
+                _LOGGER.warning("Initial P710U READ FUNCTION failed: %s", err)
+
         self._refresh_task = asyncio.create_task(self._parameter_refresh_loop())
         self._shadow_refresh_task = asyncio.create_task(self._shadow_refresh_loop())
 
@@ -302,6 +326,95 @@ class TmtChowHub:
                 self.available,
                 self.supports_battery,
             )
+            self._notify()
+
+    async def async_refresh_functions(self) -> None:
+        """Read the official UART-v2 P710U function set."""
+        async with self._transaction_lock:
+            response = await self._async_exchange(
+                "c=READ FUNCTION",
+                "ACK READ FUNCTION",
+            )
+            parsed = parse_read_function_response(response)
+            _LOGGER.warning(
+                "TMTDIAG P710U_FUNCTION_READ parsed=%s count=%s keys=%s payload=%s",
+                parsed is not None,
+                len(parsed or {}),
+                list((parsed or {}).keys()),
+                _diag_text(response),
+            )
+            if parsed is None:
+                raise TmtCommandError(
+                    "The controller returned no valid READ FUNCTION set",
+                    translation_key="invalid_parameter_set",
+                )
+            self.function_values = parsed
+            self._notify()
+
+    async def async_set_function(self, key: str, value: int) -> None:
+        """Write one P710U function by sending the complete preserved set."""
+        if self.controller_type != "PS22087B":
+            raise TmtCommandError(
+                "The controller does not use the P710U function protocol",
+                translation_key="unsupported_controller",
+            )
+        key = key.upper()
+        if key not in self.function_values:
+            raise TmtCommandError(
+                "Unknown P710U function",
+                translation_key="unknown_parameter",
+            )
+
+        definition = P710U_FUNCTIONS.get(key)
+        if definition is None or value not in definition[1]:
+            raise TmtCommandError(
+                "Unsupported P710U function value",
+                translation_key="unsupported_parameter_value",
+            )
+
+        async with self._transaction_lock:
+            current_response = await self._async_exchange(
+                "c=READ FUNCTION",
+                "ACK READ FUNCTION",
+            )
+            current = parse_read_function_response(current_response)
+            if current is None or key not in current:
+                raise TmtCommandError(
+                    "Cannot write before a valid READ FUNCTION",
+                    translation_key="parameters_not_ready",
+                )
+
+            updated = dict(current)
+            updated[key] = value
+            command = encode_write_function(updated)
+            _LOGGER.warning(
+                "TMTDIAG P710U_FUNCTION_WRITE key=%s old=%s new=%s count=%s",
+                key,
+                current.get(key),
+                value,
+                len(updated),
+            )
+
+            # The official UART-v2 protocol writes the complete function set.
+            # Do not guess an ACK token: publish once, then verify with a fresh
+            # READ FUNCTION. A rejected/ignored write is caught by verification.
+            await self._mqtt.async_publish(
+                self.rx_topic,
+                f"c={command};src={self._source_tag}",
+            )
+            await asyncio.sleep(1.0)
+
+            verify_response = await self._async_exchange(
+                "c=READ FUNCTION",
+                "ACK READ FUNCTION",
+            )
+            verified = parse_read_function_response(verify_response)
+            if verified is None or verified.get(key) != value:
+                raise TmtCommandError(
+                    "P710U function verification failed after write",
+                    translation_key="parameter_verification_failed",
+                )
+            self.function_values = verified
             self._notify()
 
     async def async_set_parameter(self, index: int, value: int) -> None:
@@ -418,7 +531,10 @@ class TmtChowHub:
             if not self.available:
                 continue
             try:
-                await self.async_refresh_parameters()
+                if self.controller_type == "PS22087B":
+                    await self.async_refresh_functions()
+                else:
+                    await self.async_refresh_parameters()
             except TmtCommandError as err:
                 _LOGGER.debug("Periodic parameter read failed: %s", err)
 
@@ -440,6 +556,9 @@ class TmtChowHub:
         if topic == self.tx_topic:
             self.attributes[ATTR_LAST_RESPONSE] = payload
             parsed_parameters = parse_parameter_response(payload)
+            parsed_functions = parse_read_function_response(payload)
+            if parsed_functions is not None:
+                self.function_values = parsed_functions
             _LOGGER.warning(
                 "TMTDIAG MQTT_TX_PARSE parameter_parse=%s ack_rs_parse_pending=%s "
                 "contains_nak=%s waiter_expectations=%s",
