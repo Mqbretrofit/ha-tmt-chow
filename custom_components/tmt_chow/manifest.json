@@ -9,5 +9,5 @@
   "integration_type": "device",
   "iot_class": "cloud_push",
   "requirements": [],
-  "version": "1.0.1-beta.7-shared-device-diagnostics"
+  "version": "1.0.1-beta.8-shared-device-support"
 }
