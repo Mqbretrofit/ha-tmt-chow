@@ -21,6 +21,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+    # The APK contains many controller families with different parameter
+    # layouts. Never expose the PS21053 schema on a known different model.
+    if hub.controller_type is not None and not hub.parameter_schema_verified:
+        return
     async_add_entities(
         TmtParameterSelect(hub, index, definition)
         for index, definition in enumerate(PARAMETERS)
