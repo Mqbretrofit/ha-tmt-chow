@@ -25,7 +25,13 @@ from .const import (
     PARAMETER_REFRESH_SECONDS,
     SHADOW_REFRESH_SECONDS,
 )
-from .controller_types import (\n    controller_family,\n    has_verified_parameter_schema,\n    normalize_controller_type,\n)\nfrom .mqtt import AsyncMqttClient, MqttError\nfrom .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
+from .controller_types import (
+    controller_family,
+    has_verified_parameter_schema,
+    normalize_controller_type,
+)
+from .mqtt import AsyncMqttClient, MqttError
+from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
 from .protocol import (
     GateStatus,
     decode_dev_status,
