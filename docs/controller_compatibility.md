@@ -143,12 +143,16 @@ The generated data lives in
 `custom_components/tmt_chow/model_parameter_schemas.py`. Runtime diagnostics
 now include the exact schema selected for the detected `device_type`.
 
-This is intentionally separate from write verification. The APK definition is
-authoritative for the model/UI schema, while enabling a Home Assistant write
-path also requires matching the vendor UART packing/encoding rules for that
-model. PS21053/PS21053C remain the only models whose current 17-value write
-path is enabled until the remaining UART packing variants are implemented and
-validated.
+The vendor UART packing/encoding rules have now also been implemented per
+model. The implementation carries each concrete model's UART generation,
+skip-list, codec profile and any extended suffix from the Android logic, then
+performs a mandatory read-back verification after every write.
+
+All 217 concrete gate-controller models therefore have a model-specific read
+and write codec. PS21053/PS21053C retain their existing 17-value entity IDs and
+wire format for backward compatibility. Unknown/API-only models such as
+PS25007 remain read/write disabled until a concrete vendor schema and codec are
+available, rather than borrowing another controller's layout.
 
 
 ## Per-model parameter matrix
@@ -183,3 +187,17 @@ Assistant parameter entities remain restricted to controller schemas/codecs
 that have been individually validated. PS21053/PS21053C remain the currently
 validated writable schema. This avoids sending a valid-looking WP payload with
 the wrong packed/bitfield encoding to another controller.
+
+
+## Home Assistant parameter entities
+
+Discrete vendor parameters are exposed as `select` entities and numeric
+vendor parameters with explicit min/max metadata are exposed as `number`
+entities. Non-editable information/action rows from the Android parameter list
+are not exposed as writable entities.
+
+The integration always reads the full current parameter vector before a
+change, modifies only the requested logical parameter, encodes the complete
+model-specific vendor payload, sends it once, and reads the parameters back.
+The write is accepted only if the requested value is confirmed by the
+controller.
