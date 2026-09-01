@@ -320,7 +320,7 @@ class TmtChowApi:
         url = urljoin(base_url, path)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.7-shared-device-diagnostics",
+            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.8-shared-device-support",
         }
         if basic_auth:
             encoded = base64.b64encode(OAUTH_CLIENT.encode()).decode()
@@ -792,24 +792,48 @@ class TmtChowApi:
             ("share_devices", "shared"),
         ):
             for raw in payload.get(bucket, []) or []:
-                if not isinstance(raw, dict) or not raw.get("uuid"):
+                if not isinstance(raw, dict):
                     skipped_no_uuid += 1
                     continue
-                device_uuid = str(raw["uuid"])
-                device_type = str(raw.get("devies_type") or raw.get("device_type") or "")
-                endpoint = str(raw.get("iot_endpoint") or "")
+
+                # Shared devices use a wrapper object and keep the real gate
+                # metadata under the API's misspelled "devies_info" field.
+                # Admin/user devices expose the same metadata directly.
+                device_data = raw
+                if bucket == "share_devices":
+                    nested = raw.get("devies_info")
+                    if isinstance(nested, dict):
+                        device_data = nested
+
+                if not device_data.get("uuid"):
+                    skipped_no_uuid += 1
+                    continue
+
+                device_uuid = str(device_data["uuid"])
+                device_type = str(
+                    device_data.get("devies_type")
+                    or device_data.get("device_type")
+                    or ""
+                )
+                endpoint = str(device_data.get("iot_endpoint") or "")
                 if not endpoint:
                     skipped_no_endpoint += 1
                     continue
+
                 devices.append(
                     TmtDevice(
                         name=friendly_names.get(
-                            device_uuid, str(raw.get("name") or "TMT gate")
+                            device_uuid,
+                            str(
+                                device_data.get("name")
+                                or raw.get("custom_user_display_name")
+                                or "TMT gate"
+                            ),
                         ),
                         uuid=device_uuid,
                         role=role,
                         device_type=device_type,
-                        product_type=str(raw.get("product_type") or ""),
+                        product_type=str(device_data.get("product_type") or ""),
                         iot_endpoint=endpoint,
                     )
                 )
