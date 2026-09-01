@@ -87,3 +87,36 @@ Known non-gate families (tube motor, accessories and IP camera/doorbell) are
 now prevented from being exposed as Home Assistant gate covers. Unknown model
 names are still kept on the legacy gate path so API-returned models that are
 newer than the APK are not accidentally rejected.
+
+
+## Per-model optional capability matrix
+
+The effective Android visibility methods were resolved through each concrete
+controller's full inheritance chain in both apps:
+
+- `pedBtnVisible()`
+- `extDevBtnVisible()`
+- `lightBtnVisible()`
+
+Android `View.VISIBLE` is value `0`; `View.GONE` is value `8`. The
+effective result is identical between TMT Chow 3.1.4 and gatePRO Smart! 1.0.0
+for all 217 gate-controller classes.
+
+| Family | Models | Pedestrian visible | External visible | Light visible |
+| --- | ---: | ---: | ---: | ---: |
+| Sliding | 88 | 69 | 47 | 5 |
+| Swing | 75 | 72 | 14 | 6 |
+| Garage | 54 | 35 | 51 | 52 |
+| **Total** | **217** | **176** | **112** | **63** |
+
+The exact model sets are stored in `controller_types.py` as
+`PEDESTRIAN_CONTROLLERS`, `EXTERNAL_CONTROLLERS` and
+`LIGHT_CONTROLLERS`. PS21053C is treated as the runtime alias of PS21053 and
+inherits the same optional capabilities.
+
+For PS21053/PS21053C the extracted capability set is:
+`pedestrian`, `external`; light is hidden.
+
+Unknown/new model names intentionally receive no optional capability merely
+from their family or product_type. This avoids exposing a control that the
+vendor app itself would hide.
