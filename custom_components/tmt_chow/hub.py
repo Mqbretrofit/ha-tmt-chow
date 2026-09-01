@@ -36,6 +36,8 @@ from .model_parameters import (
     get_model_parameter_count,
     get_model_parameter_schema,
     get_model_parameter_schema_id,
+    model_parameter_summary,
+    parameter_codec_group,
 )
 from .mqtt import AsyncMqttClient, MqttError
 from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
@@ -98,6 +100,12 @@ class TmtChowHub:
             self.controller_type
         )
         self.model_parameter_count: int = get_model_parameter_count(
+            self.controller_type
+        )
+        self.model_parameter_codec_group: str | None = parameter_codec_group(
+            self.controller_type
+        )
+        self.model_parameter_summary: dict = model_parameter_summary(
             self.controller_type
         )
         self.model_parameter_schema = parameter_schema_for(self.controller_type)
@@ -420,6 +428,12 @@ class TmtChowHub:
                     self.controller_type
                 )
                 self.model_parameter_count = get_model_parameter_count(
+                    self.controller_type
+                )
+                self.model_parameter_codec_group = parameter_codec_group(
+                    self.controller_type
+                )
+                self.model_parameter_summary = model_parameter_summary(
                     self.controller_type
                 )
                 self.model_parameter_schema = parameter_schema_for(
