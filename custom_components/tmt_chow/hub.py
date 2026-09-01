@@ -25,8 +25,7 @@ from .const import (
     PARAMETER_REFRESH_SECONDS,
     SHADOW_REFRESH_SECONDS,
 )
-from .mqtt import AsyncMqttClient, MqttError
-from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
+from .controller_types import (\n    controller_family,\n    has_verified_parameter_schema,\n    normalize_controller_type,\n)\nfrom .mqtt import AsyncMqttClient, MqttError\nfrom .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
 from .protocol import (
     GateStatus,
     decode_dev_status,
@@ -36,8 +35,6 @@ from .protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-_SUPPORTED_CONTROLLERS = {"PS21053", "PS21053C"}
-
 
 class TmtCommandError(Exception):
     """A command was rejected, timed out, or could not be sent."""
@@ -68,12 +65,15 @@ class TmtChowHub:
         private_key: str,
         source_tag: str,
         product_type: str,
+        device_type: str = "",
     ) -> None:
         self.uuid = uuid
         self.thing_name = thing_name
         self.name = name
         self.product_type = product_type
-        self.controller_type: str | None = None
+        initial_controller_type = normalize_controller_type(device_type)
+        self.controller_type: str | None = initial_controller_type or None
+        self.controller_family: str | None = controller_family(self.controller_type)
         self.position: int | None = None
         self.battery_percent: int | None = None
         self.movement: str | None = None
@@ -132,19 +132,36 @@ class TmtChowHub:
         return self._mqtt.connected
 
     @property
+    def parameter_schema_verified(self) -> bool:
+        """Return whether the 17-value parameter schema is verified."""
+        return has_verified_parameter_schema(self.controller_type)
+
+    @property
     def supports_parameters(self) -> bool:
-        # A strictly validated 17-value RP,1 response is also authoritative.
-        # DEV INFO can arrive later than RP,1 after an MQTT reconnect.
-        return self.controller_type in _SUPPORTED_CONTROLLERS or self.parameters is not None
+        """Return whether the verified parameter selectors may be used.
+
+        Older config entries can briefly lack device_type until DEV INFO arrives,
+        so a strictly parsed 17-value response remains a temporary compatibility
+        fallback only while the controller type is still unknown.
+        """
+        return self.parameter_schema_verified or (
+            self.controller_type is None and self.parameters is not None
+        )
+
+    @property
+    def may_probe_parameters(self) -> bool:
+        """Return whether it is safe to probe the verified RP,1 schema."""
+        return self.parameter_schema_verified or self.controller_type is None
 
     async def async_start(self) -> None:
         self._stopping = False
         await self._mqtt.async_start()
-        try:
-            await self.async_refresh_parameters()
-        except TmtCommandError as err:
-            _LOGGER.warning("Initial TMT parameter read failed: %s", err)
-        self._refresh_task = asyncio.create_task(self._parameter_refresh_loop())
+        if self.may_probe_parameters:
+            try:
+                await self.async_refresh_parameters()
+            except TmtCommandError as err:
+                _LOGGER.warning("Initial TMT parameter read failed: %s", err)
+            self._refresh_task = asyncio.create_task(self._parameter_refresh_loop())
         self._shadow_refresh_task = asyncio.create_task(self._shadow_refresh_loop())
 
     async def async_stop(self) -> None:
@@ -280,7 +297,7 @@ class TmtChowHub:
                 if self.parameters is not None
                 else PARAMETER_BOOTSTRAP_RETRY_SECONDS
             )
-            if not self.available:
+            if not self.available or not self.may_probe_parameters:
                 continue
             try:
                 await self.async_refresh_parameters()
@@ -364,7 +381,8 @@ class TmtChowHub:
         if isinstance(device_info, str):
             fields = [field.strip().upper() for field in device_info.split(",")]
             if len(fields) >= 2:
-                self.controller_type = fields[1]
+                self.controller_type = normalize_controller_type(fields[1]) or None
+                self.controller_family = controller_family(self.controller_type)
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
             candidate = "ACK RP,1:" + parameter_payload.lstrip(":")
