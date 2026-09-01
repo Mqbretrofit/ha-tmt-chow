@@ -16,18 +16,27 @@
         "data": {
           "device": "Gate"
         }
+      },
+      "activation": {
+        "title": "Account activation required",
+        "description": "TMT Chow reports that this account is not activated. Enter the email address that should receive the official TMT activation link.",
+        "data": {
+          "email": "Activation email address"
+        }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to TMT Chow",
       "invalid_auth": "Invalid username or password",
       "no_devices": "No compatible ChowHUB gate was found",
-      "unknown_device": "The selected gate is no longer available"
+      "unknown_device": "The selected gate is no longer available",
+      "activation_failed": "TMT rejected the activation-email request"
     },
     "abort": {
       "already_configured": "This gate is already configured",
       "cannot_connect": "Cannot connect to TMT Chow",
-      "invalid_auth": "Authentication failed"
+      "invalid_auth": "Authentication failed",
+      "activation_email_sent": "TMT accepted the activation request. Check the inbox and spam folder, open the activation link, then add the integration again."
     }
   },
   "entity": {
