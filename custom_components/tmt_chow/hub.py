@@ -26,6 +26,7 @@ from .const import (
     SHADOW_REFRESH_SECONDS,
 )
 from .controller_types import (
+    controller_capabilities,
     controller_family,
     has_verified_parameter_schema,
     normalize_controller_type,
@@ -81,6 +82,9 @@ class TmtChowHub:
         initial_controller_type = normalize_controller_type(device_type)
         self.controller_type: str | None = initial_controller_type or None
         self.controller_family: str | None = controller_family(self.controller_type)
+        self.controller_capabilities: frozenset[str] = controller_capabilities(
+            self.controller_type
+        )
         self.position: int | None = None
         self.battery_percent: int | None = None
         self.movement: str | None = None
@@ -390,6 +394,9 @@ class TmtChowHub:
             if len(fields) >= 2:
                 self.controller_type = normalize_controller_type(fields[1]) or None
                 self.controller_family = controller_family(self.controller_type)
+                self.controller_capabilities = controller_capabilities(
+                    self.controller_type
+                )
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
             candidate = "ACK RP,1:" + parameter_payload.lstrip(":")
