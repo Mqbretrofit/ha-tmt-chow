@@ -1,6 +1,6 @@
 # TMT Chow for Home Assistant
 
-[![Release](https://img.shields.io/github/v/release/Mqbretrofit/ha-tmt-chow?display_name=tag)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.0.2-blue)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.2)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-41BDF5)](https://www.hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-tmt-chow&category=integration)
