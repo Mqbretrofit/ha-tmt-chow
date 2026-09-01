@@ -42,6 +42,7 @@ from .protocol import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class TmtCommandError(Exception):
     """A command was rejected, timed out, or could not be sent."""
 
