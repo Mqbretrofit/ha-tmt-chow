@@ -21,6 +21,9 @@ from .const import (
     BASE_URL,
     CERTIFICATE_PATH,
     DEVICES_PATH,
+    FIREBASE_IDENTITY_BASE_URL,
+    FIREBASE_SIGN_IN_PATH,
+    FIREBASE_VERIFY_PATH,
     GATEPRO_APP_TYPE_INDEX,
     KAITRON_BASE_URL,
     KAITRON_LOGIN_PATH,
@@ -28,6 +31,7 @@ from .const import (
     OAUTH_CLIENT,
     POLICY_PATH,
     TMT_APP_TYPE_INDEX,
+    TMT_FIREBASE_LANGUAGE,
 )
 
 
@@ -483,45 +487,112 @@ class TmtChowApi:
             len(password),
         )
 
-        login_payload = {
-            "username": username,
-            "password": password,
-            "grant_type": "password",
-            "scope": "user",
-            "app_type_index": app_type_index,
-        }
-
-        try:
-            payload = await self._request(
-                "POST",
-                path,
-                json=login_payload,
-                basic_auth=True,
-                base_url=base_url,
-                phase=f"login:{backend}",
-            )
-        except TmtAuthError:
+        if auth_mode == AUTH_MODE_TMT and "@" in username:
+            backend = "tmt_chow_firebase"
             _LOGGER.warning(
-                "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
-                "app_type_index=%s username_len=%s username_sha256=%s",
-                backend,
-                auth_mode,
-                app_type_index,
+                "TMTDIAG FIREBASE_LOGIN_SELECTED email_len=%s email_sha256=%s",
                 len(username),
                 username_fp,
             )
-            raise
-        except TmtApiError:
-            _LOGGER.warning(
-                "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s auth_mode=%s "
-                "app_type_index=%s username_len=%s username_sha256=%s",
-                backend,
-                auth_mode,
-                app_type_index,
-                len(username),
-                username_fp,
-            )
-            raise
+            firebase_payload = {
+                "email": username,
+                "password": password,
+                "returnSecureToken": True,
+            }
+            try:
+                firebase_response = await self._request(
+                    "POST",
+                    FIREBASE_SIGN_IN_PATH,
+                    json=firebase_payload,
+                    base_url=FIREBASE_IDENTITY_BASE_URL,
+                    phase="login:tmt_chow_firebase_identity",
+                )
+                id_token = _value(firebase_response, "idToken")
+                if not isinstance(id_token, str) or not id_token:
+                    raise TmtAuthError(
+                        "Firebase login response did not contain an ID token"
+                    )
+                _LOGGER.warning(
+                    "TMTDIAG FIREBASE_IDENTITY_OK email_sha256=%s "
+                    "local_id_present=%s id_token_present=True",
+                    username_fp,
+                    bool(_value(firebase_response, "localId")),
+                )
+                payload = await self._request(
+                    "POST",
+                    FIREBASE_VERIFY_PATH,
+                    json={
+                        "id_token": id_token,
+                        "language": TMT_FIREBASE_LANGUAGE,
+                        "app_type_index": app_type_index,
+                    },
+                    basic_auth=True,
+                    base_url=BASE_URL,
+                    phase="login:tmt_chow_firebase_verify",
+                )
+            except TmtAuthError:
+                _LOGGER.warning(
+                    "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
+                    "app_type_index=%s username_len=%s username_sha256=%s",
+                    backend,
+                    auth_mode,
+                    app_type_index,
+                    len(username),
+                    username_fp,
+                )
+                raise
+            except TmtApiError:
+                _LOGGER.warning(
+                    "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s "
+                    "auth_mode=%s app_type_index=%s username_len=%s "
+                    "username_sha256=%s",
+                    backend,
+                    auth_mode,
+                    app_type_index,
+                    len(username),
+                    username_fp,
+                )
+                raise
+        else:
+            login_payload = {
+                "username": username,
+                "password": password,
+                "grant_type": "password",
+                "scope": "user",
+                "app_type_index": app_type_index,
+            }
+            try:
+                payload = await self._request(
+                    "POST",
+                    path,
+                    json=login_payload,
+                    basic_auth=True,
+                    base_url=base_url,
+                    phase=f"login:{backend}",
+                )
+            except TmtAuthError:
+                _LOGGER.warning(
+                    "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
+                    "app_type_index=%s username_len=%s username_sha256=%s",
+                    backend,
+                    auth_mode,
+                    app_type_index,
+                    len(username),
+                    username_fp,
+                )
+                raise
+            except TmtApiError:
+                _LOGGER.warning(
+                    "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s "
+                    "auth_mode=%s app_type_index=%s username_len=%s "
+                    "username_sha256=%s",
+                    backend,
+                    auth_mode,
+                    app_type_index,
+                    len(username),
+                    username_fp,
+                )
+                raise
 
         token = _value(payload, "access_token", "token")
         refresh_token = _value(payload, "refresh_token")
