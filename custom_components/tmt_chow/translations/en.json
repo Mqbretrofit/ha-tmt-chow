@@ -6,7 +6,7 @@
         "title": "Connect TMT Chow account",
         "description": "Choose the app/account type you use. TMT Chow! uses the TMT installer login; GatePRO Smart uses the Kaitron login. The password is used only during setup and is not saved.",
         "data": {
-          "username": "Username / nickname",
+          "username": "Email / username / nickname",
           "password": "Password",
           "auth_mode": "Login method"
         }
