@@ -162,7 +162,7 @@ The controller map now includes the vendor parameter list for every one of the
 
 The extracted catalogue contains:
 - 217 concrete gate models
-- 169 distinct parameter layouts after deduplication
+- 170 distinct parameter layouts after deduplication
 - 128 distinct parameter labels
 - 297 distinct vendor option lists
 
@@ -177,16 +177,22 @@ count, ordered parameter schema and effective parameter codec group.
 
 ### Codec safety
 
-Parameter layout and parameter wire codec are separate. Most mapped gate
-models inherit the shared PkProduct encoder/decoder, but 40 models resolve to
-20 model-specific codec implementations in addition to the shared base codec
-(21 effective codec groups total).
+Parameter layout and parameter wire codec are separate. The 217 mapped gate
+models resolve to 9 effective wire-codec profiles:
 
-For that reason the APK-derived model catalogue is complete, but writable Home
-Assistant parameter entities remain restricted to controller schemas/codecs
-that have been individually validated. PS21053/PS21053C remain the currently
-validated writable schema. This avoids sending a valid-looking WP payload with
-the wrong packed/bitfield encoding to another controller.
+- legacy_base: 177 models
+- new_phase1: 17 models
+- custom_a510: 8 models
+- custom_p170: 4 models
+- converted_swap_8_9: 3 models
+- converted_bits: 3 models
+- custom_p100: 2 models
+- custom_split_pair: 2 models
+- custom_csv6: 1 model
+
+All 217 profiles now have explicit read/write encoding logic. Unknown/API-only
+models are still excluded from parameter writes until a concrete vendor model
+schema and protocol profile are available.
 
 
 ## Home Assistant parameter entities
