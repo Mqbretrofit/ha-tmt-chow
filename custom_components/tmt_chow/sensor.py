@@ -19,7 +19,9 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([TmtBatterySensor(hass.data[DOMAIN][entry.entry_id])])
+    hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+    if hub.supports_battery:
+        async_add_entities([TmtBatterySensor(hub)])
 
 
 class TmtBatterySensor(TmtChowEntity, SensorEntity):
