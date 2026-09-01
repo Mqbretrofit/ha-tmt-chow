@@ -1,4 +1,4 @@
-"""PS21053/PS21053C parameter definitions verified from TMT Chow 3.1.4."""
+"""TMT Chow parameter parsing and PS21053/PS21053C write definitions."""
 
 from __future__ import annotations
 
@@ -85,7 +85,16 @@ _RP_RE = re.compile(r"(?:^|\b)ACK RP,1:([^;\r\n]+)")
 
 
 def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
-    """Parse and strictly validate an ACK RP,1 response."""
+    """Parse a known ACK RP,1 response format.
+
+    PS21053/PS21053C use the verified 17-value parameter profile and are
+    validated strictly against the known option definitions.
+
+    PS22087B (P710U / product 118) returns a 15-value RP,1 set. We currently
+    accept that profile for read/state synchronization only. Its parameter
+    meanings and writable ranges are not yet verified, so writes remain
+    disabled elsewhere in the integration.
+    """
     match = _RP_RE.search(payload)
     if not match:
         return None
@@ -93,7 +102,17 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
         values = tuple(int(item.strip()) for item in match.group(1).split(","))
     except ValueError:
         return None
-    return values if validate_parameter_values(values) else None
+
+    if len(values) == len(PARAMETERS):
+        return values if validate_parameter_values(values) else None
+
+    # Verified from a real PS22087B/P710U response and matching Shadow
+    # DEV PARAM payload. Keep this deliberately conservative: read-only,
+    # non-negative byte-sized values until the vendor profile is mapped.
+    if len(values) == 15 and all(0 <= value <= 255 for value in values):
+        return values
+
+    return None
 
 
 def validate_parameter_values(values: tuple[int, ...]) -> bool:
