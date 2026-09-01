@@ -225,6 +225,79 @@ def _response_headers(headers: Any) -> dict[str, str]:
     return result
 
 
+def _diagnostic_structure(
+    value: Any,
+    *,
+    depth: int = 0,
+    max_depth: int = 6,
+    max_items: int = 4,
+) -> Any:
+    """Describe an API structure without logging raw values.
+
+    String values are represented only by length and a short SHA-256
+    fingerprint. This is enough to correlate the same identifier appearing in
+    multiple places (for example custom_info and share_devices) without
+    exposing the identifier itself.
+    """
+    if depth >= max_depth:
+        return {"type": type(value).__name__, "truncated": True}
+
+    if isinstance(value, dict):
+        return {
+            str(key): _diagnostic_structure(
+                child,
+                depth=depth + 1,
+                max_depth=max_depth,
+                max_items=max_items,
+            )
+            for key, child in value.items()
+        }
+
+    if isinstance(value, list):
+        return {
+            "type": "list",
+            "length": len(value),
+            "items": [
+                _diagnostic_structure(
+                    child,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                )
+                for child in value[:max_items]
+            ],
+            "truncated_items": max(0, len(value) - max_items),
+        }
+
+    if isinstance(value, tuple):
+        return {
+            "type": "tuple",
+            "length": len(value),
+            "items": [
+                _diagnostic_structure(
+                    child,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                )
+                for child in value[:max_items]
+            ],
+            "truncated_items": max(0, len(value) - max_items),
+        }
+
+    if isinstance(value, str):
+        return {
+            "type": "str",
+            "length": len(value),
+            "sha256": _fingerprint(value),
+        }
+
+    if value is None:
+        return {"type": "null"}
+
+    return {"type": type(value).__name__}
+
+
 class TmtChowApi:
     """Small async REST client for account setup and AWS bootstrap."""
 
@@ -247,7 +320,7 @@ class TmtChowApi:
         url = urljoin(base_url, path)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.5-firebase-diagnostics.2",
+            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.7-shared-device-diagnostics",
         }
         if basic_auth:
             encoded = base64.b64encode(OAUTH_CLIENT.encode()).decode()
@@ -677,6 +750,31 @@ class TmtChowApi:
             len(payload.get("share_devices", []) or []),
             len(payload.get("custom_info", []) or []),
         )
+
+        # Diagnostic-only structural dump. Never log raw field values here:
+        # string leaves contain only length + a short SHA-256 fingerprint.
+        # This lets us identify where UUID / endpoint fields live in regional
+        # or shared-device payload variants and correlate repeated identifiers.
+        for bucket in (
+            "admin_devices",
+            "user_devices",
+            "share_devices",
+            "custom_info",
+        ):
+            raw_items = payload.get(bucket, []) or []
+            for index, raw_item in enumerate(raw_items[:4]):
+                _LOGGER.warning(
+                    "TMTDIAG DEVICE_STRUCTURE bucket=%s index=%s structure=%s",
+                    bucket,
+                    index,
+                    _diagnostic_structure(raw_item),
+                )
+            if len(raw_items) > 4:
+                _LOGGER.warning(
+                    "TMTDIAG DEVICE_STRUCTURE bucket=%s omitted_items=%s",
+                    bucket,
+                    len(raw_items) - 4,
+                )
 
         friendly_names: dict[str, str] = {}
         for custom in payload.get("custom_info", []) or []:
