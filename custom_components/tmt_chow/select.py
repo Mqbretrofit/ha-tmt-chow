@@ -21,6 +21,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+    if not hub.supports_parameter_writes:
+        return
     async_add_entities(
         TmtParameterSelect(hub, index, definition)
         for index, definition in enumerate(PARAMETERS)
@@ -47,7 +49,7 @@ class TmtParameterSelect(TmtChowEntity, SelectEntity):
     def available(self) -> bool:
         return (
             self.hub.available
-            and self.hub.supports_parameters
+            and self.hub.supports_parameter_writes
             and self.hub.parameters is not None
         )
 
