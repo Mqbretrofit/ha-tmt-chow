@@ -51,6 +51,8 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         self._api: TmtChowApi | None = None
         self._devices: dict[str, TmtDevice] = {}
         self._auth_mode: str = AUTH_MODE_TMT
+        self._pending_activation_account: str | None = None
+        self._pending_activation_email: str | None = None
 
     async def async_step_user(
         self,
@@ -78,13 +80,30 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 devices = await self._api.async_get_devices()
             except TmtAuthError as err:
+                error_payload = err.payload or {}
+                error_code = str(error_payload.get("error_code", ""))
+                returned_email = error_payload.get("email")
                 _LOGGER.warning(
                     "TMTDIAG CONFIG_FLOW_AUTH_ERROR auth_mode=%s "
-                    "username_sha256=%s error=%s",
+                    "username_sha256=%s error_code=%s "
+                    "activation_email_available=%s error=%s",
                     self._auth_mode,
                     _fingerprint(username),
+                    error_code or "none",
+                    isinstance(returned_email, str) and bool(returned_email),
                     err,
                 )
+                if (
+                    self._auth_mode == AUTH_MODE_TMT
+                    and error_code == "-1003"
+                ):
+                    self._pending_activation_account = username
+                    self._pending_activation_email = (
+                        returned_email
+                        if isinstance(returned_email, str)
+                        else None
+                    )
+                    return await self.async_step_activation()
                 errors["base"] = "invalid_auth"
             except TmtApiError as err:
                 _LOGGER.warning(
@@ -142,6 +161,63 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_PASSWORD): str,
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_activation(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Offer the official TMT activation-email flow after error -1003."""
+        errors: dict[str, str] = {}
+        account = self._pending_activation_account
+        if account is None or self._api is None:
+            return self.async_abort(reason="cannot_connect")
+
+        if user_input is not None:
+            email = str(user_input["email"]).strip()
+            _LOGGER.warning(
+                "TMTDIAG CONFIG_FLOW_ACTIVATION_SUBMIT account_sha256=%s "
+                "email_len=%s email_sha256=%s",
+                _fingerprint(account),
+                len(email),
+                _fingerprint(email),
+            )
+            try:
+                await self._api.async_send_activation_email(account, email)
+            except TmtAuthError as err:
+                _LOGGER.warning(
+                    "TMTDIAG CONFIG_FLOW_ACTIVATION_AUTH_ERROR "
+                    "account_sha256=%s email_sha256=%s error=%s",
+                    _fingerprint(account),
+                    _fingerprint(email),
+                    err,
+                )
+                errors["base"] = "activation_failed"
+            except TmtApiError as err:
+                _LOGGER.warning(
+                    "TMTDIAG CONFIG_FLOW_ACTIVATION_API_ERROR "
+                    "account_sha256=%s email_sha256=%s error=%s",
+                    _fingerprint(account),
+                    _fingerprint(email),
+                    err,
+                )
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_abort(reason="activation_email_sent")
+
+        schema_key = vol.Required
+        if self._pending_activation_email:
+            email_field = schema_key(
+                "email",
+                default=self._pending_activation_email,
+            )
+        else:
+            email_field = schema_key("email")
+
+        return self.async_show_form(
+            step_id="activation",
+            data_schema=vol.Schema({email_field: str}),
             errors=errors,
         )
 
