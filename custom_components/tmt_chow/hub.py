@@ -40,6 +40,7 @@ from .protocol import (
 _LOGGER = logging.getLogger(__name__)
 _READABLE_CONTROLLERS = {"PS21053", "PS21053C", "PS22087B"}
 _WRITABLE_CONTROLLERS = {"PS21053", "PS21053C"}
+_NO_BATTERY_CONTROLLERS = {"PS22087B"}
 
 
 def _diag_text(payload: str) -> str:
@@ -98,11 +99,13 @@ class TmtChowHub:
         private_key: str,
         source_tag: str,
         product_type: str,
+        device_type: str = "",
     ) -> None:
         self.uuid = uuid
         self.thing_name = thing_name
         self.name = name
         self.product_type = product_type
+        self.device_type = device_type
         self.controller_type: str | None = None
         self.position: int | None = None
         self.battery_percent: int | None = None
@@ -160,6 +163,20 @@ class TmtChowHub:
     @property
     def mqtt_connected(self) -> bool:
         return self._mqtt.connected
+
+    @property
+    def model_name(self) -> str:
+        """Return the best controller model name currently known."""
+        controller = self.controller_type or self.device_type
+        if controller and self.product_type:
+            return f"{controller} (product {self.product_type})"
+        return controller or self.product_type or "Chow gate controller"
+
+    @property
+    def supports_battery(self) -> bool:
+        """Whether this controller exposes a meaningful battery percentage."""
+        controller = self.controller_type or self.device_type
+        return controller not in _NO_BATTERY_CONTROLLERS
 
     @property
     def supports_parameters(self) -> bool:
@@ -274,6 +291,17 @@ class TmtChowHub:
                     translation_key="invalid_parameter_set",
                 )
             self.parameters = parsed
+            _LOGGER.warning(
+                "TMTDIAG RUNTIME_READY controller_type=%r device_type=%r "
+                "product_type=%s parameter_count=%s available=%s "
+                "battery_supported=%s",
+                self.controller_type,
+                self.device_type,
+                self.product_type,
+                len(parsed),
+                self.available,
+                self.supports_battery,
+            )
             self._notify()
 
     async def async_set_parameter(self, index: int, value: int) -> None:
