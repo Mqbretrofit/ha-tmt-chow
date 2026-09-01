@@ -39,6 +39,13 @@ def test_default_vectors_round_trip_for_every_model() -> None:
         assert decoded == defaults, model
 
 
+def test_ps21053_write_format_stays_backward_compatible() -> None:
+    values = (1, 3, 0, 3, 3, 3, 11, 1, 0, 1, 0, 2, 3, 1, 0, 0, 0)
+    assert encode_model_parameter_write("PS21053", values) == (
+        "WP,1:1,3,0,3,3,3,11,1,0,1,0,2,3,1,0,0,0"
+    )
+
+
 def test_ps21053_real_response_decodes_to_17_values() -> None:
     payload = "ACK RP,1:1,3,0,3,3,3,11,1,0,1,0,2,3,1,0,0,0"
     decoded = decode_model_parameter_response("PS21053", payload)
