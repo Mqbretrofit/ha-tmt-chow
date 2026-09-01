@@ -149,3 +149,37 @@ path also requires matching the vendor UART packing/encoding rules for that
 model. PS21053/PS21053C remain the only models whose current 17-value write
 path is enabled until the remaining UART packing variants are implemented and
 validated.
+
+
+## Per-model parameter matrix
+
+The controller map now includes the vendor parameter list for every one of the
+217 APK-visible gate controller models, plus the PS21053C runtime alias.
+
+The extracted catalogue contains:
+- 217 concrete gate models
+- 169 distinct parameter layouts after deduplication
+- 128 distinct parameter labels
+- 297 distinct vendor option lists
+
+Each model entry records the parameter order used by that controller, the
+vendor parameter/resource key, English vendor label and the exact option list
+when the parameter is discrete. Numeric/packed parameters are retained as
+non-discrete entries instead of being incorrectly converted to PS21053-style
+selects.
+
+The runtime diagnostics now report the selected model's schema id, parameter
+count, ordered parameter schema and effective parameter codec group.
+
+### Codec safety
+
+Parameter layout and parameter wire codec are separate. Most mapped gate
+models inherit the shared PkProduct encoder/decoder, but 40 models resolve to
+20 model-specific codec implementations in addition to the shared base codec
+(21 effective codec groups total).
+
+For that reason the APK-derived model catalogue is complete, but writable Home
+Assistant parameter entities remain restricted to controller schemas/codecs
+that have been individually validated. PS21053/PS21053C remain the currently
+validated writable schema. This avoids sending a valid-looking WP payload with
+the wrong packed/bitfield encoding to another controller.
