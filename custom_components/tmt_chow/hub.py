@@ -38,7 +38,8 @@ from .protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-_SUPPORTED_CONTROLLERS = {"PS21053", "PS21053C"}
+_READABLE_CONTROLLERS = {"PS21053", "PS21053C", "PS22087B"}
+_WRITABLE_CONTROLLERS = {"PS21053", "PS21053C"}
 
 
 def _diag_text(payload: str) -> str:
@@ -162,9 +163,21 @@ class TmtChowHub:
 
     @property
     def supports_parameters(self) -> bool:
-        # A strictly validated 17-value RP,1 response is also authoritative.
+        # A parsed RP,1 response is authoritative for read/state sync.
         # DEV INFO can arrive later than RP,1 after an MQTT reconnect.
-        return self.controller_type in _SUPPORTED_CONTROLLERS or self.parameters is not None
+        return (
+            self.controller_type in _READABLE_CONTROLLERS
+            or self.parameters is not None
+        )
+
+    @property
+    def supports_parameter_writes(self) -> bool:
+        """Return whether this controller has a verified writable profile."""
+        return (
+            self.controller_type in _WRITABLE_CONTROLLERS
+            and self.parameters is not None
+            and len(self.parameters) == len(PARAMETERS)
+        )
 
     async def async_start(self) -> None:
         self._stopping = False
@@ -264,9 +277,9 @@ class TmtChowHub:
             self._notify()
 
     async def async_set_parameter(self, index: int, value: int) -> None:
-        if not self.supports_parameters:
+        if not self.supports_parameter_writes:
             raise TmtCommandError(
-                "The controller is not a verified PS21053/PS21053C",
+                "The controller does not have a verified writable parameter profile",
                 translation_key="unsupported_controller",
             )
         if not 0 <= index < len(PARAMETERS):
@@ -495,7 +508,7 @@ class TmtChowHub:
                     "TMTDIAG CONTROLLER_IDENTIFIED controller_type=%s "
                     "supported_controller=%s dev_info_len=%s dev_info_sha256=%s",
                     self.controller_type,
-                    self.controller_type in _SUPPORTED_CONTROLLERS,
+                    self.controller_type in _READABLE_CONTROLLERS,
                     len(device_info),
                     _diag_hash(device_info),
                 )
