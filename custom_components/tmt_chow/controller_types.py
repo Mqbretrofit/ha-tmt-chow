@@ -108,6 +108,24 @@ GATE_FAMILIES: Final = frozenset({
     FAMILY_GARAGE,
 })
 
+# TMT Chow 3.1.4 and gatePRO Smart! 1.0.0 both inherit the same base gate
+# protocol for all three gate families.  These commands are implemented in
+# the shared PkProduct class, while individual models only override optional
+# UI capabilities and parameter layouts.
+COMMON_GATE_COMMANDS: Final = frozenset({
+    "FULL OPEN",
+    "FULL CLOSE",
+    "STOP",
+    "RS",
+})
+OPTIONAL_GATE_COMMANDS: Final = frozenset({
+    "PED OPEN",
+    "EXTERNAL",
+    "LIGHT ON",
+    "LIGHT OFF",
+    "RELAY4",
+})
+
 # Product type is cloud metadata and is deliberately NOT used to select a
 # controller family.  We have observed both 112 and 118 in the supported app
 # ecosystem, and future values must remain accepted without code changes.
@@ -138,6 +156,12 @@ def controller_family(controller_type: str | None) -> str | None:
 def is_known_gate_controller(controller_type: str | None) -> bool:
     """Return whether the APK maps this type to a gate family."""
     return controller_family(controller_type) in GATE_FAMILIES
+
+
+def is_known_non_gate_controller(controller_type: str | None) -> bool:
+    """Return whether the APK maps this type to a known non-gate family."""
+    family = controller_family(controller_type)
+    return family is not None and family not in GATE_FAMILIES
 
 
 def has_verified_parameter_schema(controller_type: str | None) -> bool:
