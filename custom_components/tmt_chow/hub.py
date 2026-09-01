@@ -25,8 +25,20 @@ from .const import (
     PARAMETER_REFRESH_SECONDS,
     SHADOW_REFRESH_SECONDS,
 )
+from .controller_types import (
+    controller_capabilities,
+    controller_family,
+    normalize_controller_type,
+)
+from .model_parameter_schemas import parameter_schema_for
 from .mqtt import AsyncMqttClient, MqttError
-from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
+from .parameter_codec import (
+    ParameterCodecError,
+    decode_model_parameter_response,
+    encode_model_parameter_write,
+    is_editable_parameter,
+    parameter_transport_for,
+)
 from .protocol import (
     GateStatus,
     decode_dev_status,
@@ -36,7 +48,6 @@ from .protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-_SUPPORTED_CONTROLLERS = {"PS21053", "PS21053C"}
 
 
 class TmtCommandError(Exception):
@@ -68,12 +79,18 @@ class TmtChowHub:
         private_key: str,
         source_tag: str,
         product_type: str,
+        device_type: str = "",
     ) -> None:
         self.uuid = uuid
         self.thing_name = thing_name
         self.name = name
         self.product_type = product_type
+        initial_controller_type = normalize_controller_type(device_type)
         self.controller_type: str | None = None
+        self.controller_family: str | None = None
+        self.controller_capabilities: frozenset[str] = frozenset()
+        self.model_parameter_schema: tuple | None = None
+        self._set_controller_type(initial_controller_type or None)
         self.position: int | None = None
         self.battery_percent: int | None = None
         self.movement: str | None = None
@@ -132,19 +149,32 @@ class TmtChowHub:
         return self._mqtt.connected
 
     @property
+    def parameter_schema_verified(self) -> bool:
+        """Return whether the APK supplies both schema and wire codec."""
+        return (
+            self.model_parameter_schema is not None
+            and parameter_transport_for(self.controller_type) is not None
+        )
+
+    @property
     def supports_parameters(self) -> bool:
-        # A strictly validated 17-value RP,1 response is also authoritative.
-        # DEV INFO can arrive later than RP,1 after an MQTT reconnect.
-        return self.controller_type in _SUPPORTED_CONTROLLERS or self.parameters is not None
+        """Return whether this concrete controller has a decoded vendor schema."""
+        return self.parameter_schema_verified
+
+    @property
+    def may_probe_parameters(self) -> bool:
+        """Return whether this model has a safe vendor-specific read codec."""
+        return self.parameter_schema_verified
 
     async def async_start(self) -> None:
         self._stopping = False
         await self._mqtt.async_start()
-        try:
-            await self.async_refresh_parameters()
-        except TmtCommandError as err:
-            _LOGGER.warning("Initial TMT parameter read failed: %s", err)
-        self._refresh_task = asyncio.create_task(self._parameter_refresh_loop())
+        if self.may_probe_parameters:
+            try:
+                await self.async_refresh_parameters()
+            except TmtCommandError as err:
+                _LOGGER.warning("Initial TMT parameter read failed: %s", err)
+            self._refresh_task = asyncio.create_task(self._parameter_refresh_loop())
         self._shadow_refresh_task = asyncio.create_task(self._shadow_refresh_loop())
 
     async def async_stop(self) -> None:
@@ -174,6 +204,23 @@ class TmtChowHub:
         self._listeners.add(listener)
         return lambda: self._listeners.discard(listener)
 
+    def _set_controller_type(self, controller_type: str | None) -> None:
+        """Apply all model metadata from one concrete controller type."""
+        normalized = normalize_controller_type(controller_type)
+        self.controller_type = normalized or None
+        self.controller_family = controller_family(self.controller_type)
+        self.controller_capabilities = controller_capabilities(self.controller_type)
+        self.model_parameter_schema = parameter_schema_for(self.controller_type)
+
+    def _parameter_transport(self):
+        transport = parameter_transport_for(self.controller_type)
+        if transport is None or self.model_parameter_schema is None:
+            raise TmtCommandError(
+                "No verified parameter codec exists for this controller",
+                translation_key="unsupported_controller",
+            )
+        return transport
+
     async def async_open(self) -> None:
         await self._async_command("FULL OPEN", "ACK FULL OPEN")
         self.is_operating = True
@@ -193,53 +240,91 @@ class TmtChowHub:
         self._notify()
 
     async def async_refresh_parameters(self) -> None:
+        transport = self._parameter_transport()
         async with self._transaction_lock:
-            response = await self._async_exchange("c=RP,1", "ACK RP,1")
-            parsed = parse_parameter_response(response)
+            response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            parsed = decode_model_parameter_response(
+                self.controller_type,
+                response,
+            )
             if parsed is None:
                 raise TmtCommandError(
-                    "The gate returned no valid parameter set",
+                    "The gate returned no valid model-specific parameter set",
                     translation_key="invalid_parameter_set",
                 )
             self.parameters = parsed
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, parsed))
             self._notify()
 
     async def async_set_parameter(self, index: int, value: int) -> None:
-        if not self.supports_parameters:
-            raise TmtCommandError(
-                "The controller is not a verified PS21053/PS21053C",
-                translation_key="unsupported_controller",
-            )
-        if not 0 <= index < len(PARAMETERS):
+        transport = self._parameter_transport()
+        schema = self.model_parameter_schema
+        if schema is None or not 0 <= index < len(schema):
             raise TmtCommandError(
                 "Unknown gate parameter",
                 translation_key="unknown_parameter",
             )
+        if not is_editable_parameter(schema[index]):
+            raise TmtCommandError(
+                "This vendor parameter is not directly writable",
+                translation_key="unknown_parameter",
+            )
+
         async with self._transaction_lock:
-            current_response = await self._async_exchange("c=RP,1", "ACK RP,1")
-            current = parse_parameter_response(current_response)
+            current_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            current = decode_model_parameter_response(
+                self.controller_type,
+                current_response,
+            )
             if current is None:
                 raise TmtCommandError(
-                    "Cannot write parameters before a valid read",
+                    "Cannot write parameters before a valid model-specific read",
                     translation_key="parameters_not_ready",
                 )
-            self.parameters = current
+
             updated = list(current)
-            updated[index] = value
+            updated[index] = int(value)
             values = tuple(updated)
-            command = encode_parameter_write(values)
+            try:
+                command = encode_model_parameter_write(
+                    self.controller_type,
+                    values,
+                )
+            except ParameterCodecError as err:
+                raise TmtCommandError(
+                    str(err),
+                    translation_key="unsupported_parameter_value",
+                ) from err
+
             await self._async_exchange(
                 f"c={command};src={self._source_tag}",
-                "ACK WP,1",
+                transport.write_ack,
             )
-            verify_response = await self._async_exchange("c=RP,1", "ACK RP,1")
-            verified = parse_parameter_response(verify_response)
-            if verified != values:
+
+            # Always read back after a write. This is deliberately stricter than
+            # the vendor UI and prevents a model-specific packing mismatch from
+            # being accepted silently.
+            verify_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            verified = decode_model_parameter_response(
+                self.controller_type,
+                verify_response,
+            )
+            if verified is None or verified[index] != int(value):
                 raise TmtCommandError(
                     "Parameter verification failed after write",
                     translation_key="parameter_verification_failed",
                 )
             self.parameters = verified
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
             self._notify()
 
     async def _async_command(self, command: str, acknowledgement: str) -> None:
@@ -273,6 +358,12 @@ class TmtChowHub:
             with contextlib.suppress(ValueError):
                 self._waiters.remove(waiter)
 
+    async def _async_refresh_parameters_safely(self) -> None:
+        try:
+            await self.async_refresh_parameters()
+        except TmtCommandError as err:
+            _LOGGER.debug("Model-specific parameter bootstrap failed: %s", err)
+
     async def _parameter_refresh_loop(self) -> None:
         while True:
             await asyncio.sleep(
@@ -280,7 +371,7 @@ class TmtChowHub:
                 if self.parameters is not None
                 else PARAMETER_BOOTSTRAP_RETRY_SECONDS
             )
-            if not self.available:
+            if not self.available or not self.may_probe_parameters:
                 continue
             try:
                 await self.async_refresh_parameters()
@@ -297,7 +388,10 @@ class TmtChowHub:
         self._last_message_monotonic = time.monotonic()
         if topic == self.tx_topic:
             self.attributes[ATTR_LAST_RESPONSE] = payload
-            parsed_parameters = parse_parameter_response(payload)
+            parsed_parameters = decode_model_parameter_response(
+                self.controller_type,
+                payload,
+            )
             if parsed_parameters is not None:
                 self.parameters = parsed_parameters
                 self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, parsed_parameters))
@@ -364,11 +458,24 @@ class TmtChowHub:
         if isinstance(device_info, str):
             fields = [field.strip().upper() for field in device_info.split(",")]
             if len(fields) >= 2:
-                self.controller_type = fields[1]
+                previous = self.controller_type
+                self._set_controller_type(fields[1])
+                if (
+                    previous != self.controller_type
+                    and self.may_probe_parameters
+                    and self._refresh_task is None
+                    and not self._stopping
+                ):
+                    self._refresh_task = asyncio.create_task(
+                        self._parameter_refresh_loop()
+                    )
+                    asyncio.create_task(self._async_refresh_parameters_safely())
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
-            candidate = "ACK RP,1:" + parameter_payload.lstrip(":")
-            parsed = parse_parameter_response(candidate)
+            parsed = decode_model_parameter_response(
+                self.controller_type,
+                parameter_payload,
+            )
             if parsed is not None:
                 self.parameters = parsed
 

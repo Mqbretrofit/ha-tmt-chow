@@ -9,6 +9,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_CERTIFICATE_PEM,
+    CONF_DEVICE_TYPE,
     CONF_ENDPOINT,
     CONF_PRIVATE_KEY,
     CONF_PRODUCT_TYPE,
@@ -33,6 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         private_key=entry.data[CONF_PRIVATE_KEY],
         source_tag=entry.data.get(CONF_SOURCE_TAG, DEFAULT_SOURCE_TAG),
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
+        device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
     try:
         await hub.async_start()

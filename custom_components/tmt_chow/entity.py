@@ -19,7 +19,7 @@ class TmtChowEntity(Entity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, hub.uuid)},
             manufacturer="TMT Automation",
-            model=hub.product_type or "Chow gate controller",
+            model=hub.controller_type or hub.product_type or "Chow gate controller",
             name=hub.name,
         )
 
