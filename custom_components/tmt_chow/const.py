@@ -13,6 +13,13 @@ BASE_URL: Final = "https://installer.tmt-automation.com/"
 LOGIN_PATH: Final = "v4.0/user/outh2/token/"
 KAITRON_BASE_URL: Final = "https://chowmeet.kaitron.com/"
 KAITRON_LOGIN_PATH: Final = "__api__/tmt/token"
+FIREBASE_IDENTITY_BASE_URL: Final = "https://identitytoolkit.googleapis.com/"
+FIREBASE_SIGN_IN_PATH: Final = (
+    "v1/accounts:signInWithPassword"
+    "?key=AIzaSyB3WR7Yzc-DARvfi-Q2Zfab1Dxvk45yumY"
+)
+FIREBASE_VERIFY_PATH: Final = "v4.0/firebase/user/verify/"
+TMT_FIREBASE_LANGUAGE: Final = 0
 
 AUTH_MODE_TMT: Final = "tmt_chow"
 AUTH_MODE_KAITRON: Final = "gatepro_kaitron"
