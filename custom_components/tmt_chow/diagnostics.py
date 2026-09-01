@@ -31,6 +31,7 @@ async def async_get_config_entry_diagnostics(
             "battery_percent": hub.battery_percent,
             "controller_type": hub.controller_type,
             "controller_family": hub.controller_family,
+            "controller_capabilities": sorted(hub.controller_capabilities),
             "parameter_schema_verified": hub.parameter_schema_verified,
             "parameters": hub.parameters,
             "attributes": hub.attributes,
