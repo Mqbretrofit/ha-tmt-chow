@@ -31,6 +31,7 @@ from .controller_types import (
     has_verified_parameter_schema,
     normalize_controller_type,
 )
+from .model_parameter_schemas import parameter_schema_for
 from .mqtt import AsyncMqttClient, MqttError
 from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
 from .protocol import (
@@ -85,6 +86,7 @@ class TmtChowHub:
         self.controller_capabilities: frozenset[str] = controller_capabilities(
             self.controller_type
         )
+        self.model_parameter_schema = parameter_schema_for(self.controller_type)
         self.position: int | None = None
         self.battery_percent: int | None = None
         self.movement: str | None = None
@@ -395,6 +397,9 @@ class TmtChowHub:
                 self.controller_type = normalize_controller_type(fields[1]) or None
                 self.controller_family = controller_family(self.controller_type)
                 self.controller_capabilities = controller_capabilities(
+                    self.controller_type
+                )
+                self.model_parameter_schema = parameter_schema_for(
                     self.controller_type
                 )
         parameter_payload = normalized.get("dev param")
