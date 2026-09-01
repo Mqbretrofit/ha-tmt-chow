@@ -6,7 +6,7 @@
         "title": "TMT Chow-fiók csatlakoztatása",
         "description": "Válaszd ki, melyik alkalmazást/fióktípust használod. A TMT Chow! a TMT installer belépést, a GatePRO Smart pedig a Kaitron belépést használja. A jelszót csak a beállításhoz használja az integráció, nem menti el.",
         "data": {
-          "username": "E-mail / felhasználónév / becenév",
+          "username": "Felhasználónév / becenév",
           "password": "Jelszó",
           "auth_mode": "Bejelentkezési mód"
         }
