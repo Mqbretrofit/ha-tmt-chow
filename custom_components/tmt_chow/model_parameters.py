@@ -56,3 +56,71 @@ def get_model_parameter_count(controller_type: str | None) -> int:
 def has_model_parameter_schema(controller_type: str | None) -> bool:
     """Return whether the APK has a concrete parameter schema for this model."""
     return bool(get_model_parameter_schema(controller_type))
+
+
+# Models whose APK parameter codec overrides the shared PkProduct codec.
+# Every other mapped gate model uses the shared/base codec. Decode and encode
+# origins are identical in TMT Chow 3.1.4 for all mapped gate controllers.
+_SPECIAL_PARAMETER_CODECS: Final = {
+    "PS20025": "garage/PS20025",
+    "A510": "sliding/A510",
+    "PS17048": "sliding/A510",
+    "PS17089": "sliding/A510",
+    "PS18005": "sliding/A510",
+    "PS18015": "sliding/A510",
+    "PS19029": "sliding/A510",
+    "PS19038": "sliding/A510",
+    "PS19044": "sliding/A510",
+    "PS18040": "sliding/PS18040",
+    "PS20033": "sliding/PS18040",
+    "PS20040": "sliding/PS18040",
+    "PS20106": "sliding/PS18040",
+    "PS20135": "sliding/PS18040",
+    "PS21039": "sliding/PS18040",
+    "PS22022": "sliding/PS18040",
+    "PS22055": "sliding/PS18040",
+    "PS18050": "sliding/PS18050",
+    "PS19013": "sliding/PS19013",
+    "PS19073": "sliding/PS19073",
+    "PS20076": "sliding/PS20076",
+    "PS22028": "sliding/PS22028",
+    "PS22065": "sliding/PS22065",
+    "PS23004": "sliding/PS23004",
+    "P100": "swing/P100",
+    "PS17080": "swing/P100",
+    "P102U": "swing/P102U",
+    "PS19102": "swing/P102U",
+    "P170": "swing/P170",
+    "PS17092": "swing/P170",
+    "PS20007": "swing/P170",
+    "PS20109": "swing/P170",
+    "PS18002": "swing/PS18002",
+    "PS18077": "swing/PS18002",
+    "PS20096": "swing/PS18002",
+    "PS19075": "swing/PS19075",
+    "PS20006": "swing/PS20006",
+    "PS20113": "swing/PS20113",
+    "PS20125": "swing/PS20125",
+    "PS21084": "swing/PS21084",
+}
+
+def parameter_codec_group(controller_type: str | None) -> str | None:
+    """Return the effective vendor parameter codec group for a mapped model."""
+    model = (controller_type or "").strip().upper()
+    if model == "PS21053C":
+        model = "PS21053"
+    if not has_model_parameter_schema(model):
+        return None
+    return _SPECIAL_PARAMETER_CODECS.get(model, "PkProduct")
+
+def model_parameter_summary(controller_type: str | None) -> dict:
+    """Return compact model-specific parameter metadata for diagnostics/UI."""
+    schema = get_model_parameter_schema(controller_type)
+    return {
+        "schema_id": get_model_parameter_schema_id(controller_type),
+        "count": len(schema),
+        "codec_group": parameter_codec_group(controller_type),
+        "keys": tuple(item["key"] for item in schema),
+        "discrete_count": sum(bool(item["options"]) for item in schema),
+        "non_discrete_count": sum(not bool(item["options"]) for item in schema),
+    }
