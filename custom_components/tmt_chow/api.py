@@ -18,6 +18,7 @@ from aiohttp import ClientError, ClientSession
 from .const import (
     AUTH_MODE_KAITRON,
     AUTH_MODE_TMT,
+    ACTIVATION_EMAIL_PATH,
     BASE_URL,
     CERTIFICATE_PATH,
     DEVICES_PATH,
@@ -73,6 +74,17 @@ class TmtApiError(Exception):
 
 class TmtAuthError(TmtApiError):
     """Raised when the supplied account is rejected."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.payload = payload
 
 
 @dataclass(slots=True, frozen=True)
@@ -232,7 +244,7 @@ class TmtChowApi:
         url = urljoin(base_url, path)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.4-diagnostics",
+            "User-Agent": "HomeAssistant-TMT-Chow/1.0.1-beta.6-activation-diagnostics.1",
         }
         if basic_auth:
             encoded = base64.b64encode(OAUTH_CLIENT.encode()).decode()
@@ -359,7 +371,9 @@ class TmtChowApi:
                     )
                     raise TmtAuthError(
                         f"TMT API rejected the request: {response.status} "
-                        f"(diagnostic id {request_id})"
+                        f"(diagnostic id {request_id})",
+                        status=response.status,
+                        payload=payload if isinstance(payload, dict) else None,
                     )
 
                 if response.status < 200 or response.status >= 300:
@@ -553,6 +567,44 @@ class TmtChowApi:
             )
 
         self._access_token = token
+
+    async def async_send_activation_email(
+        self,
+        account: str,
+        email: str,
+    ) -> None:
+        """Request the same account activation email offered by the TMT app."""
+        self._diagnostic_sensitive_values = tuple(
+            value for value in (account, email) if value
+        )
+        _LOGGER.warning(
+            "TMTDIAG ACTIVATION_EMAIL_REQUEST account_len=%s "
+            "account_sha256=%s email_len=%s email_sha256=%s "
+            "app_type_index=%s",
+            len(account),
+            _fingerprint(account),
+            len(email),
+            _fingerprint(email),
+            TMT_APP_TYPE_INDEX,
+        )
+        payload = await self._request(
+            "POST",
+            ACTIVATION_EMAIL_PATH,
+            json={
+                "account": account,
+                "email": email,
+                "app_type_index": TMT_APP_TYPE_INDEX,
+            },
+            base_url=BASE_URL,
+            phase="account_activation_email",
+        )
+        _LOGGER.warning(
+            "TMTDIAG ACTIVATION_EMAIL_ACCEPTED account_sha256=%s "
+            "email_sha256=%s response_keys=%s",
+            _fingerprint(account),
+            _fingerprint(email),
+            sorted(payload.keys()),
+        )
 
     async def async_get_devices(self) -> list[TmtDevice]:
         _LOGGER.warning("TMTDIAG DEVICE_QUERY_START bearer_present=%s", bool(self._access_token))
