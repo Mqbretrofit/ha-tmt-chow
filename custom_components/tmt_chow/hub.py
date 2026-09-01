@@ -28,7 +28,14 @@ from .const import (
     SHADOW_REFRESH_SECONDS,
 )
 from .mqtt import AsyncMqttClient, MqttError
-from .parameters import PARAMETERS, encode_parameter_write, parse_parameter_response
+from .parameters import (
+    PARAMETERS,
+    P710U_PARAMETERS,
+    encode_parameter_write,
+    encode_p710u_parameter_write,
+    parse_parameter_response,
+    validate_p710u_write,
+)
 from .protocol import (
     GateStatus,
     decode_dev_status,
@@ -39,7 +46,7 @@ from .protocol import (
 
 _LOGGER = logging.getLogger(__name__)
 _READABLE_CONTROLLERS = {"PS21053", "PS21053C", "PS22087B"}
-_WRITABLE_CONTROLLERS = {"PS21053", "PS21053C"}
+_WRITABLE_CONTROLLERS = {"PS21053", "PS21053C", "PS22087B"}
 _NO_BATTERY_CONTROLLERS = {"PS22087B"}
 
 
@@ -190,11 +197,11 @@ class TmtChowHub:
     @property
     def supports_parameter_writes(self) -> bool:
         """Return whether this controller has a verified writable profile."""
-        return (
-            self.controller_type in _WRITABLE_CONTROLLERS
-            and self.parameters is not None
-            and len(self.parameters) == len(PARAMETERS)
-        )
+        if self.parameters is None or self.controller_type not in _WRITABLE_CONTROLLERS:
+            return False
+        if self.controller_type == "PS22087B":
+            return len(self.parameters) == len(P710U_PARAMETERS)
+        return len(self.parameters) == len(PARAMETERS)
 
     async def async_start(self) -> None:
         self._stopping = False
@@ -301,6 +308,68 @@ class TmtChowHub:
                 len(parsed),
                 self.available,
                 self.supports_battery,
+            )
+            self._notify()
+
+    async def async_set_p710u_parameter(self, index: int, value: int) -> None:
+        """Safely update one documented PS22087B/P710U RP/WP parameter."""
+        if self.controller_type != "PS22087B" or not self.supports_parameter_writes:
+            raise TmtCommandError(
+                "The controller does not have a writable P710U profile",
+                translation_key="unsupported_controller",
+            )
+        if not validate_p710u_write(index, value):
+            raise TmtCommandError(
+                "Unsupported P710U parameter value",
+                translation_key="unsupported_parameter_value",
+            )
+
+        async with self._transaction_lock:
+            current_response = await self._async_exchange("c=RP,1", "ACK RP,1")
+            current = parse_parameter_response(current_response)
+            if current is None or len(current) != len(P710U_PARAMETERS):
+                raise TmtCommandError(
+                    "Cannot write P710U parameters before a valid 15-value read",
+                    translation_key="parameters_not_ready",
+                )
+
+            updated = list(current)
+            old_value = updated[index]
+            updated[index] = value
+            values = tuple(updated)
+            command = encode_p710u_parameter_write(values)
+
+            _LOGGER.warning(
+                "TMTDIAG P710U_WP_START index=%s code=%s old=%s new=%s "
+                "preserved_b=%s preserved_d=%s",
+                index,
+                P710U_PARAMETERS[index].code,
+                old_value,
+                value,
+                current[10],
+                current[12],
+            )
+
+            await self._async_exchange(
+                f"c={command};src={self._source_tag}",
+                "ACK WP,1",
+            )
+
+            verify_response = await self._async_exchange("c=RP,1", "ACK RP,1")
+            verified = parse_parameter_response(verify_response)
+            if verified != values:
+                raise TmtCommandError(
+                    "P710U parameter verification failed after write",
+                    translation_key="parameter_verification_failed",
+                )
+
+            self.parameters = verified
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
+            _LOGGER.warning(
+                "TMTDIAG P710U_WP_VERIFIED index=%s code=%s value=%s",
+                index,
+                P710U_PARAMETERS[index].code,
+                value,
             )
             self._notify()
 
