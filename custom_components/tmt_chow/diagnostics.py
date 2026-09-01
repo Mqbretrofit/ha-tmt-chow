@@ -35,6 +35,8 @@ async def async_get_config_entry_diagnostics(
             "controller_capabilities": sorted(hub.controller_capabilities),
             "model_parameter_schema_id": hub.model_parameter_schema_id,
             "model_parameter_count": hub.model_parameter_count,
+            "model_parameter_codec_group": hub.model_parameter_codec_group,
+            "model_parameter_summary": hub.model_parameter_summary,
             "model_parameter_schema": hub.model_parameter_schema,
             "parameter_write_schema_verified": hub.parameter_schema_verified,
             "model_parameter_schema_available": hub.model_parameter_schema is not None,
