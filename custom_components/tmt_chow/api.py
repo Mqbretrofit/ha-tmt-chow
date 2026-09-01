@@ -78,6 +78,17 @@ class TmtApiError(Exception):
 class TmtAuthError(TmtApiError):
     """Raised when the supplied account is rejected."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.payload = payload
+
 
 @dataclass(slots=True, frozen=True)
 class TmtDevice:
@@ -363,7 +374,9 @@ class TmtChowApi:
                     )
                     raise TmtAuthError(
                         f"TMT API rejected the request: {response.status} "
-                        f"(diagnostic id {request_id})"
+                        f"(diagnostic id {request_id})",
+                        status=response.status,
+                        payload=payload if isinstance(payload, dict) else None,
                     )
 
                 if response.status < 200 or response.status >= 300:
@@ -446,6 +459,63 @@ class TmtChowApi:
             )
             raise
 
+    async def _async_firebase_login(
+        self,
+        email: str,
+        password: str,
+        app_type_index: int,
+        *,
+        source: str,
+    ) -> dict[str, Any]:
+        """Authenticate with Firebase, then exchange its ID token with TMT."""
+        self._diagnostic_sensitive_values = tuple(
+            dict.fromkeys((*self._diagnostic_sensitive_values, email, password))
+        )
+        email_fp = _fingerprint(email)
+        _LOGGER.warning(
+            "TMTDIAG FIREBASE_LOGIN_SELECTED source=%s email_len=%s "
+            "email_sha256=%s app_type_index=%s",
+            source,
+            len(email),
+            email_fp,
+            app_type_index,
+        )
+        firebase_response = await self._request(
+            "POST",
+            FIREBASE_SIGN_IN_PATH,
+            json={
+                "email": email,
+                "password": password,
+                "returnSecureToken": True,
+            },
+            base_url=FIREBASE_IDENTITY_BASE_URL,
+            phase="login:tmt_chow_firebase_identity",
+        )
+        id_token = _value(firebase_response, "idToken")
+        if not isinstance(id_token, str) or not id_token:
+            raise TmtAuthError(
+                "Firebase login response did not contain an ID token"
+            )
+        _LOGGER.warning(
+            "TMTDIAG FIREBASE_IDENTITY_OK source=%s email_sha256=%s "
+            "local_id_present=%s id_token_present=True",
+            source,
+            email_fp,
+            bool(_value(firebase_response, "localId")),
+        )
+        return await self._request(
+            "POST",
+            FIREBASE_VERIFY_PATH,
+            json={
+                "id_token": id_token,
+                "language": TMT_FIREBASE_LANGUAGE,
+                "app_type_index": app_type_index,
+            },
+            basic_auth=True,
+            base_url=BASE_URL,
+            phase="login:tmt_chow_firebase_verify",
+        )
+
     async def async_login(
         self,
         username: str,
@@ -487,112 +557,82 @@ class TmtChowApi:
             len(password),
         )
 
-        if auth_mode == AUTH_MODE_TMT and "@" in username:
-            backend = "tmt_chow_firebase"
+        try:
+            if auth_mode == AUTH_MODE_TMT and "@" in username:
+                backend = "tmt_chow_firebase_email"
+                payload = await self._async_firebase_login(
+                    username,
+                    password,
+                    app_type_index,
+                    source="email_input",
+                )
+            else:
+                login_payload = {
+                    "username": username,
+                    "password": password,
+                    "grant_type": "password",
+                    "scope": "user",
+                    "app_type_index": app_type_index,
+                }
+                try:
+                    payload = await self._request(
+                        "POST",
+                        path,
+                        json=login_payload,
+                        basic_auth=True,
+                        base_url=base_url,
+                        phase=f"login:{backend}",
+                    )
+                except TmtAuthError as err:
+                    error_payload = err.payload or {}
+                    returned_email = error_payload.get("email")
+                    error_code = str(error_payload.get("error_code", ""))
+                    if (
+                        auth_mode == AUTH_MODE_TMT
+                        and error_code == "-1003"
+                        and isinstance(returned_email, str)
+                        and returned_email
+                    ):
+                        backend = "tmt_chow_firebase_fallback"
+                        _LOGGER.warning(
+                            "TMTDIAG FIREBASE_FALLBACK_TRIGGERED "
+                            "legacy_error_code=-1003 username_sha256=%s "
+                            "returned_email_len=%s returned_email_sha256=%s",
+                            username_fp,
+                            len(returned_email),
+                            _fingerprint(returned_email),
+                        )
+                        payload = await self._async_firebase_login(
+                            returned_email,
+                            password,
+                            app_type_index,
+                            source="legacy_error_1003",
+                        )
+                    else:
+                        raise
+        except TmtAuthError:
             _LOGGER.warning(
-                "TMTDIAG FIREBASE_LOGIN_SELECTED email_len=%s email_sha256=%s",
+                "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
+                "app_type_index=%s username_len=%s username_sha256=%s",
+                backend,
+                auth_mode,
+                app_type_index,
                 len(username),
                 username_fp,
             )
-            firebase_payload = {
-                "email": username,
-                "password": password,
-                "returnSecureToken": True,
-            }
-            try:
-                firebase_response = await self._request(
-                    "POST",
-                    FIREBASE_SIGN_IN_PATH,
-                    json=firebase_payload,
-                    base_url=FIREBASE_IDENTITY_BASE_URL,
-                    phase="login:tmt_chow_firebase_identity",
-                )
-                id_token = _value(firebase_response, "idToken")
-                if not isinstance(id_token, str) or not id_token:
-                    raise TmtAuthError(
-                        "Firebase login response did not contain an ID token"
-                    )
-                _LOGGER.warning(
-                    "TMTDIAG FIREBASE_IDENTITY_OK email_sha256=%s "
-                    "local_id_present=%s id_token_present=True",
-                    username_fp,
-                    bool(_value(firebase_response, "localId")),
-                )
-                payload = await self._request(
-                    "POST",
-                    FIREBASE_VERIFY_PATH,
-                    json={
-                        "id_token": id_token,
-                        "language": TMT_FIREBASE_LANGUAGE,
-                        "app_type_index": app_type_index,
-                    },
-                    basic_auth=True,
-                    base_url=BASE_URL,
-                    phase="login:tmt_chow_firebase_verify",
-                )
-            except TmtAuthError:
-                _LOGGER.warning(
-                    "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
-                    "app_type_index=%s username_len=%s username_sha256=%s",
-                    backend,
-                    auth_mode,
-                    app_type_index,
-                    len(username),
-                    username_fp,
-                )
-                raise
-            except TmtApiError:
-                _LOGGER.warning(
-                    "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s "
-                    "auth_mode=%s app_type_index=%s username_len=%s "
-                    "username_sha256=%s",
-                    backend,
-                    auth_mode,
-                    app_type_index,
-                    len(username),
-                    username_fp,
-                )
-                raise
-        else:
-            login_payload = {
-                "username": username,
-                "password": password,
-                "grant_type": "password",
-                "scope": "user",
-                "app_type_index": app_type_index,
-            }
-            try:
-                payload = await self._request(
-                    "POST",
-                    path,
-                    json=login_payload,
-                    basic_auth=True,
-                    base_url=base_url,
-                    phase=f"login:{backend}",
-                )
-            except TmtAuthError:
-                _LOGGER.warning(
-                    "TMTDIAG LOGIN_REJECTED backend=%s auth_mode=%s "
-                    "app_type_index=%s username_len=%s username_sha256=%s",
-                    backend,
-                    auth_mode,
-                    app_type_index,
-                    len(username),
-                    username_fp,
-                )
-                raise
-            except TmtApiError:
-                _LOGGER.warning(
-                    "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s "
-                    "auth_mode=%s app_type_index=%s username_len=%s "
-                    "username_sha256=%s",
-                    backend,
-                    auth_mode,
-                    app_type_index,
-                    len(username),
-                    username_fp,
-                )
-                raise
+            raise
+        except TmtApiError:
+            _LOGGER.warning(
+                "TMTDIAG LOGIN_TRANSPORT_OR_API_ERROR backend=%s "
+                "auth_mode=%s app_type_index=%s username_len=%s "
+                "username_sha256=%s",
+                backend,
+                auth_mode,
+                app_type_index,
+                len(username),
+                username_fp,
+            )
+            raise
 
         token = _value(payload, "access_token", "token")
         refresh_token = _value(payload, "refresh_token")
