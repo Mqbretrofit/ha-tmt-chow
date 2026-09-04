@@ -107,6 +107,8 @@ class TmtChowHub:
         self._availability_expiry_task: asyncio.Task[None] | None = None
         self._last_message_monotonic: float | None = None
         self._last_shadow_monotonic: float | None = None
+        self._last_live_position_monotonic: float | None = None
+        self._last_operating_status_monotonic: float | None = None
         self._state_synchronized = False
         self._stopping = False
 
@@ -222,16 +224,38 @@ class TmtChowHub:
         return transport
 
     async def async_open(self) -> None:
-        await self._async_command("FULL OPEN", "ACK FULL OPEN")
-        self.is_operating = True
-        self.movement = "opening"
-        self._notify()
+        acknowledged = await self._async_command(
+            "FULL OPEN",
+            "ACK FULL OPEN",
+            motion_direction="opening",
+        )
+        if acknowledged:
+            self.is_operating = True
+            self.movement = "opening"
+            self._notify()
 
     async def async_close(self) -> None:
-        await self._async_command("FULL CLOSE", "ACK FULL CLOSE")
-        self.is_operating = True
-        self.movement = "closing"
-        self._notify()
+        acknowledged = await self._async_command(
+            "FULL CLOSE",
+            "ACK FULL CLOSE",
+            motion_direction="closing",
+        )
+        if acknowledged:
+            self.is_operating = True
+            self.movement = "closing"
+            self._notify()
+
+    async def async_pedestrian_open(self) -> None:
+        """Open to the controller's configured pedestrian/partial position."""
+        acknowledged = await self._async_command(
+            "PED OPEN",
+            "ACK PED OPEN",
+            motion_direction="opening",
+        )
+        if acknowledged:
+            self.is_operating = True
+            self.movement = "opening"
+            self._notify()
 
     async def async_stop_gate(self) -> None:
         await self._async_command("STOP", "ACK STOP")
@@ -327,12 +351,90 @@ class TmtChowHub:
             self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
             self._notify()
 
-    async def _async_command(self, command: str, acknowledgement: str) -> None:
+    async def _async_command(
+        self,
+        command: str,
+        acknowledgement: str,
+        *,
+        motion_direction: str | None = None,
+    ) -> bool:
+        """Send one command and return whether its explicit ACK was received.
+
+        Movement commands are never resent. If the explicit ACK is lost but
+        fresh post-command telemetry proves that the requested motion started,
+        the command is accepted as successful and False is returned so callers
+        do not overwrite newer live state with optimistic state.
+        """
         async with self._transaction_lock:
-            await self._async_exchange(
-                f"c={command};src={self._source_tag}",
-                acknowledgement,
-            )
+            start_position = self.position
+            start_operating = self.is_operating
+            command_started = time.monotonic()
+            try:
+                await self._async_exchange(
+                    f"c={command};src={self._source_tag}",
+                    acknowledgement,
+                )
+                return True
+            except TmtCommandError as err:
+                if (
+                    err.translation_key == "no_acknowledgement"
+                    and isinstance(err.__cause__, TimeoutError)
+                    and motion_direction is not None
+                    and self._motion_confirms_command(
+                        motion_direction,
+                        start_position=start_position,
+                        start_operating=start_operating,
+                        command_started=command_started,
+                    )
+                ):
+                    _LOGGER.warning(
+                        "%s was not received for %s, but fresh gate telemetry "
+                        "confirms %s motion; treating the command as successful",
+                        acknowledgement,
+                        command,
+                        motion_direction,
+                    )
+                    return False
+                raise
+
+    def _motion_confirms_command(
+        self,
+        direction: str,
+        *,
+        start_position: int | None,
+        start_operating: bool | None,
+        command_started: float,
+    ) -> bool:
+        """Return whether fresh telemetry proves a timed-out motion command ran."""
+        if start_operating is True:
+            return False
+
+        fresh_operating_status = (
+            self._last_operating_status_monotonic is not None
+            and self._last_operating_status_monotonic >= command_started
+        )
+        if (
+            fresh_operating_status
+            and self.is_operating is True
+            and self.movement == direction
+        ):
+            return True
+
+        fresh_live_position = (
+            self._last_live_position_monotonic is not None
+            and self._last_live_position_monotonic >= command_started
+        )
+        if (
+            not fresh_live_position
+            or start_position is None
+            or self.position is None
+        ):
+            return False
+        if direction == "opening":
+            return self.position > start_position
+        if direction == "closing":
+            return self.position < start_position
+        return False
 
     async def _async_exchange(self, payload: str, expected: str) -> str:
         if not self._mqtt.connected or self.device_online is False:
@@ -415,6 +517,7 @@ class TmtChowHub:
         elif topic == self.position_topic:
             position = parse_position(payload)
             if position is not None:
+                self._last_live_position_monotonic = time.monotonic()
                 self._apply_position(position)
         elif topic in (self.shadow_get_accepted_topic, self.shadow_documents_topic):
             try:
@@ -484,6 +587,7 @@ class TmtChowHub:
             self.is_operating = status.is_operating
 
         if status.is_operating:
+            self._last_operating_status_monotonic = time.monotonic()
             # The vendor app uses bit 7 of status byte 3 as the movement side
             # while byte 2 bit 6 says that the motor is operating. The low
             # position bits in Shadow can be stale during travel; live movement
@@ -491,11 +595,30 @@ class TmtChowHub:
             if status.is_open_direction is not None:
                 self.movement = "opening" if status.is_open_direction else "closing"
         else:
-            if status.position is not None:
+            if status.position is not None and self._status_position_is_plausible(
+                status.position
+            ):
                 self._apply_position(status.position, derive_movement=False)
             self.movement = None
         if status.battery_percent is not None:
             self.battery_percent = status.battery_percent
+
+    def _status_position_is_plausible(self, status_position: int) -> bool:
+        """Reject a stale stop-position that contradicts the completed motion."""
+        if self.movement is None or self.position is None:
+            return True
+        normalized = (
+            0
+            if status_position <= 5
+            else 100
+            if status_position >= 95
+            else status_position
+        )
+        if self.movement == "closing":
+            return normalized <= self.position
+        if self.movement == "opening":
+            return normalized >= self.position
+        return True
 
     def _apply_position(self, position: int, *, derive_movement: bool = True) -> None:
         old_position = self.position
