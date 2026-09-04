@@ -74,6 +74,18 @@ class AsyncMqttClient:
         self._connected = asyncio.Event()
         self._packet_id = 0
 
+        # Diagnostic-only capture topic used by the pedestrian-mode test build.
+        # The normal hub subscribes to <uuid>/wbt01Tx and publishes commands to
+        # <uuid>/wbt01Rx. Derive the matching Rx topic here so the test build can
+        # observe commands sent by the vendor app without changing production
+        # hub behaviour.
+        self._capture_topic: str | None = None
+        for topic in topics:
+            if topic.endswith("/wbt01Tx"):
+                self._capture_topic = f"{topic[:-len('/wbt01Tx')]}/wbt01Rx"
+                break
+        self._capture_subscription_enabled = False
+
     @property
     def connected(self) -> bool:
         return self._connected.is_set()
@@ -103,6 +115,12 @@ class AsyncMqttClient:
         """Publish exactly once at QoS 0; never queue or retry commands."""
         if not self.connected:
             raise MqttError("AWS IoT is not connected")
+        if topic == self._capture_topic:
+            _LOGGER.warning(
+                "TMTDIAG COMMAND_CAPTURE HA_PUBLISH topic=%s payload=%s",
+                topic,
+                payload,
+            )
         body = _utf8(topic) + payload.encode("utf-8")
         await self._write_packet(0x30, body)
 
@@ -164,8 +182,14 @@ class AsyncMqttClient:
 
     async def _subscribe(self) -> None:
         self._packet_id = (self._packet_id % 65535) + 1
+        subscription_topics = list(self._topics)
+        capture_index: int | None = None
+        if self._capture_topic and self._capture_topic not in subscription_topics:
+            capture_index = len(subscription_topics)
+            subscription_topics.append(self._capture_topic)
+
         body = self._packet_id.to_bytes(2, "big") + b"".join(
-            _utf8(topic) + b"\x00" for topic in self._topics
+            _utf8(topic) + b"\x00" for topic in subscription_topics
         )
         await self._write_packet(0x82, body)
         header, response = await asyncio.wait_for(self._read_packet(), timeout=10)
@@ -175,8 +199,30 @@ class AsyncMqttClient:
             or response[:2] != self._packet_id.to_bytes(2, "big")
         ):
             raise MqttError("Invalid MQTT SUBACK")
-        if any(code == 0x80 for code in response[2:]):
+
+        result_codes = response[2:]
+        if len(result_codes) < len(subscription_topics):
+            raise MqttError("Incomplete MQTT SUBACK")
+
+        for index, code in enumerate(result_codes[: len(subscription_topics)]):
+            if code != 0x80:
+                continue
+            if capture_index is not None and index == capture_index:
+                _LOGGER.warning(
+                    "TMTDIAG COMMAND_CAPTURE SUBSCRIBE_REJECTED topic=%s",
+                    self._capture_topic,
+                )
+                continue
             raise MqttError("AWS IoT rejected an MQTT subscription")
+
+        self._capture_subscription_enabled = (
+            capture_index is not None and result_codes[capture_index] != 0x80
+        )
+        if self._capture_subscription_enabled:
+            _LOGGER.warning(
+                "TMTDIAG COMMAND_CAPTURE ENABLED topic=%s",
+                self._capture_topic,
+            )
 
     async def _read_loop(self) -> None:
         while True:
@@ -224,6 +270,20 @@ class AsyncMqttClient:
                 return
             topic = body[2 : 2 + topic_len].decode("utf-8", errors="replace")
             payload = body[offset:].decode("utf-8", errors="replace")
+
+            if topic == self._capture_topic:
+                _LOGGER.warning(
+                    "TMTDIAG COMMAND_CAPTURE RX topic=%s payload=%s",
+                    topic,
+                    payload,
+                )
+            elif topic.endswith("/wbt01Tx"):
+                _LOGGER.warning(
+                    "TMTDIAG COMMAND_CAPTURE TX topic=%s payload=%s",
+                    topic,
+                    payload,
+                )
+
             try:
                 await self._message_callback(topic, payload)
             except asyncio.CancelledError:
