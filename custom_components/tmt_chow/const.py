@@ -7,7 +7,13 @@ from typing import Final
 from homeassistant.const import Platform
 
 DOMAIN: Final = "tmt_chow"
-PLATFORMS: Final = [Platform.COVER, Platform.SELECT, Platform.NUMBER, Platform.SENSOR]
+PLATFORMS: Final = [
+    Platform.COVER,
+    Platform.BUTTON,
+    Platform.SELECT,
+    Platform.NUMBER,
+    Platform.SENSOR,
+]
 
 BASE_URL: Final = "https://installer.tmt-automation.com/"
 LOGIN_PATH: Final = "v4.0/user/outh2/token/"
