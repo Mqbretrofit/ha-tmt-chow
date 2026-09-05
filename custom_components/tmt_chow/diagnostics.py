@@ -21,7 +21,7 @@ async def async_get_config_entry_diagnostics(
     entry: ConfigEntry,
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
-    profile = protocol_profile_for(hub.controller_type)
+    profile = protocol_profile_for(hub.parameter_model_type)
     schema = hub.model_parameter_schema
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
@@ -34,9 +34,12 @@ async def async_get_config_entry_diagnostics(
             "is_operating": hub.is_operating,
             "battery_percent": hub.battery_percent,
             "controller_type": hub.controller_type,
+            "configured_controller_type": hub.configured_controller_type,
             "controller_family": hub.controller_family,
             "controller_capabilities": sorted(hub.controller_capabilities),
             "product_type": hub.product_type,
+            "parameter_model_type": hub.parameter_model_type,
+            "parameter_model_source": hub.parameter_model_source,
             "model_parameter_schema_available": schema is not None,
             "model_parameter_schema_count": len(schema or ()),
             "parameter_codec_available": profile is not None,
@@ -44,7 +47,7 @@ async def async_get_config_entry_diagnostics(
             "parameter_skip_positions": list(profile[1]) if profile is not None else [],
             "parameter_codec_profile": profile[2] if profile is not None else None,
             "parameter_extended_suffix": profile[3] if profile is not None else "",
-            "parameter_write_schema_verified": hub.parameter_schema_verified,
+            "parameter_write_schema_verified": hub.parameter_write_schema_verified,
             "model_parameter_schema": [
                 {
                     "index": index,
