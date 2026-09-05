@@ -12,6 +12,7 @@ from .const import CONF_CERTIFICATE_ARN, CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY,
 from .hub import TmtChowHub
 from .model_parameter_schemas import parameter_name, parameter_options
 from .model_protocol_profiles import protocol_profile_for
+from .ps21050d_parameters import CONTROLLER_TYPE as PS21050D
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -21,7 +22,11 @@ async def async_get_config_entry_diagnostics(
     entry: ConfigEntry,
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
-    profile = protocol_profile_for(hub.parameter_model_type)
+    profile = (
+        (1, (), "raw20_read_only", "")
+        if hub.parameter_model_type == PS21050D
+        else protocol_profile_for(hub.parameter_model_type)
+    )
     schema = hub.model_parameter_schema
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
@@ -48,6 +53,10 @@ async def async_get_config_entry_diagnostics(
             "parameter_codec_profile": profile[2] if profile is not None else None,
             "parameter_extended_suffix": profile[3] if profile is not None else "",
             "parameter_write_schema_verified": hub.parameter_write_schema_verified,
+            "parameter_read_only": (
+                hub.parameter_model_type == PS21050D
+                and hub.parameter_schema_verified
+            ),
             "model_parameter_schema": [
                 {
                     "index": index,
