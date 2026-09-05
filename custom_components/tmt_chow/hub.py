@@ -86,9 +86,12 @@ class TmtChowHub:
         self.name = name
         self.product_type = product_type
         initial_controller_type = normalize_controller_type(device_type)
+        self.configured_controller_type: str | None = initial_controller_type or None
         self.controller_type: str | None = None
         self.controller_family: str | None = None
         self.controller_capabilities: frozenset[str] = frozenset()
+        self.parameter_model_type: str | None = None
+        self.parameter_model_source: str | None = None
         self.model_parameter_schema: tuple | None = None
         self._set_controller_type(initial_controller_type or None)
         self.position: int | None = None
@@ -152,20 +155,29 @@ class TmtChowHub:
 
     @property
     def parameter_schema_verified(self) -> bool:
-        """Return whether the APK supplies both schema and wire codec."""
+        """Return whether a safe read schema and wire codec are available."""
         return (
             self.model_parameter_schema is not None
-            and parameter_transport_for(self.controller_type) is not None
+            and parameter_transport_for(self.parameter_model_type) is not None
+        )
+
+    @property
+    def parameter_write_schema_verified(self) -> bool:
+        """Return whether parameter writes are verified for the live controller."""
+        return (
+            self.parameter_schema_verified
+            and self.parameter_model_type is not None
+            and self.parameter_model_type == self.controller_type
         )
 
     @property
     def supports_parameters(self) -> bool:
-        """Return whether this concrete controller has a decoded vendor schema."""
-        return self.parameter_schema_verified
+        """Return whether writable parameter entities are safe for this controller."""
+        return self.parameter_write_schema_verified
 
     @property
     def may_probe_parameters(self) -> bool:
-        """Return whether this model has a safe vendor-specific read codec."""
+        """Return whether this controller has a safe read-only parameter profile."""
         return self.parameter_schema_verified
 
     async def async_start(self) -> None:
@@ -207,15 +219,37 @@ class TmtChowHub:
         return lambda: self._listeners.discard(listener)
 
     def _set_controller_type(self, controller_type: str | None) -> None:
-        """Apply all model metadata from one concrete controller type."""
+        """Apply identity metadata and select the safest parameter read profile."""
         normalized = normalize_controller_type(controller_type)
         self.controller_type = normalized or None
         self.controller_family = controller_family(self.controller_type)
         self.controller_capabilities = controller_capabilities(self.controller_type)
-        self.model_parameter_schema = parameter_schema_for(self.controller_type)
+
+        parameter_model = self.controller_type
+        parameter_source: str | None = "controller" if parameter_model else None
+        if (
+            parameter_model is None
+            or parameter_schema_for(parameter_model) is None
+            or parameter_transport_for(parameter_model) is None
+        ):
+            configured = self.configured_controller_type
+            if (
+                configured is not None
+                and parameter_schema_for(configured) is not None
+                and parameter_transport_for(configured) is not None
+            ):
+                parameter_model = configured
+                parameter_source = "configured_fallback"
+            else:
+                parameter_model = None
+                parameter_source = None
+
+        self.parameter_model_type = parameter_model
+        self.parameter_model_source = parameter_source
+        self.model_parameter_schema = parameter_schema_for(self.parameter_model_type)
 
     def _parameter_transport(self):
-        transport = parameter_transport_for(self.controller_type)
+        transport = parameter_transport_for(self.parameter_model_type)
         if transport is None or self.model_parameter_schema is None:
             raise TmtCommandError(
                 "No verified parameter codec exists for this controller",
@@ -271,7 +305,7 @@ class TmtChowHub:
                 transport.read_ack,
             )
             parsed = decode_model_parameter_response(
-                self.controller_type,
+                self.parameter_model_type,
                 response,
             )
             if parsed is None:
@@ -284,6 +318,11 @@ class TmtChowHub:
             self._notify()
 
     async def async_set_parameter(self, index: int, value: int) -> None:
+        if not self.parameter_write_schema_verified:
+            raise TmtCommandError(
+                "Parameter writing is not verified for this live controller variant",
+                translation_key="unsupported_controller",
+            )
         transport = self._parameter_transport()
         schema = self.model_parameter_schema
         if schema is None or not 0 <= index < len(schema):
@@ -303,7 +342,7 @@ class TmtChowHub:
                 transport.read_ack,
             )
             current = decode_model_parameter_response(
-                self.controller_type,
+                self.parameter_model_type,
                 current_response,
             )
             if current is None:
@@ -317,7 +356,7 @@ class TmtChowHub:
             values = tuple(updated)
             try:
                 command = encode_model_parameter_write(
-                    self.controller_type,
+                    self.parameter_model_type,
                     values,
                 )
             except ParameterCodecError as err:
@@ -339,7 +378,7 @@ class TmtChowHub:
                 transport.read_ack,
             )
             verified = decode_model_parameter_response(
-                self.controller_type,
+                self.parameter_model_type,
                 verify_response,
             )
             if verified is None or verified[index] != int(value):
@@ -491,7 +530,7 @@ class TmtChowHub:
         if topic == self.tx_topic:
             self.attributes[ATTR_LAST_RESPONSE] = payload
             parsed_parameters = decode_model_parameter_response(
-                self.controller_type,
+                self.parameter_model_type,
                 payload,
             )
             if parsed_parameters is not None:
@@ -576,7 +615,7 @@ class TmtChowHub:
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
             parsed = decode_model_parameter_response(
-                self.controller_type,
+                self.parameter_model_type,
                 parameter_payload,
             )
             if parsed is not None:
