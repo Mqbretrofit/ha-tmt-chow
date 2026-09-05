@@ -34,6 +34,7 @@ from .model_parameter_schemas import parameter_schema_for
 from .mqtt import AsyncMqttClient, MqttError
 from .parameter_codec import (
     ParameterCodecError,
+    ParameterTransport,
     decode_model_parameter_response,
     encode_model_parameter_write,
     is_editable_parameter,
@@ -45,6 +46,11 @@ from .protocol import (
     extract_shadow_reported,
     parse_ack_rs,
     parse_position,
+)
+from .ps21050d_parameters import (
+    CONTROLLER_TYPE as PS21050D,
+    PARAMETERS as PS21050D_PARAMETERS,
+    parse_parameter_response as parse_ps21050d_parameter_response,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -156,10 +162,11 @@ class TmtChowHub:
     @property
     def parameter_schema_verified(self) -> bool:
         """Return whether a safe read schema and wire codec are available."""
-        return (
-            self.model_parameter_schema is not None
-            and parameter_transport_for(self.parameter_model_type) is not None
-        )
+        if self.model_parameter_schema is None:
+            return False
+        if self.parameter_model_type == PS21050D:
+            return True
+        return parameter_transport_for(self.parameter_model_type) is not None
 
     @property
     def parameter_write_schema_verified(self) -> bool:
@@ -168,6 +175,7 @@ class TmtChowHub:
             self.parameter_schema_verified
             and self.parameter_model_type is not None
             and self.parameter_model_type == self.controller_type
+            and self.controller_type != PS21050D
         )
 
     @property
@@ -225,6 +233,12 @@ class TmtChowHub:
         self.controller_family = controller_family(self.controller_type)
         self.controller_capabilities = controller_capabilities(self.controller_type)
 
+        if self.controller_type == PS21050D:
+            self.parameter_model_type = PS21050D
+            self.parameter_model_source = "live_raw_read_only"
+            self.model_parameter_schema = PS21050D_PARAMETERS
+            return
+
         parameter_model = self.controller_type
         parameter_source: str | None = "controller" if parameter_model else None
         if (
@@ -248,7 +262,9 @@ class TmtChowHub:
         self.parameter_model_source = parameter_source
         self.model_parameter_schema = parameter_schema_for(self.parameter_model_type)
 
-    def _parameter_transport(self):
+    def _parameter_transport(self) -> ParameterTransport:
+        if self.parameter_model_type == PS21050D:
+            return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         transport = parameter_transport_for(self.parameter_model_type)
         if transport is None or self.model_parameter_schema is None:
             raise TmtCommandError(
@@ -256,6 +272,11 @@ class TmtChowHub:
                 translation_key="unsupported_controller",
             )
         return transport
+
+    def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self.parameter_model_type == PS21050D:
+            return parse_ps21050d_parameter_response(payload)
+        return decode_model_parameter_response(self.parameter_model_type, payload)
 
     async def async_open(self) -> None:
         acknowledged = await self._async_command(
@@ -304,10 +325,7 @@ class TmtChowHub:
                 f"c={transport.read_command}",
                 transport.read_ack,
             )
-            parsed = decode_model_parameter_response(
-                self.parameter_model_type,
-                response,
-            )
+            parsed = self._decode_parameter_response(response)
             if parsed is None:
                 raise TmtCommandError(
                     "The gate returned no valid model-specific parameter set",
@@ -341,10 +359,7 @@ class TmtChowHub:
                 f"c={transport.read_command}",
                 transport.read_ack,
             )
-            current = decode_model_parameter_response(
-                self.parameter_model_type,
-                current_response,
-            )
+            current = self._decode_parameter_response(current_response)
             if current is None:
                 raise TmtCommandError(
                     "Cannot write parameters before a valid model-specific read",
@@ -377,10 +392,7 @@ class TmtChowHub:
                 f"c={transport.read_command}",
                 transport.read_ack,
             )
-            verified = decode_model_parameter_response(
-                self.parameter_model_type,
-                verify_response,
-            )
+            verified = self._decode_parameter_response(verify_response)
             if verified is None or verified[index] != int(value):
                 raise TmtCommandError(
                     "Parameter verification failed after write",
@@ -529,10 +541,7 @@ class TmtChowHub:
         self._last_message_monotonic = time.monotonic()
         if topic == self.tx_topic:
             self.attributes[ATTR_LAST_RESPONSE] = payload
-            parsed_parameters = decode_model_parameter_response(
-                self.parameter_model_type,
-                payload,
-            )
+            parsed_parameters = self._decode_parameter_response(payload)
             if parsed_parameters is not None:
                 self.parameters = parsed_parameters
                 self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, parsed_parameters))
@@ -614,10 +623,7 @@ class TmtChowHub:
                     asyncio.create_task(self._async_refresh_parameters_safely())
         parameter_payload = normalized.get("dev param")
         if isinstance(parameter_payload, str):
-            parsed = decode_model_parameter_response(
-                self.parameter_model_type,
-                parameter_payload,
-            )
+            parsed = self._decode_parameter_response(parameter_payload)
             if parsed is not None:
                 self.parameters = parsed
 
