@@ -35,6 +35,11 @@
         "name": "Akkumulátor"
       }
     },
+    "button": {
+      "pedestrian_open": {
+        "name": "Gyalogos nyitás"
+      }
+    },
     "select": {
       "operation_direction": {
         "name": "Működési irány",
