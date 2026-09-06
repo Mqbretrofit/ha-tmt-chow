@@ -8,8 +8,9 @@ from custom_components.tmt_chow.controller_types import (
     CAPABILITY_PEDESTRIAN,
     controller_capabilities,
 )
-from custom_components.tmt_chow.hub import TmtChowHub, TmtCommandError
+from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.protocol import GateStatus
+from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
 
 def _hub(device_type: str = "PS21053C") -> TmtChowHub:
@@ -64,6 +65,76 @@ def test_stale_stop_status_cannot_close_a_just_opened_gate() -> None:
     assert hub.position == 100
     assert hub.is_operating is False
     assert hub.movement is None
+
+
+def test_endpoint_position_keeps_recent_closing_direction_for_late_stale_status() -> None:
+    hub = _hub()
+    hub.position = 20
+    hub.movement = "closing"
+    hub.is_operating = True
+
+    # The dedicated live /position topic reaches the endpoint first and clears
+    # movement. A late stale stopped DEV STATUS must not flip the gate open.
+    hub._apply_position(0)
+    assert hub.position == 0
+    assert hub.movement is None
+
+    hub._apply_status(
+        GateStatus(
+            position=100,
+            is_operating=False,
+            is_open_direction=False,
+            battery_percent=90,
+        )
+    )
+
+    assert hub.position == 0
+    assert hub.is_operating is False
+    assert hub.movement is None
+
+
+def test_endpoint_position_keeps_recent_opening_direction_for_late_stale_status() -> None:
+    hub = _hub()
+    hub.position = 80
+    hub.movement = "opening"
+    hub.is_operating = True
+
+    hub._apply_position(100)
+    assert hub.position == 100
+    assert hub.movement is None
+
+    hub._apply_status(
+        GateStatus(
+            position=0,
+            is_operating=False,
+            is_open_direction=True,
+            battery_percent=90,
+        )
+    )
+
+    assert hub.position == 100
+    assert hub.is_operating is False
+    assert hub.movement is None
+
+
+def test_expired_direction_guard_does_not_block_normal_idle_status() -> None:
+    hub = _hub()
+    hub.position = 0
+    hub.movement = None
+    hub.is_operating = False
+    hub._last_completed_motion_direction = "closing"
+    hub._last_completed_motion_monotonic = 0.0
+
+    hub._apply_status(
+        GateStatus(
+            position=35,
+            is_operating=False,
+            is_open_direction=False,
+            battery_percent=90,
+        )
+    )
+
+    assert hub.position == 35
 
 
 def test_stop_mid_travel_can_still_accept_reported_position() -> None:
