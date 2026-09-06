@@ -81,6 +81,32 @@ def _extract_app_layout() -> tuple[tuple, tuple, tuple]:
 
 PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
 
+# Conservative fallback for an unexpected PS21050D identity that was NOT
+# configured by the TMT account API as PS21050. It stays diagnostic/read-only
+# and deliberately carries no vendor labels or writable options.
+RAW_PARAMETERS: Final = tuple(
+    (
+        "n",
+        f"ps21050d_raw_{index:02d}",
+        None,
+        4,
+        0,
+        0,
+        0,
+        255,
+        None,
+        None,
+        None,
+        0,
+        255,
+        1,
+        1.0,
+        None,
+        None,
+    )
+    for index in range(1, PARAMETER_COUNT + 1)
+)
+
 _RP_RE = re.compile(r"(?:^|\b)ACK RP(?:,1)?:([^;\r\n]+)")
 
 
