@@ -8,8 +8,8 @@ from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
 from .parameter_codec import is_editable_parameter
 from .ps21050d_parameters import (
     APP_MODEL,
+    APP_PARAMETERS,
     CONTROLLER_TYPE,
-    PARAMETERS,
     PS21050DParameterError,
     encode_parameter_write,
 )
@@ -39,7 +39,7 @@ class TmtChowHub(BaseTmtChowHub):
             self.controller_capabilities = controller_capabilities(APP_MODEL)
             self.parameter_model_type = CONTROLLER_TYPE
             self.parameter_model_source = "apk_ps21050_alias"
-            self.model_parameter_schema = PARAMETERS
+            self.model_parameter_schema = APP_PARAMETERS
             return
         super()._set_controller_type(controller_type)
 
