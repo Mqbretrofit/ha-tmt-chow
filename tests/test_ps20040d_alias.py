@@ -19,7 +19,7 @@ def _hub() -> TmtChowHub:
     )
 
 
-def test_ps20040d_live_alias_keeps_ps20040_family_and_pedestrian_capability() -> None:
+def test_ps20040d_live_alias_keeps_ps20040_family_pedestrian_and_write_codec() -> None:
     hub = _hub()
 
     # Account/configured model is PS20040; live DEV INFO later reports PS20040D.
@@ -30,12 +30,13 @@ def test_ps20040d_live_alias_keeps_ps20040_family_and_pedestrian_capability() ->
     assert hub.controller_family == "sliding"
     assert CAPABILITY_PEDESTRIAN in hub.controller_capabilities
 
-    # Keep the PS20040 parameter layout available for reads, but do not trust
-    # it for writes until the D-variant wire mapping is independently proven.
+    # The exact app/live alias uses the PS20040 RP,1/WP,1 schema and keeps the
+    # base hub's read-before-write plus mandatory read-back verification.
     assert hub.parameter_model_type == "PS20040"
-    assert hub.parameter_model_source == "apk_ps20040_alias_read_only"
+    assert hub.parameter_model_source == "apk_ps20040_alias"
     assert hub.parameter_schema_verified is True
-    assert hub.parameter_write_schema_verified is False
+    assert hub.parameter_write_schema_verified is True
+    assert hub.supports_parameters is True
 
 
 def test_ff_battery_status_is_not_exposed_as_127_percent() -> None:
