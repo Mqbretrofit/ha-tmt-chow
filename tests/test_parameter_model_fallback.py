@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 
 from custom_components.tmt_chow.model_parameter_schemas import parameter_options
-from custom_components.tmt_chow.parameter_codec import encode_model_parameter_write
+from custom_components.tmt_chow.parameter_codec import (
+    decode_model_parameter_response,
+    encode_model_parameter_write,
+)
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
-_LIVE_VALUES = (
+_LIVE_WIRE_VALUES = (
     0,
     1,
     1,
@@ -30,8 +33,8 @@ _LIVE_VALUES = (
     1,
     0,
 )
-_LIVE_BODY = ",".join(map(str, _LIVE_VALUES))
-_APK_KEYS = (
+_LIVE_BODY = ",".join(map(str, _LIVE_WIRE_VALUES))
+_APK_WIRE_KEYS = (
     "func_system_learn_method",
     "func_open_over_current",
     "func_close_over_current",
@@ -70,6 +73,11 @@ def _hub(device_type: str) -> TmtChowHub:
     )
 
 
+def _wire_specs(schema: tuple) -> tuple:
+    """Return schema entries that consume RP,1/WP,1 wire positions."""
+    return tuple(spec for spec in schema if int(spec[3] or 0) < 10)
+
+
 def test_ps21050d_uses_vendor_ps21050_profile() -> None:
     hub = _hub("PS21050")
 
@@ -82,22 +90,27 @@ def test_ps21050d_uses_vendor_ps21050_profile() -> None:
     assert hub.parameter_model_type == "PS21050"
     assert hub.parameter_model_source == "apk_ps21050_alias"
     assert hub.model_parameter_schema is not None
-    assert len(hub.model_parameter_schema) == 20
-    assert tuple(spec[1] for spec in hub.model_parameter_schema) == _APK_KEYS
+    wire_specs = _wire_specs(hub.model_parameter_schema)
+    assert len(wire_specs) == 20
+    assert tuple(spec[1] for spec in wire_specs) == _APK_WIRE_KEYS
     assert hub.may_probe_parameters is True
     assert hub.parameter_write_schema_verified is True
     assert hub.supports_parameters is True
 
 
-def test_ps21050_apk_option_counts_match_extracted_model() -> None:
+def test_ps21050_apk_option_counts_match_extracted_wire_model() -> None:
     hub = _hub("PS21050")
     hub._set_controller_type("PS21050D")
     schema = hub.model_parameter_schema
     assert schema is not None
 
-    option_counts = tuple(len(parameter_options(spec)) for spec in schema)
+    wire_specs = _wire_specs(schema)
+    option_counts = tuple(len(parameter_options(spec)) for spec in wire_specs)
     assert option_counts == _APK_OPTION_COUNTS
-    assert all(0 <= value < count for value, count in zip(_LIVE_VALUES, option_counts, strict=True))
+    assert all(
+        0 <= value < count
+        for value, count in zip(_LIVE_WIRE_VALUES, option_counts, strict=True)
+    )
 
 
 def test_exact_live_model_keeps_normal_verified_support() -> None:
@@ -117,6 +130,11 @@ def test_ps21050d_refresh_uses_vendor_rp1_decoder() -> None:
     hub._set_controller_type("PS21050D")
     calls: list[tuple[str, str]] = []
 
+    expected_logical = decode_model_parameter_response(
+        "PS21050", f"ACK RP,1:{_LIVE_BODY}"
+    )
+    assert expected_logical is not None
+
     async def fake_exchange(payload: str, expected: str) -> str:
         calls.append((payload, expected))
         return f"ACK RP,1:{_LIVE_BODY}"
@@ -126,18 +144,35 @@ def test_ps21050d_refresh_uses_vendor_rp1_decoder() -> None:
     asyncio.run(hub.async_refresh_parameters())
 
     assert calls == [("c=RP,1", "ACK RP,1")]
-    assert hub.parameters == _LIVE_VALUES
+    assert hub.parameters == expected_logical
 
 
-def test_ps21050d_write_uses_vendor_ps21050_wp1_and_verifies_readback() -> None:
+def test_ps21050d_write_uses_vendor_wp1_and_verifies_readback() -> None:
     hub = _hub("PS21050")
     hub._set_controller_type("PS21050D")
+    schema = hub.model_parameter_schema
+    assert schema is not None
 
-    updated = list(_LIVE_VALUES)
-    updated[0] = 1
-    updated_values = tuple(updated)
-    expected_command = encode_model_parameter_write("PS21050", updated_values)
-    assert expected_command == "WP,1:" + ",".join(map(str, updated_values))
+    current_logical = decode_model_parameter_response(
+        "PS21050", f"ACK RP,1:{_LIVE_BODY}"
+    )
+    assert current_logical is not None
+
+    first_wire_index = next(
+        index for index, spec in enumerate(schema) if int(spec[3] or 0) < 10
+    )
+    updated_logical = list(current_logical)
+    updated_logical[first_wire_index] = 1
+    updated_logical_values = tuple(updated_logical)
+
+    updated_wire_values = list(_LIVE_WIRE_VALUES)
+    updated_wire_values[0] = 1
+    updated_body = ",".join(map(str, updated_wire_values))
+
+    expected_command = encode_model_parameter_write(
+        "PS21050", updated_logical_values
+    )
+    assert expected_command == f"WP,1:{updated_body}"
 
     calls: list[tuple[str, str]] = []
 
@@ -149,18 +184,20 @@ def test_ps21050d_write_uses_vendor_ps21050_wp1_and_verifies_readback() -> None:
             assert payload == f"c={expected_command};src=P9999999"
             assert expected == "ACK WP"
             return "ACK WP"
-        return "ACK RP,1:" + ",".join(map(str, updated_values))
+        return f"ACK RP,1:{updated_body}"
 
     hub._async_exchange = fake_exchange  # type: ignore[method-assign]
 
-    asyncio.run(hub.async_set_parameter(0, 1))
+    asyncio.run(hub.async_set_parameter(first_wire_index, 1))
 
     assert calls == [
         ("c=RP,1", "ACK RP,1"),
         (f"c={expected_command};src=P9999999", "ACK WP"),
         ("c=RP,1", "ACK RP,1"),
     ]
-    assert hub.parameters == updated_values
+    assert hub.parameters == decode_model_parameter_response(
+        "PS21050", f"ACK RP,1:{updated_body}"
+    )
 
 
 def test_ps21050d_alias_is_not_used_for_unrelated_configured_model() -> None:
