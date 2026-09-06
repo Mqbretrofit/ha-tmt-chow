@@ -7,6 +7,7 @@ import asyncio
 from custom_components.tmt_chow.hub import TmtChowHub, TmtCommandError
 from custom_components.tmt_chow.ps21050d_parameters import (
     PARAMETER_COUNT,
+    UART_VERSION,
     parse_parameter_response,
 )
 
@@ -60,6 +61,7 @@ def test_ps21050d_uses_explicit_live_raw_read_only_profile() -> None:
     assert hub.parameter_model_source == "live_raw_read_only"
     assert hub.model_parameter_schema is not None
     assert len(hub.model_parameter_schema) == PARAMETER_COUNT == 20
+    assert UART_VERSION == 2
     assert hub.may_probe_parameters is True
     assert hub.parameter_write_schema_verified is False
     assert hub.supports_parameters is False
