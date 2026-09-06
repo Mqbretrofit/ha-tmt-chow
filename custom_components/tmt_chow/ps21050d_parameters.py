@@ -6,12 +6,14 @@ import re
 from typing import Final
 
 CONTROLLER_TYPE: Final = "PS21050D"
+UART_VERSION: Final = 2
 PARAMETER_COUNT: Final = 20
 
-# The live controller reports exactly 20 values in both DEV PARAM and ACK RP,1.
-# Their vendor UI meaning is not verified yet, so every entry is intentionally
-# parameter_type 4 (non-editable) and exposed only through diagnostics/runtime
-# state.  This keeps the capture useful without permitting speculative writes.
+# The live controller reports UART version 2 and exactly 20 values in both
+# DEV PARAM and ACK RP,1. Their vendor UI meaning is not verified yet, so every
+# entry is intentionally parameter_type 4 (non-editable) and exposed only
+# through diagnostics/runtime state. This keeps the capture useful without
+# permitting speculative writes.
 PARAMETERS: Final = tuple(
     (
         "n",
@@ -51,7 +53,7 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
     if match:
         body = match.group(1)
     else:
-        # Shadow DEV PARAM already contains only the CSV body.  Do not treat an
+        # Shadow DEV PARAM already contains only the CSV body. Do not treat an
         # unrelated ACK/NAK as parameter data.
         if "ACK " in clean or "NAK " in clean:
             return None
