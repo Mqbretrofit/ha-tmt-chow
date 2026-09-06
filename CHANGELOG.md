@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.1
+
+- Added a native-style fourth **Pedestrian opening** control directly inside the standard Home Assistant gate more-info popup for controllers with verified pedestrian capability
+- The popup button uses the existing verified `PED OPEN` command; it does not misuse Home Assistant tilt semantics
+- The existing standalone Pedestrian opening button entity remains available
+- Added a small frontend module loaded by the integration and a guarded `tmt_chow.pedestrian_open` service used only for the popup action
+- The extra popup control is capability-gated and appears only on supported TMT Chow gate entities
+
 ## v1.0.3
 
 - Added model-gated pedestrian / partial opening control using the verified `PED OPEN` command
