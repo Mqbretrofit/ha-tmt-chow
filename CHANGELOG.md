@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.3-beta.1
+## v1.0.3
 
 - Added model-gated pedestrian / partial opening control using the verified `PED OPEN` command
 - Fixed a stale `DEV STATUS` stop-position update that could make a fully closed gate jump back to `open`
@@ -17,6 +17,7 @@
 - Added `PS21050D_APK_MAPPING.md` documenting the exact vendor-app mapping and real-hardware frame
 - Extended diagnostics with configured/live/parameter-model, codec and write-verification state
 - Added regression tests plus a GitHub Actions test workflow for beta/main branches
+- Hardened gate state tracking so late stale stopped `DEV STATUS` packets cannot flip a just-closed gate back to open or a just-opened gate back to closed
 
 ## v1.0.1
 
