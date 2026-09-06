@@ -33,30 +33,18 @@ def _extract_app_layout() -> tuple[tuple, tuple, tuple]:
     if schema is None:
         raise RuntimeError("The APK-derived PS21050 schema is missing")
     keys = tuple(spec[1] for spec in schema)
-    start = next(
-        (
-            index
-            for index in range(len(schema) - PARAMETER_COUNT + 1)
-            if keys[index : index + PARAMETER_COUNT] == _WIRE_KEYS
-        ),
-        -1,
-    )
+    start = next((i for i in range(len(schema) - PARAMETER_COUNT + 1)
+                  if keys[i:i + PARAMETER_COUNT] == _WIRE_KEYS), -1)
     if start < 0:
         raise RuntimeError("The APK-derived PS21050 20-value wire layout changed")
     prefix = tuple(schema[:start])
-    normal = [
-        spec for spec in prefix
-        if spec[1] == "func_open_over_current"
-        and spec[2] == "option_over_current_setting_p190"
-    ]
-    hall = [
-        spec for spec in prefix
-        if spec[1] == "func_open_over_current"
-        and spec[2] == "option_over_current_setting_p190_hall"
-    ]
+    normal = [spec for spec in prefix if spec[1] == "func_open_over_current"
+              and spec[2] == "option_over_current_setting_p190"]
+    hall = [spec for spec in prefix if spec[1] == "func_open_over_current"
+            and spec[2] == "option_over_current_setting_p190_hall"]
     if len(normal) != 1 or len(hall) != 1:
         raise RuntimeError("The APK-derived PS21050 current helper layout changed")
-    return tuple(schema[start : start + PARAMETER_COUNT]), normal[0], hall[0]
+    return tuple(schema[start:start + PARAMETER_COUNT]), normal[0], hall[0]
 
 
 APP_PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
