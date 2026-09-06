@@ -11,7 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .controller_types import is_known_non_gate_controller
+from .controller_types import CAPABILITY_PEDESTRIAN, is_known_non_gate_controller
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
 
@@ -56,7 +56,11 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return self.hub.attributes
+        attributes = dict(self.hub.attributes)
+        if CAPABILITY_PEDESTRIAN in self.hub.controller_capabilities:
+            attributes["tmt_chow_pedestrian_supported"] = True
+            attributes["tmt_chow_pedestrian_uuid"] = self.hub.uuid
+        return attributes
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         await self._run(self.hub.async_open())
