@@ -14,10 +14,11 @@ class TmtChowHub(BaseTmtChowHub):
     """Use the official PS21050 app profile for live PS21050D hardware.
 
     TMT Chow 3.1.4 contains a PS21050 product implementation but no separate
-    PS21050D implementation.  The account API identifies this controller as
-    PS21050, while live DEV INFO reports PS21050D.  Preserve the concrete live
-    identity but use the app's PS21050 family, capabilities and 20-parameter
-    RP,1/WP,1 profile for that exact alias pair.
+    PS21050D implementation. The account API identifies this controller as
+    PS21050, while live DEV INFO reports PS21050D. Preserve the concrete live
+    identity but use the app's PS21050 family, capabilities and 20-value
+    RP,1/WP,1 wire profile for that exact alias pair. The generated logical
+    schema may also contain non-wire system UI entries appended by the app.
     """
 
     def _set_controller_type(self, controller_type: str | None) -> None:
