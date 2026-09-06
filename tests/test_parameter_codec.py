@@ -23,20 +23,38 @@ def _read_response_from_write(model: str, command: str) -> str:
     return "ACK RP,1:" + command[len("WP,1:") :]
 
 
+def _logical_apk_defaults(model: str) -> tuple[int, ...]:
+    """Convert APK stored/wire defaults to the logical values accepted by codecs."""
+    schema = parameter_schema_for(model)
+    assert schema is not None
+    return tuple(
+        int(spec[5] or 0) - int(spec[6] or 0)
+        for spec in schema
+    )
+
+
 def test_every_gate_model_has_schema_and_protocol_profile() -> None:
     assert len(M) == 217
     assert len(MODEL_PROTOCOL_PROFILES) == 217
     assert set(M) == set(MODEL_PROTOCOL_PROFILES)
 
 
-def test_default_vectors_round_trip_for_every_model() -> None:
+def test_logical_apk_default_vectors_round_trip_for_every_model() -> None:
+    # Several vendor schemas store the default in encoded/wire units while an
+    # offset is also present. The codec API accepts logical values, so subtract
+    # that APK offset before exercising the encode/decode round trip.
     for model in sorted(M):
-        defaults = parameter_defaults(model)
-        assert defaults is not None, model
+        defaults = _logical_apk_defaults(model)
         command = encode_model_parameter_write(model, defaults)
         response = _read_response_from_write(model, command)
         decoded = decode_model_parameter_response(model, response)
         assert decoded == defaults, model
+
+
+def test_parameter_defaults_stays_available_as_apk_metadata() -> None:
+    defaults = parameter_defaults("PS21053")
+    assert defaults is not None
+    assert len(defaults) == 17
 
 
 def test_ps21053_write_format_stays_backward_compatible() -> None:
