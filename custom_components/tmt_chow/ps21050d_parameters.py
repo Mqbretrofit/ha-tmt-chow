@@ -79,7 +79,7 @@ def _extract_app_layout() -> tuple[tuple, tuple, tuple]:
     return wire, normal_helpers[0], hall_helpers[0]
 
 
-PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
+APP_PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
 
 # Conservative fallback for an unexpected PS21050D identity that was NOT
 # configured by the TMT account API as PS21050. It stays diagnostic/read-only
@@ -106,6 +106,10 @@ RAW_PARAMETERS: Final = tuple(
     )
     for index in range(1, PARAMETER_COUNT + 1)
 )
+
+# Backward-compatible name used by the base hub's conservative PS21050D
+# fallback. The exact account-PS21050/live-PS21050D alias uses APP_PARAMETERS.
+PARAMETERS: Final = RAW_PARAMETERS
 
 _RP_RE = re.compile(r"(?:^|\b)ACK RP(?:,1)?:([^;\r\n]+)")
 
@@ -151,7 +155,7 @@ def _current_spec(values: Sequence[int] | None) -> tuple:
     motor_mode = (
         int(values[0])
         if values and len(values) >= 1
-        else int(PARAMETERS[0][5] or 0)
+        else int(APP_PARAMETERS[0][5] or 0)
     )
     return _HALL_CURRENT_SPEC if motor_mode == 2 else _NORMAL_CURRENT_SPEC
 
@@ -162,7 +166,7 @@ def parameter_options_for(
     """Return vendor UI options for one wire field in the current motor mode."""
     if not 0 <= index < PARAMETER_COUNT:
         return ()
-    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    spec = _current_spec(values) if index in (1, 2) else APP_PARAMETERS[index]
     return tuple(parameter_options(spec))
 
 
@@ -173,7 +177,7 @@ def wire_value_to_option(
     options = parameter_options_for(index, values)
     if not options:
         return None
-    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    spec = _current_spec(values) if index in (1, 2) else APP_PARAMETERS[index]
     logical = int(value) - int(spec[6] or 0)
     return options[logical] if 0 <= logical < len(options) else None
 
@@ -189,7 +193,7 @@ def option_to_wire_value(
         raise PS21050DParameterError(
             "Unsupported PS21050D parameter option"
         ) from err
-    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    spec = _current_spec(values) if index in (1, 2) else APP_PARAMETERS[index]
     return logical + int(spec[6] or 0)
 
 
