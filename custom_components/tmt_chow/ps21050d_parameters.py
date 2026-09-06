@@ -81,9 +81,6 @@ def _extract_app_layout() -> tuple[tuple, tuple, tuple]:
 
 APP_PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
 
-# Conservative fallback for an unexpected PS21050D identity that was NOT
-# configured by the TMT account API as PS21050. It stays diagnostic/read-only
-# and deliberately carries no vendor labels or writable options.
 RAW_PARAMETERS: Final = tuple(
     (
         "n",
@@ -106,9 +103,6 @@ RAW_PARAMETERS: Final = tuple(
     )
     for index in range(1, PARAMETER_COUNT + 1)
 )
-
-# Backward-compatible name used by the base hub's conservative PS21050D
-# fallback. The exact account-PS21050/live-PS21050D alias uses APP_PARAMETERS.
 PARAMETERS: Final = RAW_PARAMETERS
 
 _RP_RE = re.compile(r"(?:^|\b)ACK RP(?:,1)?:([^;\r\n]+)")
@@ -118,11 +112,9 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
     """Parse the exact 20-value PS21050/PS21050D RP,1 or DEV PARAM frame."""
     if not isinstance(payload, str):
         return None
-
     clean = payload.strip()
     if not clean:
         return None
-
     match = _RP_RE.search(clean)
     if match:
         body = match.group(1)
@@ -130,28 +122,23 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
         if "ACK " in clean or "NAK " in clean:
             return None
         body = clean.split(";", 1)[0].lstrip(":")
-
     tokens = [token.strip() for token in body.split(",")]
     if len(tokens) != PARAMETER_COUNT or any(token == "" for token in tokens):
         return None
-
     try:
         values = tuple(int(token, 10) for token in tokens)
     except ValueError:
         return None
-
     return values if _wire_values_are_valid_shape(values) else None
 
 
 def _wire_values_are_valid_shape(values: Sequence[int]) -> bool:
-    return (
-        len(values) == PARAMETER_COUNT
-        and all(isinstance(value, int) and 0 <= value <= 255 for value in values)
+    return len(values) == PARAMETER_COUNT and all(
+        isinstance(value, int) and 0 <= value <= 255 for value in values
     )
 
 
 def _current_spec(values: Sequence[int] | None) -> tuple:
-    """Use the Hall-current option/offset table only when Motor Type is Hall."""
     motor_mode = (
         int(values[0])
         if values and len(values) >= 1
@@ -160,20 +147,14 @@ def _current_spec(values: Sequence[int] | None) -> tuple:
     return _HALL_CURRENT_SPEC if motor_mode == 2 else _NORMAL_CURRENT_SPEC
 
 
-def parameter_options_for(
-    index: int, values: Sequence[int] | None = None
-) -> tuple[str, ...]:
-    """Return vendor UI options for one wire field in the current motor mode."""
+def parameter_options_for(index: int, values: Sequence[int] | None = None) -> tuple[str, ...]:
     if not 0 <= index < PARAMETER_COUNT:
         return ()
     spec = _current_spec(values) if index in (1, 2) else APP_PARAMETERS[index]
     return tuple(parameter_options(spec))
 
 
-def wire_value_to_option(
-    index: int, value: int, values: Sequence[int] | None = None
-) -> str | None:
-    """Translate one raw RP,1 value to the exact vendor UI option label."""
+def wire_value_to_option(index: int, value: int, values: Sequence[int] | None = None) -> str | None:
     options = parameter_options_for(index, values)
     if not options:
         return None
@@ -182,34 +163,21 @@ def wire_value_to_option(
     return options[logical] if 0 <= logical < len(options) else None
 
 
-def option_to_wire_value(
-    index: int, option: str, values: Sequence[int] | None = None
-) -> int:
-    """Translate one vendor UI option back to its raw WP,1 wire value."""
+def option_to_wire_value(index: int, option: str, values: Sequence[int] | None = None) -> int:
     options = parameter_options_for(index, values)
     try:
         logical = options.index(option)
     except ValueError as err:
-        raise PS21050DParameterError(
-            "Unsupported PS21050D parameter option"
-        ) from err
+        raise PS21050DParameterError("Unsupported PS21050D parameter option") from err
     spec = _current_spec(values) if index in (1, 2) else APP_PARAMETERS[index]
     return logical + int(spec[6] or 0)
 
 
 def validate_wire_values(values: Sequence[int]) -> tuple[int, ...]:
-    """Validate the complete 20-value frame against the active app option tables."""
     if not _wire_values_are_valid_shape(values):
-        raise PS21050DParameterError(
-            "PS21050D requires exactly 20 byte-sized parameter values"
-        )
+        raise PS21050DParameterError("PS21050D requires exactly 20 byte-sized parameter values")
     normalized = tuple(int(value) for value in values)
     for index, value in enumerate(normalized):
-        options = parameter_options_for(index, normalized)
-        if not options:
-            raise PS21050DParameterError(
-                f"PS21050D parameter {index + 1} has no app option table"
-            )
         if wire_value_to_option(index, value, normalized) is None:
             raise PS21050DParameterError(
                 f"PS21050D parameter {index + 1} is outside the active app option range"
@@ -218,6 +186,5 @@ def validate_wire_values(values: Sequence[int]) -> tuple[int, ...]:
 
 
 def encode_parameter_write(values: Sequence[int]) -> str:
-    """Build the vendor PS21050 WP,1 command from 20 raw wire values."""
     normalized = validate_wire_values(values)
     return "WP,1:" + ",".join(map(str, normalized))
