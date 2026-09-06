@@ -12,7 +12,10 @@ from .const import CONF_CERTIFICATE_ARN, CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY,
 from .hub import TmtChowHub
 from .model_parameter_schemas import parameter_name, parameter_options
 from .model_protocol_profiles import protocol_profile_for
-from .ps21050d_parameters import CONTROLLER_TYPE as PS21050D
+from .ps21050d_parameters import (
+    CONTROLLER_TYPE as PS21050D,
+    UART_VERSION as PS21050D_UART_VERSION,
+)
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -23,7 +26,7 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
     profile = (
-        (1, (), "raw20_read_only", "")
+        (PS21050D_UART_VERSION, (), "raw20_read_only", "")
         if hub.parameter_model_type == PS21050D
         else protocol_profile_for(hub.parameter_model_type)
     )
