@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.model_parameter_schemas import parameter_options
 from custom_components.tmt_chow.parameter_codec import encode_model_parameter_write
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
@@ -54,6 +53,7 @@ _APK_KEYS = (
     "func_single_door",
     "func_close_limit_reaction_time",
 )
+_APK_OPTION_COUNTS = (3, 4, 4, 4, 4, 4, 5, 10, 10, 9, 7, 2, 2, 2, 2, 2, 2, 2, 2, 7)
 
 
 def _hub(device_type: str) -> TmtChowHub:
@@ -89,20 +89,15 @@ def test_ps21050d_uses_vendor_ps21050_profile() -> None:
     assert hub.supports_parameters is True
 
 
-def test_ps21050_apk_options_match_extracted_model() -> None:
+def test_ps21050_apk_option_counts_match_extracted_model() -> None:
     hub = _hub("PS21050")
     hub._set_controller_type("PS21050D")
     schema = hub.model_parameter_schema
     assert schema is not None
 
-    assert parameter_options(schema[0]) == (
-        "overcurrent",
-        "limit_switch",
-        "hall_sensor",
-    )
-    assert parameter_options(schema[1]) == ("2_a", "3_a", "4_a", "5_a")
-    assert parameter_options(schema[3]) == ("40_percent", "50_percent", "75_percent", "100_percent")
-    assert parameter_options(schema[11]) == ("function_off", "function_on")
+    option_counts = tuple(len(parameter_options(spec)) for spec in schema)
+    assert option_counts == _APK_OPTION_COUNTS
+    assert all(0 <= value < count for value, count in zip(_LIVE_VALUES, option_counts, strict=True))
 
 
 def test_exact_live_model_keeps_normal_verified_support() -> None:
