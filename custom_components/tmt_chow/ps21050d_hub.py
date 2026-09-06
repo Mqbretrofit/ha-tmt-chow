@@ -1,4 +1,4 @@
-"""PS21050D alias support plus runtime gate-state hardening."""
+"""Controller alias support plus runtime gate-state hardening."""
 
 from __future__ import annotations
 
@@ -16,17 +16,26 @@ from .ps21050d_parameters import (
     encode_parameter_write,
 )
 
+_PS20040_APP_MODEL = "PS20040"
+_PS20040D_CONTROLLER_TYPE = "PS20040D"
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
 class TmtChowHub(BaseTmtChowHub):
-    """Runtime hub with PS21050D alias support and stale-stop protection.
+    """Runtime hub with verified app/live aliases and stale-stop protection.
 
     TMT Chow 3.1.4 contains a PS21050 product implementation but no separate
     PS21050D implementation. The account API identifies this controller as
     PS21050, while live DEV INFO reports PS21050D. Preserve the concrete live
     identity but use the app's family/capability metadata and exact 20-value
     RP,1/WP,1 parameter layout for this alias pair.
+
+    PS20040D is the same kind of app/live identity split: the account reports
+    PS20040 while live DEV INFO reports PS20040D. For this pair we reuse only
+    the APK-derived PS20040 family and UI capabilities (including pedestrian
+    opening). Parameter reads may use the configured PS20040 fallback, but
+    writes deliberately remain read-only until the D-variant wire layout is
+    independently verified.
 
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
@@ -40,8 +49,28 @@ class TmtChowHub(BaseTmtChowHub):
             and self.configured_controller_type == APP_MODEL
         )
 
+    def _is_ps20040d_alias(self) -> bool:
+        return (
+            self.controller_type == _PS20040D_CONTROLLER_TYPE
+            and self.configured_controller_type == _PS20040_APP_MODEL
+        )
+
     def _set_controller_type(self, controller_type: str | None) -> None:
         normalized = (controller_type or "").strip().upper()
+
+        if (
+            normalized == _PS20040D_CONTROLLER_TYPE
+            and self.configured_controller_type == _PS20040_APP_MODEL
+        ):
+            # Let the base hub select the configured PS20040 read fallback,
+            # then restore the APK-derived family/capabilities for the live D
+            # identity.  Do not make the parameter write schema trusted here.
+            super()._set_controller_type(controller_type)
+            self.controller_family = controller_family(_PS20040_APP_MODEL)
+            self.controller_capabilities = controller_capabilities(_PS20040_APP_MODEL)
+            self.parameter_model_source = "apk_ps20040_alias_read_only"
+            return
+
         if normalized == CONTROLLER_TYPE and self.configured_controller_type == APP_MODEL:
             self.controller_type = CONTROLLER_TYPE
             self.controller_family = controller_family(APP_MODEL)
