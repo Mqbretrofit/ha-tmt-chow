@@ -26,7 +26,7 @@ The integration therefore preserves the concrete live identity `PS21050D`, while
 
 The Shadow field `UART VER` reported by the tested WBT/controller path is `2`. That runtime field is not the same value as the Android product-class `mUartVersion` protocol selector.
 
-The final `PS21050.mParameters` array contains exactly these 20 parameters, in wire order:
+The constructor creates a 20-entry base `PS21050.mParameters` wire array in this order:
 
 | # | APK key | Vendor UI label | Options |
 |---:|---|---|---|
@@ -51,7 +51,9 @@ The final `PS21050.mParameters` array contains exactly these 20 parameters, in w
 | 19 | `func_single_door` | Dual / Single Gate | Single Gate; Dual Gate |
 | 20 | `func_close_limit_reaction_time` | Overcurrent Reverses Time when Close | OFF; 0.1; 0.2; 0.3; 0.4; 0.5; 0.6 sec |
 
-The app also constructs alternate overcurrent parameter objects for normal/Hall learning modes, but those are not extra wire fields: the final base parameter frame remains 20 values.
+`PS21050.initParameters()` later appends inherited System Learn/System Config UI entries to the logical parameter list. Those entries do not add fields to this 20-value `RP,1` / `WP,1` frame; the APK-derived codec skips the non-wire parameter types when encoding/decoding.
+
+The constructor also creates alternate opening/closing overcurrent objects for normal/Hall learning modes. Those are helper arrays and likewise do not add extra wire fields.
 
 ## Real-hardware capture
 
