@@ -31,11 +31,11 @@ class TmtChowHub(BaseTmtChowHub):
     RP,1/WP,1 parameter layout for this alias pair.
 
     PS20040D is the same kind of app/live identity split: the account reports
-    PS20040 while live DEV INFO reports PS20040D. For this pair we reuse only
-    the APK-derived PS20040 family and UI capabilities (including pedestrian
-    opening). Parameter reads may use the configured PS20040 fallback, but
-    writes deliberately remain read-only until the D-variant wire layout is
-    independently verified.
+    PS20040 while live DEV INFO reports PS20040D. For this exact pair, reuse
+    the APK-derived PS20040 family, UI capabilities and RP,1/WP,1 codec. The
+    write path still performs the normal read-before-write and mandatory
+    read-back verification, and it never automatically retries a parameter
+    write.
 
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
@@ -62,13 +62,13 @@ class TmtChowHub(BaseTmtChowHub):
             normalized == _PS20040D_CONTROLLER_TYPE
             and self.configured_controller_type == _PS20040_APP_MODEL
         ):
-            # Let the base hub select the configured PS20040 read fallback,
-            # then restore the APK-derived family/capabilities for the live D
-            # identity.  Do not make the parameter write schema trusted here.
+            # Let the base hub select the configured PS20040 parameter schema
+            # and codec, then restore the APK-derived family/capabilities for
+            # the concrete live D identity.
             super()._set_controller_type(controller_type)
             self.controller_family = controller_family(_PS20040_APP_MODEL)
             self.controller_capabilities = controller_capabilities(_PS20040_APP_MODEL)
-            self.parameter_model_source = "apk_ps20040_alias_read_only"
+            self.parameter_model_source = "apk_ps20040_alias"
             return
 
         if normalized == CONTROLLER_TYPE and self.configured_controller_type == APP_MODEL:
@@ -131,13 +131,13 @@ class TmtChowHub(BaseTmtChowHub):
 
     @property
     def parameter_write_schema_verified(self) -> bool:
-        """Allow writes only for the exact app-proven PS21050D/PS21050 alias."""
-        if self._is_ps21050d_alias():
+        """Allow writes for exact app/live aliases with a verified base codec."""
+        if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
     async def async_set_parameter(self, index: int, value: int) -> None:
-        """Write one PS21050D field through the vendor 20-value WP,1 frame."""
+        """Write one parameter using the model-specific verified codec."""
         if not self._is_ps21050d_alias():
             await super().async_set_parameter(index, value)
             return
