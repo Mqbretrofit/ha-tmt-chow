@@ -35,6 +35,11 @@
         "name": "Battery"
       }
     },
+    "button": {
+      "pedestrian_open": {
+        "name": "Pedestrian opening"
+      }
+    },
     "select": {
       "operation_direction": {
         "name": "Operation direction",

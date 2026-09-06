@@ -12,6 +12,11 @@ from .const import CONF_CERTIFICATE_ARN, CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY,
 from .hub import TmtChowHub
 from .model_parameter_schemas import parameter_name, parameter_options
 from .model_protocol_profiles import protocol_profile_for
+from .ps21050d_parameters import (
+    CONTROLLER_TYPE as PS21050D,
+    UART_VERSION as PS21050D_UART_VERSION,
+    parameter_options_for as ps21050d_parameter_options,
+)
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -21,7 +26,15 @@ async def async_get_config_entry_diagnostics(
     entry: ConfigEntry,
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
-    profile = protocol_profile_for(hub.controller_type)
+    is_ps21050d_alias = (
+        hub.parameter_model_type == PS21050D
+        and hub.parameter_model_source == "apk_ps21050_alias"
+    )
+    profile = (
+        (PS21050D_UART_VERSION, (), "ps21050_app_wire20", "")
+        if hub.parameter_model_type == PS21050D
+        else protocol_profile_for(hub.parameter_model_type)
+    )
     schema = hub.model_parameter_schema
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
@@ -34,9 +47,12 @@ async def async_get_config_entry_diagnostics(
             "is_operating": hub.is_operating,
             "battery_percent": hub.battery_percent,
             "controller_type": hub.controller_type,
+            "configured_controller_type": hub.configured_controller_type,
             "controller_family": hub.controller_family,
             "controller_capabilities": sorted(hub.controller_capabilities),
             "product_type": hub.product_type,
+            "parameter_model_type": hub.parameter_model_type,
+            "parameter_model_source": hub.parameter_model_source,
             "model_parameter_schema_available": schema is not None,
             "model_parameter_schema_count": len(schema or ()),
             "parameter_codec_available": profile is not None,
@@ -44,7 +60,11 @@ async def async_get_config_entry_diagnostics(
             "parameter_skip_positions": list(profile[1]) if profile is not None else [],
             "parameter_codec_profile": profile[2] if profile is not None else None,
             "parameter_extended_suffix": profile[3] if profile is not None else "",
-            "parameter_write_schema_verified": hub.parameter_schema_verified,
+            "parameter_write_schema_verified": hub.parameter_write_schema_verified,
+            "parameter_read_only": (
+                hub.parameter_schema_verified
+                and not hub.parameter_write_schema_verified
+            ),
             "model_parameter_schema": [
                 {
                     "index": index,
@@ -52,7 +72,11 @@ async def async_get_config_entry_diagnostics(
                     "name": parameter_name(spec),
                     "kind": spec[0],
                     "option_key": spec[2],
-                    "options": list(parameter_options(spec)),
+                    "options": list(
+                        ps21050d_parameter_options(index - 1, hub.parameters)
+                        if is_ps21050d_alias
+                        else parameter_options(spec)
+                    ),
                     "parameter_type": spec[3],
                     "level": spec[4],
                     "default": spec[5],

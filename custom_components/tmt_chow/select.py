@@ -15,6 +15,13 @@ from .hub import TmtChowHub, TmtCommandError
 from .model_parameter_schemas import parameter_name, parameter_options
 from .parameter_codec import is_editable_parameter
 from .parameters import PARAMETERS, ParameterDefinition
+from .ps21050d_parameters import (
+    CONTROLLER_TYPE as PS21050D,
+    PS21050DParameterError,
+    option_to_wire_value as ps21050d_option_to_wire_value,
+    parameter_options_for as ps21050d_parameter_options,
+    wire_value_to_option as ps21050d_wire_value_to_option,
+)
 
 _LEGACY_PS21053 = {"PS21053", "PS21053C"}
 
@@ -35,6 +42,17 @@ async def async_setup_entry(
         async_add_entities(
             TmtParameterSelect(hub, index, definition)
             for index, definition in enumerate(PARAMETERS)
+        )
+        return
+
+    # PS21050D is the live identity of the PS21050 app profile on the captured
+    # hardware. Its two current fields switch option/offset tables when Motor
+    # Type is Hall, so their options must be evaluated against the live frame.
+    if hub.parameter_model_type == PS21050D:
+        async_add_entities(
+            TmtPS21050DParameterSelect(hub, index, spec)
+            for index, spec in enumerate(schema)
+            if is_editable_parameter(spec) and ps21050d_parameter_options(index)
         )
         return
 
@@ -87,6 +105,58 @@ class TmtParameterSelect(TmtChowEntity, SelectEntity):
         try:
             value = self._definition.options.index(option)
         except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_parameter_value",
+            ) from err
+        await _async_set(self.hub, self._index, value)
+
+
+class TmtPS21050DParameterSelect(TmtChowEntity, SelectEntity):
+    """PS21050D selector backed by the app's exact 20-value wire frame."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, hub: TmtChowHub, index: int, spec: tuple) -> None:
+        super().__init__(hub)
+        self._index = index
+        self._spec = spec
+        self._attr_unique_id = f"{hub.uuid}_parameter_{index + 1}"
+        self._attr_name = parameter_name(spec)
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.hub.available
+            and self.hub.supports_parameters
+            and self.hub.parameters is not None
+        )
+
+    @property
+    def options(self) -> list[str]:
+        return list(ps21050d_parameter_options(self._index, self.hub.parameters))
+
+    @property
+    def current_option(self) -> str | None:
+        values = self.hub.parameters
+        if values is None or self._index >= len(values):
+            return None
+        return ps21050d_wire_value_to_option(
+            self._index,
+            values[self._index],
+            values,
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        values = self.hub.parameters
+        if values is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="parameters_not_ready",
+            )
+        try:
+            value = ps21050d_option_to_wire_value(self._index, option, values)
+        except PS21050DParameterError as err:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="unsupported_parameter_value",
