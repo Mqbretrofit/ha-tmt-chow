@@ -8,7 +8,7 @@
 - Added a small frontend module loaded by the integration and a guarded `tmt_chow.pedestrian_open` service used only for the popup action
 - The extra popup control is capability-gated and appears only on supported TMT Chow gate entities
 - Added the verified account `PS20040` / live `PS20040D` identity alias for family and UI capabilities, so the standalone Pedestrian opening entity and popup control are exposed on this controller variant
-- PS20040D parameter access intentionally remains read-only for now; the PS20040 fallback schema is not promoted to a trusted write schema without independent D-variant write verification
+- Enabled PS20040D parameter writes through the APK-derived PS20040 `RP,1` / `WP,1` schema for the exact configured `PS20040` + live `PS20040D` alias; the normal read-before-write and mandatory read-back verification remain active
 - Treat invalid `DEV STATUS` battery values above 100% (including the observed `FF` → 127 sentinel) as unavailable instead of exposing impossible battery percentages
 
 ## v1.0.3
