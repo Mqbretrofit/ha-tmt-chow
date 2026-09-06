@@ -35,11 +35,20 @@ def decode_dev_status(payload: str | None) -> GateStatus:
     battery_raw = _hex_byte(fields[1])
     flags = _hex_byte(fields[2])
     position_raw = _hex_byte(fields[3])
+
+    battery_percent = (battery_raw & 0x7F) if battery_raw is not None else None
+    # Some controllers report FF when no valid battery percentage is
+    # available. Masking that byte gives 127, which must never be exposed as
+    # a Home Assistant percentage. Treat any decoded value above 100 as
+    # unavailable instead of inventing a percentage.
+    if battery_percent is not None and battery_percent > 100:
+        battery_percent = None
+
     return GateStatus(
         position=(position_raw & 0x7F) if position_raw is not None else None,
         is_operating=bool(flags & 0x40) if flags is not None else None,
         is_open_direction=bool(position_raw & 0x80) if position_raw is not None else None,
-        battery_percent=(battery_raw & 0x7F) if battery_raw is not None else None,
+        battery_percent=battery_percent,
     )
 
 
