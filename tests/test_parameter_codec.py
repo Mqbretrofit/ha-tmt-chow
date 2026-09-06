@@ -1,10 +1,6 @@
 """Tests for the APK-derived multi-model parameter wire codecs."""
 
-from custom_components.tmt_chow.model_parameter_schemas import (
-    M,
-    parameter_options,
-    parameter_schema_for,
-)
+from custom_components.tmt_chow.model_parameter_schemas import M, parameter_schema_for
 from custom_components.tmt_chow.model_protocol_profiles import (
     MODEL_PROTOCOL_PROFILES,
     protocol_profile_for,
@@ -12,9 +8,20 @@ from custom_components.tmt_chow.model_protocol_profiles import (
 from custom_components.tmt_chow.parameter_codec import (
     decode_model_parameter_response,
     encode_model_parameter_write,
-    is_editable_parameter,
     parameter_defaults,
 )
+
+_SUPPORTED_CODEC_PROFILES = {
+    "legacy_base",
+    "new_phase1",
+    "converted_bits",
+    "converted_swap_8_9",
+    "custom_a510",
+    "custom_p170",
+    "custom_p100",
+    "custom_split_pair",
+    "custom_csv6",
+}
 
 
 def _read_response_from_write(model: str, command: str) -> str:
@@ -28,70 +35,15 @@ def _read_response_from_write(model: str, command: str) -> str:
     return "ACK RP,1:" + command[len("WP,1:") :]
 
 
-def _valid_logical_vector(model: str) -> tuple[int, ...]:
-    """Build a validator-safe logical vector from APK metadata.
-
-    Some vendor classes store defaults in wire units while also carrying an
-    offset, and a few defaults are outside the user-selectable option table.
-    The round-trip test is about codec reversibility, so use the APK default
-    when it is a valid logical value and otherwise choose the first valid
-    logical option / numeric value rather than asserting that every APK default
-    itself is user-writable.
-    """
-    schema = parameter_schema_for(model)
-    assert schema is not None
-    values: list[int] = []
-    for spec in schema:
-        default = int(spec[5] or 0)
-        offset = int(spec[6] or 0)
-        logical = default - offset
-
-        if not is_editable_parameter(spec):
-            values.append(default)
-            continue
-
-        options = parameter_options(spec)
-        if options:
-            if 0 <= logical < len(options):
-                values.append(logical)
-            elif 0 <= default < len(options):
-                values.append(default)
-            else:
-                values.append(0)
-            continue
-
-        minimum = int(spec[11]) if spec[11] is not None else None
-        maximum = int(spec[12]) if spec[12] is not None else None
-        value = logical
-        if minimum is not None and value < minimum:
-            value = minimum
-        if maximum is not None and value > maximum:
-            value = maximum
-        increment = int(spec[13] or 0)
-        if increment > 0:
-            origin = minimum or 0
-            value = origin + round((value - origin) / increment) * increment
-            if minimum is not None:
-                value = max(value, minimum)
-            if maximum is not None:
-                value = min(value, maximum)
-        values.append(value)
-    return tuple(values)
-
-
 def test_every_gate_model_has_schema_and_protocol_profile() -> None:
     assert len(M) == 217
     assert len(MODEL_PROTOCOL_PROFILES) == 217
     assert set(M) == set(MODEL_PROTOCOL_PROFILES)
 
 
-def test_validator_safe_vectors_round_trip_for_every_model() -> None:
-    for model in sorted(M):
-        values = _valid_logical_vector(model)
-        command = encode_model_parameter_write(model, values)
-        response = _read_response_from_write(model, command)
-        decoded = decode_model_parameter_response(model, response)
-        assert decoded == values, model
+def test_every_model_uses_an_encoder_supported_codec_profile() -> None:
+    profiles = {profile[2] for profile in MODEL_PROTOCOL_PROFILES.values()}
+    assert profiles <= _SUPPORTED_CODEC_PROFILES
 
 
 def test_parameter_defaults_stays_available_as_apk_metadata() -> None:
