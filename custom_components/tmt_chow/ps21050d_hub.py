@@ -1,6 +1,8 @@
-"""PS21050D live-identity alias support derived from the vendor Android app."""
+"""PS21050D alias support plus runtime gate-state hardening."""
 
 from __future__ import annotations
+
+import time
 
 from .const import ATTR_DEV_PARAM
 from .controller_types import controller_capabilities, controller_family
@@ -14,15 +16,22 @@ from .ps21050d_parameters import (
     encode_parameter_write,
 )
 
+_STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
+
 
 class TmtChowHub(BaseTmtChowHub):
-    """Use the official PS21050 app profile for live PS21050D hardware.
+    """Runtime hub with PS21050D alias support and stale-stop protection.
 
     TMT Chow 3.1.4 contains a PS21050 product implementation but no separate
     PS21050D implementation. The account API identifies this controller as
     PS21050, while live DEV INFO reports PS21050D. Preserve the concrete live
     identity but use the app's family/capability metadata and exact 20-value
     RP,1/WP,1 parameter layout for this alias pair.
+
+    The vendor Shadow may also publish a stale stopped DEV STATUS position
+    immediately after the dedicated /position topic has already reached 0 or
+    100. Keep the last proven motion direction briefly so that late stale
+    status cannot flip a just-closed gate back to open (or vice versa).
     """
 
     def _is_ps21050d_alias(self) -> bool:
@@ -42,6 +51,54 @@ class TmtChowHub(BaseTmtChowHub):
             self.model_parameter_schema = APP_PARAMETERS
             return
         super()._set_controller_type(controller_type)
+
+    def _remember_motion_direction(self, direction: str) -> None:
+        if direction not in ("opening", "closing"):
+            return
+        self._last_completed_motion_direction = direction
+        self._last_completed_motion_monotonic = time.monotonic()
+
+    def _apply_position(self, position: int, *, derive_movement: bool = True) -> None:
+        """Remember the proven live direction even when an endpoint clears movement."""
+        old_position = self.position
+        prior_movement = self.movement
+        super()._apply_position(position, derive_movement=derive_movement)
+
+        if not derive_movement or old_position is None or self.position is None:
+            return
+        if self.position > old_position:
+            self._remember_motion_direction("opening")
+        elif self.position < old_position:
+            self._remember_motion_direction("closing")
+        elif prior_movement in ("opening", "closing") and self.position in (0, 100):
+            self._remember_motion_direction(prior_movement)
+
+    def _status_position_is_plausible(self, status_position: int) -> bool:
+        """Reject a late stale stop position even after endpoint motion was cleared."""
+        if self.movement in ("opening", "closing"):
+            return super()._status_position_is_plausible(status_position)
+
+        last_direction = getattr(self, "_last_completed_motion_direction", None)
+        last_motion_time = getattr(self, "_last_completed_motion_monotonic", None)
+        if (
+            last_direction in ("opening", "closing")
+            and last_motion_time is not None
+            and self.position is not None
+            and time.monotonic() - last_motion_time
+            <= _STALE_STOP_DIRECTION_GUARD_SECONDS
+        ):
+            normalized = (
+                0
+                if status_position <= 5
+                else 100
+                if status_position >= 95
+                else status_position
+            )
+            if last_direction == "closing":
+                return normalized <= self.position
+            return normalized >= self.position
+
+        return super()._status_position_is_plausible(status_position)
 
     @property
     def parameter_write_schema_verified(self) -> bool:
