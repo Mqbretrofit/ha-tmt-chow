@@ -1,0 +1,11 @@
+pedestrian_open:
+  name: Pedestrian opening
+  description: Open a supported TMT Chow gate to its configured pedestrian/partial position.
+  fields:
+    uuid:
+      name: Gate UUID
+      description: Internal UUID of the configured TMT Chow gate.
+      required: true
+      example: "00000000-0000-0000-0000-000000000000"
+      selector:
+        text:
