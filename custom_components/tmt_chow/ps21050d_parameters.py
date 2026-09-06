@@ -1,47 +1,91 @@
-"""Live-captured read-only parameter support for PS21050D."""
+"""APK-derived 20-value parameter support for live PS21050D hardware."""
 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Final
 
+from .model_parameter_schemas import parameter_options, parameter_schema_for
+
 CONTROLLER_TYPE: Final = "PS21050D"
-UART_VERSION: Final = 2
+APP_MODEL: Final = "PS21050"
+# Android product-class protocol selector. The live Shadow field UART VER may
+# independently report 2; that is controller runtime metadata, not this flag.
+UART_VERSION: Final = 1
 PARAMETER_COUNT: Final = 20
 
-# The live controller reports UART version 2 and exactly 20 values in both
-# DEV PARAM and ACK RP,1. Their vendor UI meaning is not verified yet, so every
-# entry is intentionally parameter_type 4 (non-editable) and exposed only
-# through diagnostics/runtime state. This keeps the capture useful without
-# permitting speculative writes.
-PARAMETERS: Final = tuple(
-    (
-        "n",
-        f"ps21050d_raw_{index:02d}",
-        None,
-        4,
-        0,
-        0,
-        0,
-        255,
-        None,
-        None,
-        None,
-        0,
-        255,
-        1,
-        1.0,
-        None,
-        None,
-    )
-    for index in range(1, PARAMETER_COUNT + 1)
+_WIRE_KEYS: Final = (
+    "func_system_learn_method",
+    "func_open_over_current",
+    "func_close_over_current",
+    "func_open_speed",
+    "func_close_speed",
+    "function_slow_speed_setting",
+    "func_slow_down_point",
+    "func_open_delay",
+    "func_close_delay",
+    "func_auto_closing",
+    "func_photocell",
+    "func_pedestrian_mode",
+    "function_alert_light",
+    "func_ph1",
+    "func_ph2",
+    "func_alarm_buzzer",
+    "func_electronic_locker",
+    "func_led_direction",
+    "func_single_door",
+    "func_close_limit_reaction_time",
 )
+
+
+class PS21050DParameterError(ValueError):
+    """The PS21050D parameter frame cannot be mapped safely."""
+
+
+def _extract_app_layout() -> tuple[tuple, tuple, tuple]:
+    """Return the app's exact 20 wire specs plus normal/Hall current helpers."""
+    schema = parameter_schema_for(APP_MODEL)
+    if schema is None:
+        raise RuntimeError("The APK-derived PS21050 schema is missing")
+
+    keys = tuple(spec[1] for spec in schema)
+    start = -1
+    for index in range(0, len(schema) - PARAMETER_COUNT + 1):
+        if keys[index : index + PARAMETER_COUNT] == _WIRE_KEYS:
+            start = index
+            break
+    if start < 0:
+        raise RuntimeError("The APK-derived PS21050 20-value wire layout changed")
+
+    wire = tuple(schema[start : start + PARAMETER_COUNT])
+    prefix = tuple(schema[:start])
+
+    normal_helpers = tuple(
+        spec
+        for spec in prefix
+        if spec[1] == "func_open_over_current"
+        and spec[2] == "option_over_current_setting_p190"
+    )
+    hall_helpers = tuple(
+        spec
+        for spec in prefix
+        if spec[1] == "func_open_over_current"
+        and spec[2] == "option_over_current_setting_p190_hall"
+    )
+    if len(normal_helpers) != 1 or len(hall_helpers) != 1:
+        raise RuntimeError("The APK-derived PS21050 current helper layout changed")
+
+    return wire, normal_helpers[0], hall_helpers[0]
+
+
+PARAMETERS, _NORMAL_CURRENT_SPEC, _HALL_CURRENT_SPEC = _extract_app_layout()
 
 _RP_RE = re.compile(r"(?:^|\b)ACK RP(?:,1)?:([^;\r\n]+)")
 
 
 def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
-    """Parse the exact 20-value PS21050D read response or DEV PARAM body."""
+    """Parse the exact 20-value PS21050/PS21050D RP,1 or DEV PARAM frame."""
     if not isinstance(payload, str):
         return None
 
@@ -53,8 +97,6 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
     if match:
         body = match.group(1)
     else:
-        # Shadow DEV PARAM already contains only the CSV body. Do not treat an
-        # unrelated ACK/NAK as parameter data.
         if "ACK " in clean or "NAK " in clean:
             return None
         body = clean.split(";", 1)[0].lstrip(":")
@@ -68,6 +110,84 @@ def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
     except ValueError:
         return None
 
-    if any(value < 0 or value > 255 for value in values):
+    return values if _wire_values_are_valid_shape(values) else None
+
+
+def _wire_values_are_valid_shape(values: Sequence[int]) -> bool:
+    return (
+        len(values) == PARAMETER_COUNT
+        and all(isinstance(value, int) and 0 <= value <= 255 for value in values)
+    )
+
+
+def _current_spec(values: Sequence[int] | None) -> tuple:
+    """Use the Hall-current option/offset table only when Motor Type is Hall."""
+    motor_mode = (
+        int(values[0])
+        if values and len(values) >= 1
+        else int(PARAMETERS[0][5] or 0)
+    )
+    return _HALL_CURRENT_SPEC if motor_mode == 2 else _NORMAL_CURRENT_SPEC
+
+
+def parameter_options_for(
+    index: int, values: Sequence[int] | None = None
+) -> tuple[str, ...]:
+    """Return vendor UI options for one wire field in the current motor mode."""
+    if not 0 <= index < PARAMETER_COUNT:
+        return ()
+    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    return tuple(parameter_options(spec))
+
+
+def wire_value_to_option(
+    index: int, value: int, values: Sequence[int] | None = None
+) -> str | None:
+    """Translate one raw RP,1 value to the exact vendor UI option label."""
+    options = parameter_options_for(index, values)
+    if not options:
         return None
-    return values
+    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    logical = int(value) - int(spec[6] or 0)
+    return options[logical] if 0 <= logical < len(options) else None
+
+
+def option_to_wire_value(
+    index: int, option: str, values: Sequence[int] | None = None
+) -> int:
+    """Translate one vendor UI option back to its raw WP,1 wire value."""
+    options = parameter_options_for(index, values)
+    try:
+        logical = options.index(option)
+    except ValueError as err:
+        raise PS21050DParameterError(
+            "Unsupported PS21050D parameter option"
+        ) from err
+    spec = _current_spec(values) if index in (1, 2) else PARAMETERS[index]
+    return logical + int(spec[6] or 0)
+
+
+def validate_wire_values(values: Sequence[int]) -> tuple[int, ...]:
+    """Validate the complete 20-value frame against the active app option tables."""
+    if not _wire_values_are_valid_shape(values):
+        raise PS21050DParameterError(
+            "PS21050D requires exactly 20 byte-sized parameter values"
+        )
+    normalized = tuple(int(value) for value in values)
+    for index, value in enumerate(normalized):
+        options = parameter_options_for(index, normalized)
+        if not options:
+            raise PS21050DParameterError(
+                f"PS21050D parameter {index + 1} has no app option table"
+            )
+        if wire_value_to_option(index, value, normalized) is None:
+            raise PS21050DParameterError(
+                f"PS21050D parameter {index + 1} is outside the active app option range"
+            )
+    return normalized
+
+
+def encode_parameter_write(values: Sequence[int]) -> str:
+    """Build the vendor PS21050 WP,1 command from 20 raw wire values."""
+    normalized = validate_wire_values(values)
+    return "WP,1:" + ",".join(map(str, normalized))
