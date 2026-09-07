@@ -8,6 +8,12 @@ from .const import ATTR_DEV_PARAM
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
 from .parameter_codec import is_editable_parameter
+from .pedestrian import (
+    PEDESTRIAN_STRATEGY_NONE,
+    PEDESTRIAN_STRATEGY_PED_OPEN,
+    PEDESTRIAN_STRATEGY_RELAY4,
+    pedestrian_strategy_for,
+)
 from .ps21050d_parameters import (
     APP_MODEL,
     APP_PARAMETERS,
@@ -37,6 +43,11 @@ class TmtChowHub(BaseTmtChowHub):
     read-back verification, and it never automatically retries a parameter
     write.
 
+    The pedestrian command path is strategy-gated. Direct PED OPEN is blocked
+    for controller identities with real-hardware unsafe evidence (currently
+    PS25007A), while RELAY4 remains disabled until a concrete controller has
+    verified FunctionSet/hardware evidence.
+
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
     100. Keep the last proven motion direction briefly so that late stale
@@ -53,6 +64,14 @@ class TmtChowHub(BaseTmtChowHub):
         return (
             self.controller_type == _PS20040D_CONTROLLER_TYPE
             and self.configured_controller_type == _PS20040_APP_MODEL
+        )
+
+    @property
+    def pedestrian_strategy(self) -> str:
+        """Return the currently permitted pedestrian command strategy."""
+        return pedestrian_strategy_for(
+            self.controller_type,
+            self.controller_capabilities,
         )
 
     def _set_controller_type(self, controller_type: str | None) -> None:
@@ -135,6 +154,33 @@ class TmtChowHub(BaseTmtChowHub):
         if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
+
+    async def async_pedestrian_open(self) -> None:
+        """Run only the pedestrian command strategy verified for this controller."""
+        strategy = self.pedestrian_strategy
+        if strategy == PEDESTRIAN_STRATEGY_NONE:
+            raise TmtCommandError(
+                "No verified safe pedestrian command exists for this controller",
+                translation_key="unsupported_controller",
+            )
+
+        if strategy == PEDESTRIAN_STRATEGY_RELAY4:
+            # AutoProduct in TMT Chow 3.1.4 has a separate RELAY4 pedestrian
+            # path. No controller is currently assigned to this strategy, so
+            # this branch cannot run until an explicit verified mapping is
+            # added. RELAY4 is sent once and requires its own ACK; there is no
+            # motion-telemetry rescue and no automatic retry.
+            await self._async_command("RELAY4", "ACK RELAY4")
+            return
+
+        if strategy == PEDESTRIAN_STRATEGY_PED_OPEN:
+            await super().async_pedestrian_open()
+            return
+
+        raise TmtCommandError(
+            "Unknown pedestrian command strategy",
+            translation_key="unsupported_controller",
+        )
 
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one parameter using the model-specific verified codec."""
