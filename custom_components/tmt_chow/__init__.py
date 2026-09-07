@@ -24,9 +24,9 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .controller_types import CAPABILITY_PEDESTRIAN
 from .hub import TmtCommandError
 from .mqtt import MqttError
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
 from .ps21050d_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
@@ -81,9 +81,12 @@ def _register_services(hass: HomeAssistant) -> None:
         )
         if hub is None:
             raise HomeAssistantError("TMT Chow gate not found")
-        if CAPABILITY_PEDESTRIAN not in hub.controller_capabilities:
+        if (
+            pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
+            == PEDESTRIAN_STRATEGY_NONE
+        ):
             raise HomeAssistantError(
-                "Pedestrian opening is not supported by this controller"
+                "Pedestrian opening is not safely supported by this controller"
             )
 
         try:
