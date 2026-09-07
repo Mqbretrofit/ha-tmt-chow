@@ -12,6 +12,12 @@ from .const import CONF_CERTIFICATE_ARN, CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY,
 from .hub import TmtChowHub
 from .model_parameter_schemas import parameter_name, parameter_options
 from .model_protocol_profiles import protocol_profile_for
+from .pedestrian import (
+    PEDESTRIAN_STRATEGY_RELAY4,
+    direct_ped_open_blocked,
+    pedestrian_strategy_for,
+    pedestrian_strategy_reason,
+)
 from .ps21050d_parameters import (
     CONTROLLER_TYPE as PS21050D,
     UART_VERSION as PS21050D_UART_VERSION,
@@ -36,6 +42,13 @@ async def async_get_config_entry_diagnostics(
         else protocol_profile_for(hub.parameter_model_type)
     )
     schema = hub.model_parameter_schema
+    pedestrian_strategy = pedestrian_strategy_for(
+        hub.controller_type,
+        hub.controller_capabilities,
+    )
+    direct_blocked = direct_ped_open_blocked(hub.controller_type) or direct_ped_open_blocked(
+        hub.configured_controller_type
+    )
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
         "runtime": {
@@ -50,6 +63,21 @@ async def async_get_config_entry_diagnostics(
             "configured_controller_type": hub.configured_controller_type,
             "controller_family": hub.controller_family,
             "controller_capabilities": sorted(hub.controller_capabilities),
+            "pedestrian_strategy": pedestrian_strategy,
+            "pedestrian_strategy_reason": pedestrian_strategy_reason(
+                hub.controller_type,
+                hub.controller_capabilities,
+            ),
+            "pedestrian_direct_command_blocked": direct_blocked,
+            "pedestrian_relay4_enabled": pedestrian_strategy == PEDESTRIAN_STRATEGY_RELAY4,
+            # TMT Chow 3.1.4 AutoProduct can select RELAY4 from its cloud
+            # FunctionSet, but the current HA runtime does not receive that
+            # proposal payload. Keep these explicit in diagnostics so missing
+            # FunctionSet evidence is visible instead of being guessed.
+            "function_set_evidence_available": False,
+            "function_set_pedestrian": None,
+            "relay4_available": None,
+            "relay4_function_name": None,
             "product_type": hub.product_type,
             "parameter_model_type": hub.parameter_model_type,
             "parameter_model_source": hub.parameter_model_source,
