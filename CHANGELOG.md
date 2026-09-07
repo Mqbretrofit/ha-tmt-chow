@@ -2,11 +2,15 @@
 
 ## v1.0.4-beta.1
 
-- Added a native-style fourth **Pedestrian opening** control directly inside the standard Home Assistant gate more-info popup for controllers with verified pedestrian capability
-- The popup button uses the existing verified `PED OPEN` command; it does not misuse Home Assistant tilt semantics
+- Added a native-style fourth **Pedestrian opening** control directly inside the standard Home Assistant gate more-info popup for controllers with a safe verified pedestrian command strategy
+- The popup button uses the controller's selected pedestrian strategy; it does not misuse Home Assistant tilt semantics
 - The existing standalone Pedestrian opening button entity remains available
 - Added a small frontend module loaded by the integration and a guarded `tmt_chow.pedestrian_open` service used only for the popup action
-- The extra popup control is capability-gated and appears only on supported TMT Chow gate entities
+- Added explicit pedestrian command strategies: `ped_open`, `relay4`, and `none`
+- Added a hard real-hardware safety block for direct `PED OPEN` on `PS25007A`; no pedestrian MQTT command is sent for this controller even if a future capability import accidentally marks it as supported
+- `RELAY4` pedestrian infrastructure is present but has an empty controller allow-list; no controller can send `RELAY4` until its cloud FunctionSet / hardware behavior is explicitly verified
+- Extended diagnostics with pedestrian strategy, strategy reason, direct-command safety block state, and explicit FunctionSet/Relay4 evidence fields so missing evidence is visible instead of guessed
+- Added regression coverage proving `PS25007A` is blocked before MQTT transmission
 - Added the verified account `PS20040` / live `PS20040D` identity alias for family and UI capabilities, so the standalone Pedestrian opening entity and popup control are exposed on this controller variant
 - Enabled PS20040D parameter writes through the APK-derived PS20040 `RP,1` / `WP,1` schema for the exact configured `PS20040` + live `PS20040D` alias; the normal read-before-write and mandatory read-back verification remain active
 - Treat invalid `DEV STATUS` battery values above 100% (including the observed `FF` → 127 sentinel) as unavailable instead of exposing impossible battery percentages
