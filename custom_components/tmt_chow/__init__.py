@@ -32,7 +32,7 @@ from .ps21050d_hub import TmtChowHub
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
 _FRONTEND_URL_BASE = "/tmt_chow_frontend"
 _FRONTEND_MODULE_URL = (
-    f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.1"
+    f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.2"
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 
