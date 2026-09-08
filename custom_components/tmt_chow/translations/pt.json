@@ -6,7 +6,7 @@
         "title": "Ligar conta TMT Chow",
         "description": "A palavra-passe é utilizada apenas durante a configuração e não é guardada.",
         "data": {
-          "username": "Endereço de e-mail",
+          "username": "Nome de utilizador / apelido",
           "password": "Palavra-passe"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Não foi possível ligar ao TMT Chow",
-      "invalid_auth": "Endereço de e-mail ou palavra-passe inválidos",
+      "invalid_auth": "Nome de utilizador / apelido ou palavra-passe inválidos",
       "no_devices": "Não foi encontrado nenhum portão ChowHUB compatível",
       "unknown_device": "O portão selecionado já não está disponível"
     },

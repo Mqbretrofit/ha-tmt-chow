@@ -6,7 +6,7 @@
         "title": "TMT-Chow-Konto verbinden",
         "description": "Das Passwort wird nur während der Einrichtung verwendet und nicht gespeichert.",
         "data": {
-          "username": "E-Mail-Adresse",
+          "username": "Benutzername / Spitzname",
           "password": "Passwort"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Verbindung zu TMT Chow nicht möglich",
-      "invalid_auth": "Ungültige E-Mail-Adresse oder ungültiges Passwort",
+      "invalid_auth": "Ungültiger Benutzername / Spitzname oder ungültiges Passwort",
       "no_devices": "Kein kompatibles ChowHUB-Tor gefunden",
       "unknown_device": "Das ausgewählte Tor ist nicht mehr verfügbar"
     },

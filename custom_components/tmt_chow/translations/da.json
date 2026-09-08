@@ -6,7 +6,7 @@
         "title": "Forbind TMT Chow-konto",
         "description": "Adgangskoden bruges kun under opsætningen og gemmes ikke.",
         "data": {
-          "username": "E-mailadresse",
+          "username": "Brugernavn / kaldenavn",
           "password": "Adgangskode"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Kan ikke oprette forbindelse til TMT Chow",
-      "invalid_auth": "Ugyldig e-mailadresse eller adgangskode",
+      "invalid_auth": "Ugyldigt brugernavn / kaldenavn eller adgangskode",
       "no_devices": "Ingen kompatibel ChowHUB-port blev fundet",
       "unknown_device": "Den valgte port er ikke længere tilgængelig"
     },

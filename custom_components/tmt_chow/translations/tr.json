@@ -6,7 +6,7 @@
         "title": "TMT Chow hesabını bağla",
         "description": "Parola yalnızca kurulum sırasında kullanılır ve kaydedilmez.",
         "data": {
-          "username": "E-posta adresi",
+          "username": "Kullanıcı adı / takma ad",
           "password": "Parola"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "TMT Chow bağlantısı kurulamıyor",
-      "invalid_auth": "Geçersiz e-posta adresi veya parola",
+      "invalid_auth": "Geçersiz kullanıcı adı / takma ad veya parola",
       "no_devices": "Uyumlu ChowHUB kapısı bulunamadı",
       "unknown_device": "Seçilen kapı artık kullanılamıyor"
     },

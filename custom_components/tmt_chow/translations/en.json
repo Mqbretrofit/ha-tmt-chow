@@ -6,7 +6,7 @@
         "title": "Connect TMT Chow account",
         "description": "The password is used only during setup and is not saved.",
         "data": {
-          "username": "Email address",
+          "username": "Username / nickname",
           "password": "Password"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to TMT Chow",
-      "invalid_auth": "Invalid email address or password",
+      "invalid_auth": "Invalid username / nickname or password",
       "no_devices": "No compatible ChowHUB gate was found",
       "unknown_device": "The selected gate is no longer available"
     },

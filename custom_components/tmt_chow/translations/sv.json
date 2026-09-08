@@ -6,7 +6,7 @@
         "title": "Anslut TMT Chow-konto",
         "description": "Lösenordet används endast under konfigurationen och sparas inte.",
         "data": {
-          "username": "E-postadress",
+          "username": "Användarnamn / smeknamn",
           "password": "Lösenord"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Kan inte ansluta till TMT Chow",
-      "invalid_auth": "Ogiltig e-postadress eller lösenord",
+      "invalid_auth": "Ogiltigt användarnamn / smeknamn eller lösenord",
       "no_devices": "Ingen kompatibel ChowHUB-grind hittades",
       "unknown_device": "Den valda grinden är inte längre tillgänglig"
     },

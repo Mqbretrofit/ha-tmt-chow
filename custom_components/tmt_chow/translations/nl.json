@@ -6,7 +6,7 @@
         "title": "TMT Chow-account verbinden",
         "description": "Het wachtwoord wordt alleen tijdens de configuratie gebruikt en niet opgeslagen.",
         "data": {
-          "username": "E-mailadres",
+          "username": "Gebruikersnaam / bijnaam",
           "password": "Wachtwoord"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Kan geen verbinding maken met TMT Chow",
-      "invalid_auth": "Ongeldig e-mailadres of wachtwoord",
+      "invalid_auth": "Ongeldige gebruikersnaam / bijnaam of wachtwoord",
       "no_devices": "Geen compatibele ChowHUB-poort gevonden",
       "unknown_device": "De geselecteerde poort is niet meer beschikbaar"
     },

@@ -6,7 +6,7 @@
         "title": "Połącz konto TMT Chow",
         "description": "Hasło jest używane tylko podczas konfiguracji i nie jest zapisywane.",
         "data": {
-          "username": "Adres e-mail",
+          "username": "Nazwa użytkownika / pseudonim",
           "password": "Hasło"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Nie można połączyć się z TMT Chow",
-      "invalid_auth": "Nieprawidłowy adres e-mail lub hasło",
+      "invalid_auth": "Nieprawidłowa nazwa użytkownika / pseudonim lub hasło",
       "no_devices": "Nie znaleziono zgodnej bramy ChowHUB",
       "unknown_device": "Wybrana brama nie jest już dostępna"
     },

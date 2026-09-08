@@ -6,7 +6,7 @@
         "title": "Poveži račun TMT Chow",
         "description": "Geslo se uporablja samo med nastavitvijo in se ne shrani.",
         "data": {
-          "username": "E-poštni naslov",
+          "username": "Uporabniško ime / vzdevek",
           "password": "Geslo"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Povezava s TMT Chow ni mogoča",
-      "invalid_auth": "Neveljaven e-poštni naslov ali geslo",
+      "invalid_auth": "Neveljavno uporabniško ime / vzdevek ali geslo",
       "no_devices": "Združljiva vrata ChowHUB niso bila najdena",
       "unknown_device": "Izbrana vrata niso več na voljo"
     },
