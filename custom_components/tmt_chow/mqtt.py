@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 import contextlib
 import logging
 import os
+import socket
 import ssl
 import tempfile
 
@@ -25,6 +26,14 @@ StateCallback = Callable[[bool], None]
 
 class MqttError(Exception):
     """MQTT transport or broker error."""
+
+
+def _describe_exception(err: BaseException) -> str:
+    """Return an exception description that is useful even for empty TimeoutError."""
+    message = str(err).strip()
+    if message:
+        return f"{type(err).__name__}: {message}"
+    return type(err).__name__
 
 
 def _utf8(value: str) -> bytes:
@@ -73,6 +82,8 @@ class AsyncMqttClient:
         self._stopping = False
         self._connected = asyncio.Event()
         self._packet_id = 0
+        self._connect_stage = "idle"
+        self._last_connect_error: str | None = None
 
     @property
     def connected(self) -> bool:
@@ -85,10 +96,17 @@ class AsyncMqttClient:
             self._run(), name=f"tmt_chow_mqtt_{self._client_id}"
         )
         try:
-            await asyncio.wait_for(self._connected.wait(), timeout=30)
+            # One full diagnostic connection attempt can spend up to 10 s on
+            # DNS, 20 s on TCP/TLS, 10 s on CONNACK and 10 s on SUBACK.
+            await asyncio.wait_for(self._connected.wait(), timeout=60)
         except TimeoutError:
+            stage = self._connect_stage
+            detail = self._last_connect_error
             await self.async_stop()
-            raise MqttError("Timed out connecting to AWS IoT") from None
+            suffix = f"; last error: {detail}" if detail else ""
+            raise MqttError(
+                f"Timed out connecting to AWS IoT (last stage: {stage}{suffix})"
+            ) from None
 
     async def async_stop(self) -> None:
         self._stopping = True
@@ -114,31 +132,125 @@ class AsyncMqttClient:
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # noqa: BLE001 - reconnect boundary
-                _LOGGER.warning("TMT Chow MQTT connection lost: %s", err)
+                detail = _describe_exception(err)
+                self._last_connect_error = detail
+                _LOGGER.warning(
+                    "TMT Chow MQTT connection failed: stage=%s endpoint=%s:%s error=%s",
+                    self._connect_stage,
+                    self._endpoint,
+                    MQTT_PORT,
+                    detail,
+                )
             finally:
                 await self._disconnect()
             if not self._stopping:
                 await asyncio.sleep(MQTT_RECONNECT_SECONDS)
 
-    async def _connect(self) -> None:
-        context = await asyncio.to_thread(self._build_ssl_context)
-        self._reader, self._writer = await asyncio.wait_for(
-            asyncio.open_connection(
-                self._endpoint,
-                MQTT_PORT,
-                ssl=context,
-                server_hostname=self._endpoint,
-            ),
-            timeout=20,
+    async def _resolve_endpoint(self) -> list[str]:
+        """Resolve the AWS endpoint so DNS failures are distinguishable."""
+        self._connect_stage = "dns"
+        loop = asyncio.get_running_loop()
+        try:
+            infos = await asyncio.wait_for(
+                loop.getaddrinfo(
+                    self._endpoint,
+                    MQTT_PORT,
+                    type=socket.SOCK_STREAM,
+                ),
+                timeout=10,
+            )
+        except Exception as err:  # noqa: BLE001 - diagnostic boundary
+            raise MqttError(
+                f"AWS IoT DNS lookup failed: {_describe_exception(err)}"
+            ) from err
+        addresses = sorted({str(info[4][0]) for info in infos if info[4]})
+        if not addresses:
+            raise MqttError("AWS IoT DNS lookup returned no addresses")
+        _LOGGER.debug(
+            "TMT Chow AWS IoT diagnostic: DNS OK endpoint=%s addresses=%s",
+            self._endpoint,
+            ",".join(addresses),
         )
+        return addresses
+
+    async def _tcp_probe(self) -> str | None:
+        """Probe TCP/8883 after a TLS failure; return an error or None on success."""
+        writer: asyncio.StreamWriter | None = None
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self._endpoint, MQTT_PORT),
+                timeout=8,
+            )
+            return None
+        except Exception as err:  # noqa: BLE001 - diagnostic boundary
+            return _describe_exception(err)
+        finally:
+            if writer:
+                writer.close()
+                with contextlib.suppress(Exception):
+                    await writer.wait_closed()
+
+    async def _connect(self) -> None:
+        await self._resolve_endpoint()
+
+        self._connect_stage = "tls_context"
+        try:
+            context = await asyncio.to_thread(self._build_ssl_context)
+        except Exception as err:  # noqa: BLE001 - certificate/key diagnostics
+            raise MqttError(
+                "AWS IoT TLS certificate/key setup failed: "
+                f"{_describe_exception(err)}"
+            ) from err
+
+        self._connect_stage = "tls_connect"
+        try:
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(
+                    self._endpoint,
+                    MQTT_PORT,
+                    ssl=context,
+                    server_hostname=self._endpoint,
+                ),
+                timeout=20,
+            )
+        except Exception as err:  # noqa: BLE001 - split TCP from TLS for diagnostics
+            initial_detail = _describe_exception(err)
+            tcp_error = await self._tcp_probe()
+            if tcp_error is None:
+                raise MqttError(
+                    "AWS IoT TLS handshake/connect failed while TCP port 8883 "
+                    f"is reachable: {initial_detail}"
+                ) from err
+            raise MqttError(
+                "AWS IoT TCP/TLS connection failed; TCP port 8883 probe also "
+                f"failed ({tcp_error}); initial error: {initial_detail}"
+            ) from err
+
+        self._connect_stage = "mqtt_connect"
         variable = _utf8("MQTT") + bytes((4, 0x02)) + MQTT_KEEPALIVE.to_bytes(2, "big")
         await self._write_packet(0x10, variable + _utf8(self._client_id))
-        header, body = await asyncio.wait_for(self._read_packet(), timeout=10)
-        if header >> 4 != 2 or len(body) < 2 or body[1] != 0:
-            raise MqttError("AWS IoT rejected MQTT CONNECT")
+        try:
+            header, body = await asyncio.wait_for(self._read_packet(), timeout=10)
+        except TimeoutError as err:
+            raise MqttError("Timed out waiting for AWS IoT MQTT CONNACK") from err
+        if header >> 4 != 2 or len(body) < 2:
+            raise MqttError("Invalid MQTT CONNACK from AWS IoT")
+        if body[1] != 0:
+            raise MqttError(
+                f"AWS IoT rejected MQTT CONNECT (CONNACK return code {body[1]})"
+            )
+
+        self._connect_stage = "subscribe"
         await self._subscribe()
         self._connected.set()
+        self._last_connect_error = None
+        self._connect_stage = "online"
         self._state_callback(True)
+        _LOGGER.debug(
+            "TMT Chow AWS IoT diagnostic: connection fully established endpoint=%s:%s",
+            self._endpoint,
+            MQTT_PORT,
+        )
 
     def _build_ssl_context(self) -> ssl.SSLContext:
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -168,15 +280,22 @@ class AsyncMqttClient:
             _utf8(topic) + b"\x00" for topic in self._topics
         )
         await self._write_packet(0x82, body)
-        header, response = await asyncio.wait_for(self._read_packet(), timeout=10)
+        try:
+            header, response = await asyncio.wait_for(self._read_packet(), timeout=10)
+        except TimeoutError as err:
+            raise MqttError("Timed out waiting for AWS IoT MQTT SUBACK") from err
         if (
             header >> 4 != 9
             or len(response) < 3
             or response[:2] != self._packet_id.to_bytes(2, "big")
         ):
             raise MqttError("Invalid MQTT SUBACK")
-        if any(code == 0x80 for code in response[2:]):
-            raise MqttError("AWS IoT rejected an MQTT subscription")
+        rejected = [index for index, code in enumerate(response[2:]) if code == 0x80]
+        if rejected:
+            raise MqttError(
+                "AWS IoT rejected MQTT subscription(s) at indexes "
+                + ",".join(map(str, rejected))
+            )
 
     async def _read_loop(self) -> None:
         while True:
