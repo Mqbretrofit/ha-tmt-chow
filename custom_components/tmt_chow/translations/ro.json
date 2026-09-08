@@ -6,7 +6,7 @@
         "title": "Conectează contul TMT Chow",
         "description": "Parola este utilizată numai în timpul configurării și nu este salvată.",
         "data": {
-          "username": "Adresă de e-mail",
+          "username": "Nume de utilizator / pseudonim",
           "password": "Parolă"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Nu se poate conecta la TMT Chow",
-      "invalid_auth": "Adresă de e-mail sau parolă nevalidă",
+      "invalid_auth": "Nume de utilizator / pseudonim sau parolă nevalidă",
       "no_devices": "Nu a fost găsită nicio poartă ChowHUB compatibilă",
       "unknown_device": "Poarta selectată nu mai este disponibilă"
     },
