@@ -14,6 +14,12 @@
 - Added the verified account `PS20040` / live `PS20040D` identity alias for family and UI capabilities, so the standalone Pedestrian opening entity and popup control are exposed on this controller variant
 - Enabled PS20040D parameter writes through the APK-derived PS20040 `RP,1` / `WP,1` schema for the exact configured `PS20040` + live `PS20040D` alias; the normal read-before-write and mandatory read-back verification remain active
 - Treat invalid `DEV STATUS` battery values above 100% (including the observed `FF` → 127 sentinel) as unavailable instead of exposing impossible battery percentages
+- Replaced the misleading **Email address** login label with **Username / nickname** and updated the corresponding invalid-credentials message in all 23 bundled translations
+- Added staged AWS IoT connection diagnostics that distinguish DNS resolution, TLS certificate/key setup, TCP/TLS reachability, MQTT CONNACK, and SUBACK failures
+- MQTT connection warnings now always include the connection stage, endpoint, exception type and useful error text; empty `TimeoutError` messages are no longer logged as blank lines
+- After a TLS connection failure the beta performs a non-MQTT TCP/8883 reachability probe to distinguish a blocked/unreachable port from a TLS/certificate/handshake problem
+- Increased the initial AWS IoT setup wait to 60 seconds so one complete staged connection attempt can finish before Home Assistant reports a setup timeout
+- Added regression tests for non-empty MQTT diagnostic exception formatting
 
 ## v1.0.3
 
