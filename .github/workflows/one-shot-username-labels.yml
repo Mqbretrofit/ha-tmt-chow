@@ -1,0 +1,82 @@
+name: One-shot username label update
+
+on:
+  push:
+    branches:
+      - v1.0.4-beta.1
+    paths:
+      - .github/workflows/one-shot-username-labels.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-translations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: v1.0.4-beta.1
+
+      - name: Update username labels in every translation
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          labels = {
+              "bg": ("Потребителско име / псевдоним", "Невалидно потребителско име / псевдоним или парола"),
+              "cs": ("Uživatelské jméno / přezdívka", "Neplatné uživatelské jméno / přezdívka nebo heslo"),
+              "da": ("Brugernavn / kaldenavn", "Ugyldigt brugernavn / kaldenavn eller adgangskode"),
+              "de": ("Benutzername / Spitzname", "Ungültiger Benutzername / Spitzname oder ungültiges Passwort"),
+              "el": ("Όνομα χρήστη / ψευδώνυμο", "Μη έγκυρο όνομα χρήστη / ψευδώνυμο ή κωδικός πρόσβασης"),
+              "en": ("Username / nickname", "Invalid username / nickname or password"),
+              "es": ("Nombre de usuario / apodo", "Nombre de usuario / apodo o contraseña no válidos"),
+              "fi": ("Käyttäjänimi / nimimerkki", "Virheellinen käyttäjänimi / nimimerkki tai salasana"),
+              "fr": ("Nom d’utilisateur / pseudonyme", "Nom d’utilisateur / pseudonyme ou mot de passe invalide"),
+              "hr": ("Korisničko ime / nadimak", "Neispravno korisničko ime / nadimak ili lozinka"),
+              "hu": ("Felhasználónév / becenév", "Érvénytelen felhasználónév / becenév vagy jelszó"),
+              "it": ("Nome utente / nickname", "Nome utente / nickname o password non validi"),
+              "nb": ("Brukernavn / kallenavn", "Ugyldig brukernavn / kallenavn eller passord"),
+              "nl": ("Gebruikersnaam / bijnaam", "Ongeldige gebruikersnaam / bijnaam of wachtwoord"),
+              "pl": ("Nazwa użytkownika / pseudonim", "Nieprawidłowa nazwa użytkownika / pseudonim lub hasło"),
+              "pt": ("Nome de utilizador / apelido", "Nome de utilizador / apelido ou palavra-passe inválidos"),
+              "ro": ("Nume de utilizator / pseudonim", "Nume de utilizator / pseudonim sau parolă nevalidă"),
+              "ru": ("Имя пользователя / псевдоним", "Неверное имя пользователя / псевдоним или пароль"),
+              "sk": ("Používateľské meno / prezývka", "Neplatné používateľské meno / prezývka alebo heslo"),
+              "sl": ("Uporabniško ime / vzdevek", "Neveljavno uporabniško ime / vzdevek ali geslo"),
+              "sv": ("Användarnamn / smeknamn", "Ogiltigt användarnamn / smeknamn eller lösenord"),
+              "tr": ("Kullanıcı adı / takma ad", "Geçersiz kullanıcı adı / takma ad veya parola"),
+              "uk": ("Ім’я користувача / псевдонім", "Неправильне ім’я користувача / псевдонім або пароль"),
+          }
+
+          root = Path("custom_components/tmt_chow/translations")
+          files = sorted(root.glob("*.json"))
+          present = {path.stem for path in files}
+          missing = present - labels.keys()
+          unknown = labels.keys() - present
+          if missing or unknown:
+              raise SystemExit(f"Translation map mismatch: missing={sorted(missing)} unknown={sorted(unknown)}")
+
+          for path in files:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              label, invalid = labels[path.stem]
+              data["config"]["step"]["user"]["data"]["username"] = label
+              data["config"]["error"]["invalid_auth"] = invalid
+              path.write_text(
+                  json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+      - name: Commit translation updates
+        run: |
+          if git diff --quiet -- custom_components/tmt_chow/translations; then
+            echo "No translation changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/tmt_chow/translations
+          git commit -m "Fix username labels in all translations"
+          git push origin HEAD:v1.0.4-beta.1
