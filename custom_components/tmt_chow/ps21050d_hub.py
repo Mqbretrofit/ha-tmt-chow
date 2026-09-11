@@ -17,16 +17,68 @@ from .ps21050d_parameters import (
 )
 
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
+_PS22027 = "PS22027"
+_PS22027_PARAMETER_COUNT = 20
+_PS22027_DUPLICATE_PREFIX = (
+    "func_open_over_current",
+    "func_close_over_current",
+    "func_slide_gate_operation_mode",
+    "func_open_over_current",
+    "func_close_over_current",
+)
+
+
+def _parse_ps22027_parameter_response(payload: str) -> tuple[int, ...] | None:
+    """Parse the PS22027's observed 20-value RP,1 frame without reinterpreting it.
+
+    The APK-derived model matrix currently contains two inherited P190 current
+    entries before the PS22027-specific fields, producing 22 logical entries.
+    Live PS22027 diagnostics show a 20-value DEV PARAM frame. Keep this test
+    path deliberately read-only and preserve the raw controller values until
+    the exact write encoding has been verified on hardware.
+    """
+    if not isinstance(payload, str):
+        return None
+
+    clean = payload.split(";", 1)[0].strip()
+    body: str | None = None
+    for prefix in ("ACK RP,1", "ACK RP"):
+        if not clean.startswith(prefix):
+            continue
+        tail = clean[len(prefix) :]
+        if tail[:1] not in {":", ","}:
+            return None
+        body = tail[1:]
+        break
+
+    if body is None:
+        if clean.startswith("ACK "):
+            return None
+        body = clean.lstrip(":")
+
+    tokens = body.split(",") if body else []
+    if len(tokens) != _PS22027_PARAMETER_COUNT:
+        return None
+    try:
+        return tuple(int(token.strip()) for token in tokens)
+    except ValueError:
+        return None
 
 
 class TmtChowHub(BaseTmtChowHub):
-    """Runtime hub with PS21050D alias support and stale-stop protection.
+    """Runtime hub with model exceptions and stale-stop protection.
 
     TMT Chow 3.1.4 contains a PS21050 product implementation but no separate
     PS21050D implementation. The account API identifies this controller as
     PS21050, while live DEV INFO reports PS21050D. Preserve the concrete live
     identity but use the app's family/capability metadata and exact 20-value
     RP,1/WP,1 parameter layout for this alias pair.
+
+    PS22027 currently needs a separate read-only compatibility path. The
+    generated APK schema contains two inherited P190 current entries in front
+    of the 20 PS22027-specific entries, while live diagnostics expose a
+    20-value frame. The test path removes only that duplicate prefix and never
+    enables parameter writes.
 
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
@@ -40,6 +92,13 @@ class TmtChowHub(BaseTmtChowHub):
             and self.configured_controller_type == APP_MODEL
         )
 
+    def _is_ps22027_read_only_profile(self) -> bool:
+        return (
+            self.controller_type == _PS22027
+            and self.parameter_model_type == _PS22027
+            and self.parameter_model_source == "ps22027_wire20_read_only"
+        )
+
     def _set_controller_type(self, controller_type: str | None) -> None:
         normalized = (controller_type or "").strip().upper()
         if normalized == CONTROLLER_TYPE and self.configured_controller_type == APP_MODEL:
@@ -50,7 +109,24 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = "apk_ps21050_alias"
             self.model_parameter_schema = APP_PARAMETERS
             return
+
         super()._set_controller_type(controller_type)
+
+        if (
+            self.controller_type == _PS22027
+            and self.parameter_model_type == _PS22027
+            and self.model_parameter_schema is not None
+            and len(self.model_parameter_schema) == _PS22027_PARAMETER_COUNT + 2
+            and tuple(spec[1] for spec in self.model_parameter_schema[:5])
+            == _PS22027_DUPLICATE_PREFIX
+        ):
+            self.model_parameter_schema = self.model_parameter_schema[2:]
+            self.parameter_model_source = "ps22027_wire20_read_only"
+
+    def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self._is_ps22027_read_only_profile():
+            return _parse_ps22027_parameter_response(payload)
+        return super()._decode_parameter_response(payload)
 
     def _remember_motion_direction(self, direction: str) -> None:
         if direction not in ("opening", "closing"):
@@ -102,7 +178,9 @@ class TmtChowHub(BaseTmtChowHub):
 
     @property
     def parameter_write_schema_verified(self) -> bool:
-        """Allow writes only for the exact app-proven PS21050D/PS21050 alias."""
+        """Allow writes only for parameter layouts proven safe on live hardware."""
+        if self._is_ps22027_read_only_profile():
+            return False
         if self._is_ps21050d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
