@@ -10,10 +10,10 @@ Use the **Sponsor** button on the repository to support ongoing development thro
 
 Suggested monthly tiers:
 
-- **Supporter — €3/month**: support continued maintenance and bug fixes.
-- **Sponsor — €7/month**: help fund testing, diagnostics, and compatibility work.
-- **Development Sponsor — €15/month**: help fund new controller support and protocol research.
-- **Project Sponsor — €30–50+/month**: for users, installers, or businesses that want to materially support continued development.
+- **Supporter — $3/month**: support continued maintenance and bug fixes.
+- **Sponsor — $7/month**: help fund testing, diagnostics, and compatibility work.
+- **Development Sponsor — $15/month**: help fund new controller support and protocol research.
+- **Project Sponsor — $30–50+/month**: for users, installers, or businesses that want to materially support continued development.
 
 The integration remains an open-source community project. Sponsorship does not buy control over the roadmap or guarantee that a requested feature can be implemented.
 
@@ -23,9 +23,9 @@ If you need support for a specific controller, command, parameter set, diagnosti
 
 Typical contribution ranges:
 
-- small, well-defined feature: **€50–100**
-- larger feature or protocol investigation: **€100–300**
-- substantial new-controller support or work requiring significant hardware/protocol research: **€300–500+**
+- small, well-defined feature: **$50–100**
+- larger feature or protocol investigation: **$100–300**
+- substantial new-controller support or work requiring significant hardware/protocol research: **$300–500+**
 
 These are indicative ranges only. Scope, feasibility, hardware requirements, safety implications, and the final contribution amount should be agreed before development starts.
 
@@ -53,12 +53,12 @@ A fejlesztést a repository **Sponsor** gombján keresztül lehet támogatni.
 
 Javasolt havi támogatási szintek:
 
-- **Supporter — €3/hó**
-- **Sponsor — €7/hó**
-- **Development Sponsor — €15/hó**
-- **Project Sponsor — €30–50+/hó**
+- **Supporter — $3/hó**
+- **Sponsor — $7/hó**
+- **Development Sponsor — $15/hó**
+- **Project Sponsor — $30–50+/hó**
 
-Konkrét vezérlő, funkció, parancs vagy protokoll támogatása külön **Sponsored feature request** issue-ban kérhető. Irányadó hozzájárulási sávok: kisebb funkció **€50–100**, komolyabb fejlesztés vagy protokollvizsgálat **€100–300**, jelentős újvezérlő-támogatás vagy hardveres/protokollos kutatás **€300–500+**.
+Konkrét vezérlő, funkció, parancs vagy protokoll támogatása külön **Sponsored feature request** issue-ban kérhető. Irányadó hozzájárulási sávok: kisebb funkció **$50–100**, komolyabb fejlesztés vagy protokollvizsgálat **$100–300**, jelentős újvezérlő-támogatás vagy hardveres/protokollos kutatás **$300–500+**.
 
 Ezek tájékoztató összegek. A pontos feladatot, megvalósíthatóságot, hardverigényt, biztonsági feltételeket és támogatási összeget a munka megkezdése előtt kell egyeztetni. A támogatott fejlesztések alapértelmezetten bekerülnek a nyilvános projektbe.
 
