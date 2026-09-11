@@ -21,7 +21,7 @@ from .const import (
     PLATFORMS,
 )
 from .mqtt import MqttError
-from .ps21050d_hub import TmtChowHub
+from .ps22027_hub import TmtChowHub
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
