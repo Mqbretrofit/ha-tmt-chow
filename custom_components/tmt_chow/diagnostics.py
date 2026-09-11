@@ -122,9 +122,10 @@ async def async_get_config_entry_diagnostics(
         hub.parameter_model_type == PS21050D
         and hub.parameter_model_source == "apk_ps21050_alias"
     )
-    is_ps22027_read_only = (
+    is_ps22027_profile = (
         hub.parameter_model_type == PS22027
-        and hub.parameter_model_source == "ps22027_wire20_read_only"
+        and hub.parameter_model_source
+        in {"ps22027_wire20_read_only", "ps22027_wire20_verified"}
     )
     profile = (
         (PS21050D_UART_VERSION, (), "ps21050_app_wire20", "")
@@ -175,13 +176,15 @@ async def async_get_config_entry_diagnostics(
                 and not hub.parameter_write_schema_verified
             ),
             "parameter_value_mapping_profile": (
-                "ps22027_apk_hall_helper_read_only"
-                if is_ps22027_read_only
+                "ps22027_apk_hall_helper_write_verified"
+                if is_ps22027_profile and hub.parameter_write_schema_verified
+                else "ps22027_apk_hall_helper_read_only"
+                if is_ps22027_profile
                 else None
             ),
             "parameter_decoded_values": (
                 ps22027_decoded_parameter_values(hub.parameters)
-                if is_ps22027_read_only
+                if is_ps22027_profile
                 else None
             ),
             "model_parameter_schema": [
@@ -195,7 +198,7 @@ async def async_get_config_entry_diagnostics(
                         ps21050d_parameter_options(index - 1, hub.parameters)
                         if is_ps21050d_alias
                         else ps22027_parameter_options(index - 1, hub.parameters)
-                        if is_ps22027_read_only
+                        if is_ps22027_profile
                         else parameter_options(spec)
                     ),
                     "parameter_type": spec[3],
