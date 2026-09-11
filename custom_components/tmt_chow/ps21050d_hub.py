@@ -1,4 +1,4 @@
-"""PS21050D alias support plus runtime gate-state hardening."""
+"""Model-specific runtime exceptions plus gate-state hardening."""
 
 from __future__ import annotations
 
@@ -15,54 +15,13 @@ from .ps21050d_parameters import (
     PS21050DParameterError,
     encode_parameter_write,
 )
-
-_STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
-_PS22027 = "PS22027"
-_PS22027_PARAMETER_COUNT = 20
-_PS22027_DUPLICATE_PREFIX = (
-    "func_open_over_current",
-    "func_close_over_current",
-    "func_slide_gate_operation_mode",
-    "func_open_over_current",
-    "func_close_over_current",
+from .ps22027_parameters import (
+    APP_PARAMETERS as PS22027_PARAMETERS,
+    CONTROLLER_TYPE as PS22027,
+    parse_parameter_response as parse_ps22027_parameter_response,
 )
 
-
-def _parse_ps22027_parameter_response(payload: str) -> tuple[int, ...] | None:
-    """Parse the PS22027's observed 20-value RP,1 frame without reinterpreting it.
-
-    The APK-derived model matrix currently contains two inherited P190 current
-    entries before the PS22027-specific fields, producing 22 logical entries.
-    Live PS22027 diagnostics show a 20-value DEV PARAM frame. Keep this test
-    path deliberately read-only and preserve the raw controller values until
-    the exact write encoding has been verified on hardware.
-    """
-    if not isinstance(payload, str):
-        return None
-
-    clean = payload.split(";", 1)[0].strip()
-    body: str | None = None
-    for prefix in ("ACK RP,1", "ACK RP"):
-        if not clean.startswith(prefix):
-            continue
-        tail = clean[len(prefix) :]
-        if tail[:1] not in {":", ","}:
-            return None
-        body = tail[1:]
-        break
-
-    if body is None:
-        if clean.startswith("ACK "):
-            return None
-        body = clean.lstrip(":")
-
-    tokens = body.split(",") if body else []
-    if len(tokens) != _PS22027_PARAMETER_COUNT:
-        return None
-    try:
-        return tuple(int(token.strip()) for token in tokens)
-    except ValueError:
-        return None
+_STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
 class TmtChowHub(BaseTmtChowHub):
@@ -74,11 +33,12 @@ class TmtChowHub(BaseTmtChowHub):
     identity but use the app's family/capability metadata and exact 20-value
     RP,1/WP,1 parameter layout for this alias pair.
 
-    PS22027 currently needs a separate read-only compatibility path. The
-    generated APK schema contains two inherited P190 current entries in front
-    of the 20 PS22027-specific entries, while live diagnostics expose a
-    20-value frame. The test path removes only that duplicate prefix and never
-    enables parameter writes.
+    PS22027 uses a separate read-only compatibility path. The generated APK
+    matrix contains two inherited P190 current helper entries before the real
+    20 wire slots. Live hardware proved the RP,1 frame contains exactly those
+    20 slots. The dedicated mapper also interprets the two current slots with
+    the APK's P190 Hall-current table when Function Mode is Hall Sensor, but
+    parameter writes remain deliberately disabled until hardware verification.
 
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
@@ -94,8 +54,8 @@ class TmtChowHub(BaseTmtChowHub):
 
     def _is_ps22027_read_only_profile(self) -> bool:
         return (
-            self.controller_type == _PS22027
-            and self.parameter_model_type == _PS22027
+            self.controller_type == PS22027
+            and self.parameter_model_type == PS22027
             and self.parameter_model_source == "ps22027_wire20_read_only"
         )
 
@@ -112,20 +72,13 @@ class TmtChowHub(BaseTmtChowHub):
 
         super()._set_controller_type(controller_type)
 
-        if (
-            self.controller_type == _PS22027
-            and self.parameter_model_type == _PS22027
-            and self.model_parameter_schema is not None
-            and len(self.model_parameter_schema) == _PS22027_PARAMETER_COUNT + 2
-            and tuple(spec[1] for spec in self.model_parameter_schema[:5])
-            == _PS22027_DUPLICATE_PREFIX
-        ):
-            self.model_parameter_schema = self.model_parameter_schema[2:]
+        if self.controller_type == PS22027 and self.parameter_model_type == PS22027:
+            self.model_parameter_schema = PS22027_PARAMETERS
             self.parameter_model_source = "ps22027_wire20_read_only"
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
         if self._is_ps22027_read_only_profile():
-            return _parse_ps22027_parameter_response(payload)
+            return parse_ps22027_parameter_response(payload)
         return super()._decode_parameter_response(payload)
 
     def _remember_motion_direction(self, direction: str) -> None:
