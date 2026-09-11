@@ -7,6 +7,14 @@ import asyncio
 from custom_components.tmt_chow.const import ATTR_DEV_PARAM
 from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
+from custom_components.tmt_chow.ps22027_parameters import (
+    APP_PARAMETERS,
+    PARAMETER_COUNT,
+    decoded_parameter_values,
+    parameter_options_for,
+    parse_parameter_response,
+    wire_value_to_option,
+)
 
 
 _LIVE_WIRE_VALUES = (
@@ -32,6 +40,28 @@ _LIVE_WIRE_VALUES = (
     0,
 )
 _LIVE_BODY = ",".join(map(str, _LIVE_WIRE_VALUES))
+_EXPECTED_DISPLAY_VALUES = (
+    "Hall Sensor",
+    "2.0 A",
+    "1.0 A",
+    "100 %",
+    "75 %",
+    "50 %",
+    "2 sec",
+    "2 sec",
+    "Function OFF",
+    "Mode 1",
+    "Function ON",
+    "Function OFF",
+    "Function ON",
+    "Function OFF",
+    "Function OFF",
+    "Standard Gate Opening",
+    "When Terminal Block is at Bottom",
+    "Dual Gate",
+    "Function OFF",
+    "Function OFF",
+)
 
 
 def _hub() -> TmtChowHub:
@@ -54,9 +84,9 @@ def test_ps22027_uses_20_value_read_only_schema() -> None:
     assert hub.controller_type == "PS22027"
     assert hub.parameter_model_type == "PS22027"
     assert hub.parameter_model_source == "ps22027_wire20_read_only"
-    assert hub.model_parameter_schema is not None
-    assert len(hub.model_parameter_schema) == 20
-    assert tuple(spec[1] for spec in hub.model_parameter_schema[:3]) == (
+    assert hub.model_parameter_schema == APP_PARAMETERS
+    assert len(APP_PARAMETERS) == PARAMETER_COUNT == 20
+    assert tuple(spec[1] for spec in APP_PARAMETERS[:3]) == (
         "func_slide_gate_operation_mode",
         "func_open_over_current",
         "func_close_over_current",
@@ -69,11 +99,33 @@ def test_ps22027_uses_20_value_read_only_schema() -> None:
 def test_ps22027_parser_accepts_exact_20_value_frame_only() -> None:
     hub = _hub()
 
+    assert parse_parameter_response(f"ACK RP,1:{_LIVE_BODY}") == _LIVE_WIRE_VALUES
+    assert parse_parameter_response(f"ACK RP:{_LIVE_BODY}") == _LIVE_WIRE_VALUES
+    assert parse_parameter_response(_LIVE_BODY) == _LIVE_WIRE_VALUES
+    assert parse_parameter_response("ACK RP,1:2,20,10") is None
+    assert parse_parameter_response(f"NAK RP,1:{_LIVE_BODY}") is None
+
     assert hub._decode_parameter_response(f"ACK RP,1:{_LIVE_BODY}") == _LIVE_WIRE_VALUES
-    assert hub._decode_parameter_response(f"ACK RP:{_LIVE_BODY}") == _LIVE_WIRE_VALUES
-    assert hub._decode_parameter_response(_LIVE_BODY) == _LIVE_WIRE_VALUES
-    assert hub._decode_parameter_response("ACK RP,1:2,20,10") is None
-    assert hub._decode_parameter_response(f"NAK RP,1:{_LIVE_BODY}") is None
+
+
+def test_ps22027_hall_mode_uses_p190_hall_current_mapping() -> None:
+    assert parameter_options_for(1, _LIVE_WIRE_VALUES)[0] == "0.5 A"
+    assert parameter_options_for(1, _LIVE_WIRE_VALUES)[-1] == "4.0 A"
+    assert wire_value_to_option(0, 2, _LIVE_WIRE_VALUES) == "Hall Sensor"
+    assert wire_value_to_option(1, 20, _LIVE_WIRE_VALUES) == "2.0 A"
+    assert wire_value_to_option(2, 10, _LIVE_WIRE_VALUES) == "1.0 A"
+
+
+def test_ps22027_live_frame_decodes_to_expected_vendor_labels() -> None:
+    decoded = decoded_parameter_values(_LIVE_WIRE_VALUES)
+    assert decoded is not None
+    assert tuple(item["display"] for item in decoded) == _EXPECTED_DISPLAY_VALUES
+
+    assert decoded[1]["mapping_source"] == "p190_hall_current"
+    assert decoded[1]["mapping_option_key"] == "option_over_current_setting_p190_hall"
+    assert decoded[1]["mapping_offset"] == 5
+    assert decoded[2]["mapping_source"] == "p190_hall_current"
+    assert decoded[3]["mapping_source"] == "ps22027_app"
 
 
 def test_ps22027_refresh_uses_rp1_and_keeps_raw_wire_values() -> None:
