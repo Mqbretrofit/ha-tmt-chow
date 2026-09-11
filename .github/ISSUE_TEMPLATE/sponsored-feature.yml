@@ -1,0 +1,74 @@
+name: Sponsored feature request
+description: Propose and optionally sponsor a specific TMT Chow controller, feature, or protocol investigation.
+title: "[Sponsored feature] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for supporting TMT Chow for Home Assistant development. This form is for clearly scoped controller support, features, diagnostics, or protocol investigations that you may want to sponsor.
+
+        Please do not post passwords, tokens, cloud credentials, device secrets, or other sensitive authentication material.
+
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Request type
+      options:
+        - Small feature / UI improvement
+        - Controller command or control feature
+        - Controller parameter support
+        - New controller model support
+        - Protocol investigation
+        - Diagnostics / compatibility work
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: controller_model
+    attributes:
+      label: Controller model
+      description: Exact TMT / Chow controller model if applicable.
+      placeholder: e.g. PS21053C, PS21050D
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What should the feature do?
+      description: Describe the desired behavior and the user problem it solves.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Available test material
+      description: Tell us whether you can provide Home Assistant diagnostics, protocol captures, app behavior, controller documentation, or access to matching hardware for validation. Do not include secrets.
+
+  - type: dropdown
+    id: contribution_range
+    attributes:
+      label: Indicative sponsorship range
+      description: This is not a payment or binding quote. Scope, feasibility, and safety are agreed before work begins.
+      options:
+        - I want a quote first
+        - €50–100
+        - €100–300
+        - €300–500+
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Project terms
+      options:
+        - label: I understand that sponsorship does not guarantee feasibility or acceptance.
+          required: true
+        - label: I understand that sponsored work will normally be contributed back to the public open-source project.
+          required: true
+        - label: I understand that safety checks, command verification, and physical safety mechanisms will not be bypassed or weakened for a sponsored request.
+          required: true
+        - label: I have not included passwords, tokens, cloud credentials, device secrets, or other sensitive authentication material in this issue.
+          required: true
