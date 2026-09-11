@@ -6,6 +6,7 @@ on:
       - main
       - "v*-beta.*"
       - "v*-rc.*"
+      - "test/**"
   pull_request:
 
 permissions:
