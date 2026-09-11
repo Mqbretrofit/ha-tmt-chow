@@ -24,6 +24,11 @@ from .ps21050d_parameters import (
     UART_VERSION as PS21050D_UART_VERSION,
     parameter_options_for as ps21050d_parameter_options,
 )
+from .ps22027_parameters import (
+    CONTROLLER_TYPE as PS22027,
+    decoded_parameter_values as ps22027_decoded_parameter_values,
+    parameter_options_for as ps22027_parameter_options,
+)
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -117,6 +122,10 @@ async def async_get_config_entry_diagnostics(
         hub.parameter_model_type == PS21050D
         and hub.parameter_model_source == "apk_ps21050_alias"
     )
+    is_ps22027_read_only = (
+        hub.parameter_model_type == PS22027
+        and hub.parameter_model_source == "ps22027_wire20_read_only"
+    )
     profile = (
         (PS21050D_UART_VERSION, (), "ps21050_app_wire20", "")
         if hub.parameter_model_type == PS21050D
@@ -165,6 +174,16 @@ async def async_get_config_entry_diagnostics(
                 hub.parameter_schema_verified
                 and not hub.parameter_write_schema_verified
             ),
+            "parameter_value_mapping_profile": (
+                "ps22027_apk_hall_helper_read_only"
+                if is_ps22027_read_only
+                else None
+            ),
+            "parameter_decoded_values": (
+                ps22027_decoded_parameter_values(hub.parameters)
+                if is_ps22027_read_only
+                else None
+            ),
             "model_parameter_schema": [
                 {
                     "index": index,
@@ -175,6 +194,8 @@ async def async_get_config_entry_diagnostics(
                     "options": list(
                         ps21050d_parameter_options(index - 1, hub.parameters)
                         if is_ps21050d_alias
+                        else ps22027_parameter_options(index - 1, hub.parameters)
+                        if is_ps22027_read_only
                         else parameter_options(spec)
                     ),
                     "parameter_type": spec[3],
