@@ -6,7 +6,7 @@
         "title": "Conectar cuenta de TMT Chow",
         "description": "La contraseña se utiliza solo durante la configuración y no se guarda.",
         "data": {
-          "username": "Dirección de correo electrónico",
+          "username": "Nombre de usuario / apodo",
           "password": "Contraseña"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "No se puede conectar con TMT Chow",
-      "invalid_auth": "Dirección de correo o contraseña no válidas",
+      "invalid_auth": "Nombre de usuario / apodo o contraseña no válidos",
       "no_devices": "No se encontró ninguna puerta ChowHUB compatible",
       "unknown_device": "La puerta seleccionada ya no está disponible"
     },

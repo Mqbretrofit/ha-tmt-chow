@@ -6,7 +6,7 @@
         "title": "Poveži TMT Chow račun",
         "description": "Lozinka se koristi samo tijekom postavljanja i ne sprema se.",
         "data": {
-          "username": "Adresa e-pošte",
+          "username": "Korisničko ime / nadimak",
           "password": "Lozinka"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Nije moguće povezati se s TMT Chow",
-      "invalid_auth": "Neispravna adresa e-pošte ili lozinka",
+      "invalid_auth": "Neispravno korisničko ime / nadimak ili lozinka",
       "no_devices": "Nisu pronađena kompatibilna ChowHUB vrata",
       "unknown_device": "Odabrana vrata više nisu dostupna"
     },

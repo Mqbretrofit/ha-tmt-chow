@@ -6,7 +6,7 @@
         "title": "Connecter le compte TMT Chow",
         "description": "Le mot de passe est utilisé uniquement pendant la configuration et n’est pas enregistré.",
         "data": {
-          "username": "Adresse e-mail",
+          "username": "Nom d’utilisateur / pseudonyme",
           "password": "Mot de passe"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Impossible de se connecter à TMT Chow",
-      "invalid_auth": "Adresse e-mail ou mot de passe incorrect",
+      "invalid_auth": "Nom d’utilisateur / pseudonyme ou mot de passe invalide",
       "no_devices": "Aucun portail ChowHUB compatible trouvé",
       "unknown_device": "Le portail sélectionné n’est plus disponible"
     },

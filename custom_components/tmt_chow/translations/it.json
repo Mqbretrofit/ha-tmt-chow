@@ -6,7 +6,7 @@
         "title": "Collega account TMT Chow",
         "description": "La password viene utilizzata solo durante la configurazione e non viene salvata.",
         "data": {
-          "username": "Indirizzo e-mail",
+          "username": "Nome utente / nickname",
           "password": "Password"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Impossibile connettersi a TMT Chow",
-      "invalid_auth": "Indirizzo e-mail o password non validi",
+      "invalid_auth": "Nome utente / nickname o password non validi",
       "no_devices": "Nessun cancello ChowHUB compatibile trovato",
       "unknown_device": "Il cancello selezionato non è più disponibile"
     },

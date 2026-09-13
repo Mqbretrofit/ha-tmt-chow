@@ -6,7 +6,7 @@
         "title": "TMT Chow-fiók csatlakoztatása",
         "description": "A jelszót csak a beállításhoz használja az integráció, nem menti el.",
         "data": {
-          "username": "E-mail-cím",
+          "username": "Felhasználónév / becenév",
           "password": "Jelszó"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Nem lehet kapcsolódni a TMT Chow szolgáltatáshoz",
-      "invalid_auth": "Hibás e-mail-cím vagy jelszó",
+      "invalid_auth": "Érvénytelen felhasználónév / becenév vagy jelszó",
       "no_devices": "Nem található kompatibilis ChowHUB kapu",
       "unknown_device": "A kiválasztott kapu már nem érhető el"
     },

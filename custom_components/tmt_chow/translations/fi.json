@@ -6,7 +6,7 @@
         "title": "Yhdistä TMT Chow -tili",
         "description": "Salasanaa käytetään vain määrityksen aikana eikä sitä tallenneta.",
         "data": {
-          "username": "Sähköpostiosoite",
+          "username": "Käyttäjänimi / nimimerkki",
           "password": "Salasana"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "TMT Chow -yhteyttä ei voida muodostaa",
-      "invalid_auth": "Virheellinen sähköpostiosoite tai salasana",
+      "invalid_auth": "Virheellinen käyttäjänimi / nimimerkki tai salasana",
       "no_devices": "Yhteensopivaa ChowHUB-porttia ei löytynyt",
       "unknown_device": "Valittu portti ei ole enää käytettävissä"
     },

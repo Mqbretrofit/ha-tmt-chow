@@ -6,7 +6,7 @@
         "title": "Připojit účet TMT Chow",
         "description": "Heslo se používá pouze během nastavení a neukládá se.",
         "data": {
-          "username": "E-mailová adresa",
+          "username": "Uživatelské jméno / přezdívka",
           "password": "Heslo"
         }
       },
@@ -19,7 +19,7 @@
     },
     "error": {
       "cannot_connect": "Nelze se připojit k TMT Chow",
-      "invalid_auth": "Neplatná e-mailová adresa nebo heslo",
+      "invalid_auth": "Neplatné uživatelské jméno / přezdívka nebo heslo",
       "no_devices": "Nebyla nalezena kompatibilní brána ChowHUB",
       "unknown_device": "Vybraná brána již není dostupná"
     },

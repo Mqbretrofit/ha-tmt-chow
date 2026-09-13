@@ -9,9 +9,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .controller_types import CAPABILITY_PEDESTRIAN
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
 
 
 async def async_setup_entry(
@@ -20,7 +20,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
-    if CAPABILITY_PEDESTRIAN not in hub.controller_capabilities:
+    if (
+        pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
+        == PEDESTRIAN_STRATEGY_NONE
+    ):
         return
     async_add_entities([TmtPedestrianOpenButton(hub)])
 
@@ -39,7 +42,11 @@ class TmtPedestrianOpenButton(TmtChowEntity, ButtonEntity):
     def available(self) -> bool:
         return (
             self.hub.available
-            and CAPABILITY_PEDESTRIAN in self.hub.controller_capabilities
+            and pedestrian_strategy_for(
+                self.hub.controller_type,
+                self.hub.controller_capabilities,
+            )
+            != PEDESTRIAN_STRATEGY_NONE
         )
 
     async def async_press(self) -> None:
