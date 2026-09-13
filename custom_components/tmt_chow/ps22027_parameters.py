@@ -1,4 +1,4 @@
-"""Read-only PS22027 20-value parameter mapping derived from the vendor APK."""
+"""Verified PS22027 20-value parameter mapping derived from the vendor APK."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ APP_PARAMETERS, _HALL_OPEN_CURRENT_SPEC, _HALL_CLOSE_CURRENT_SPEC = _extract_app
 
 
 def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
-    """Parse an exact 20-value PS22027 RP,1 response without enabling writes."""
+    """Parse an exact 20-value PS22027 RP,1 response."""
     if not isinstance(payload, str):
         return None
     clean = payload.strip()
@@ -166,8 +166,45 @@ def wire_value_to_option(
     return options[logical] if 0 <= logical < len(options) else None
 
 
+def option_to_wire_value(
+    index: int, option: str, values: Sequence[int] | None = None
+) -> int:
+    """Convert a vendor UI option back to the exact PS22027 wire value."""
+    if not 0 <= index < PARAMETER_COUNT:
+        raise PS22027ParameterError("PS22027 parameter index is outside the wire frame")
+    spec = _active_spec(index, values)
+    options = tuple(parameter_options(spec))
+    try:
+        logical = options.index(option)
+    except ValueError as err:
+        raise PS22027ParameterError("Unsupported PS22027 parameter option") from err
+    return logical + int(spec[6] or 0)
+
+
+def validate_wire_values(values: Sequence[int]) -> tuple[int, ...]:
+    """Require one complete frame that is valid under its active operation mode."""
+    if not _wire_values_are_valid_shape(values):
+        raise PS22027ParameterError(
+            "PS22027 requires exactly 20 byte-sized parameter values"
+        )
+
+    normalized = tuple(int(value) for value in values)
+    for index, value in enumerate(normalized):
+        if wire_value_to_option(index, value, normalized) is None:
+            raise PS22027ParameterError(
+                f"PS22027 parameter {index + 1} is outside the active app option range"
+            )
+    return normalized
+
+
+def encode_parameter_write(values: Sequence[int]) -> str:
+    """Build one full WP,1 frame after validating all 20 live wire values."""
+    normalized = validate_wire_values(values)
+    return "WP,1:" + ",".join(map(str, normalized))
+
+
 def decoded_parameter_values(values: Sequence[int] | None) -> list[dict[str, object]] | None:
-    """Return diagnostic-only raw/display mapping for the observed 20-value frame."""
+    """Return raw/display mapping for the observed 20-value frame."""
     if values is None or not _wire_values_are_valid_shape(values):
         return None
 
