@@ -21,7 +21,14 @@ from .ps21050d_parameters import (
     PS21050DParameterError,
     encode_parameter_write,
 )
+from .ps22027_parameters import (
+    APP_PARAMETERS as PS22027_PARAMETERS,
+    CONTROLLER_TYPE as PS22027,
+    parse_parameter_response as parse_ps22027_parameter_response,
+)
 
+_PS20005_APP_MODEL = "PS20005"
+_PS20005A_CONTROLLER_TYPE = "PS20005A"
 _PS20040_APP_MODEL = "PS20040"
 _PS20040D_CONTROLLER_TYPE = "PS20040D"
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
@@ -42,6 +49,19 @@ class TmtChowHub(BaseTmtChowHub):
     write path still performs the normal read-before-write and mandatory
     read-back verification, and it never automatically retries a parameter
     write.
+
+    PS20005A is an observed live/controller identity variant of the APK-listed
+    PS20005 swing controller. Reuse only PS20005 family/UI capabilities for
+    this exact alias, without borrowing a parameter codec or applying a broad
+    suffix-stripping rule. This exposes the verified pedestrian capability
+    while preserving the concrete PS20005A device identity.
+
+    PS22027 uses a separate read-only compatibility path. The generated APK
+    matrix contains two inherited P190 current helper entries before the real
+    20 wire slots. Live hardware proved the RP,1 frame contains exactly those
+    20 slots. The dedicated mapper also interprets the two current slots with
+    the APK's P190 Hall-current table when Function Mode is Hall Sensor, but
+    parameter writes remain deliberately disabled until hardware verification.
 
     The pedestrian command path is strategy-gated. Direct PED OPEN is blocked
     for controller identities with real-hardware unsafe evidence (currently
@@ -64,6 +84,13 @@ class TmtChowHub(BaseTmtChowHub):
         return (
             self.controller_type == _PS20040D_CONTROLLER_TYPE
             and self.configured_controller_type == _PS20040_APP_MODEL
+        )
+
+    def _is_ps22027_read_only_profile(self) -> bool:
+        return (
+            self.controller_type == PS22027
+            and self.parameter_model_type == PS22027
+            and self.parameter_model_source == "ps22027_wire20_read_only"
         )
 
     @property
@@ -98,7 +125,24 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = "apk_ps21050_alias"
             self.model_parameter_schema = APP_PARAMETERS
             return
+
         super()._set_controller_type(controller_type)
+
+        if normalized == _PS20005A_CONTROLLER_TYPE:
+            # Exact capability alias only. Do not borrow a PS20005 parameter
+            # schema and do not strip arbitrary model suffixes globally.
+            self.controller_family = controller_family(_PS20005_APP_MODEL)
+            self.controller_capabilities = controller_capabilities(_PS20005_APP_MODEL)
+            return
+
+        if self.controller_type == PS22027 and self.parameter_model_type == PS22027:
+            self.model_parameter_schema = PS22027_PARAMETERS
+            self.parameter_model_source = "ps22027_wire20_read_only"
+
+    def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self._is_ps22027_read_only_profile():
+            return parse_ps22027_parameter_response(payload)
+        return super()._decode_parameter_response(payload)
 
     def _remember_motion_direction(self, direction: str) -> None:
         if direction not in ("opening", "closing"):
@@ -150,7 +194,9 @@ class TmtChowHub(BaseTmtChowHub):
 
     @property
     def parameter_write_schema_verified(self) -> bool:
-        """Allow writes for exact app/live aliases with a verified base codec."""
+        """Allow writes only for parameter layouts proven safe on live hardware."""
+        if self._is_ps22027_read_only_profile():
+            return False
         if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
