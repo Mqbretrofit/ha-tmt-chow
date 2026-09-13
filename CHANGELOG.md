@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.4-beta.3
+
+- Added an exact `PS20005A` controller-identity alias for the APK-listed `PS20005` swing controller so its verified pedestrian capability is exposed without applying unsafe generic suffix stripping
+- The `PS20005A` alias reuses only PS20005 family/UI capabilities; it does not borrow a parameter schema or enable parameter writes
+- Added the real-hardware-verified PS22027 20-value `RP,1` read-only parameter profile from issue #9 / test build issue9.3
+- PS22027 Hall Sensor mode now decodes the two overcurrent slots using the vendor P190 Hall-current mapping observed in the APK and verified against the captured 20-value live frame
+- PS22027 parameter writes remain deliberately blocked until a real-hardware write/read-back test is confirmed; the experimental issue9.4 write path is not included
+- Merged the PS22027 read-only diagnostics with the v1.0.4 pedestrian-strategy diagnostics, including raw parameter-frame inspection and a read-only diagnostics probe when normal bootstrap did not produce parameters
+- Added regression tests for the exact PS20005A capability alias and for the PS22027 20-value parser, Hall mapping, live-frame decoding, `RP,1` refresh and write blocking
+
 ## v1.0.4-beta.2
 
 - Replaced the misleading **Email address** login label with **Username / nickname** and updated the corresponding invalid-credentials message in all 23 bundled translations
