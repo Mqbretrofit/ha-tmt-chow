@@ -24,6 +24,8 @@ from .ps21050d_parameters import (
 from .ps22027_parameters import (
     APP_PARAMETERS as PS22027_PARAMETERS,
     CONTROLLER_TYPE as PS22027,
+    PS22027ParameterError,
+    encode_parameter_write as encode_ps22027_parameter_write,
     parse_parameter_response as parse_ps22027_parameter_response,
 )
 
@@ -56,12 +58,12 @@ class TmtChowHub(BaseTmtChowHub):
     suffix-stripping rule. This exposes the verified pedestrian capability
     while preserving the concrete PS20005A device identity.
 
-    PS22027 uses a separate read-only compatibility path. The generated APK
+    PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
     matrix contains two inherited P190 current helper entries before the real
-    20 wire slots. Live hardware proved the RP,1 frame contains exactly those
-    20 slots. The dedicated mapper also interprets the two current slots with
-    the APK's P190 Hall-current table when Function Mode is Hall Sensor, but
-    parameter writes remain deliberately disabled until hardware verification.
+    20 wire slots, but live hardware proved those helpers are not separate
+    RP,1 fields. Hall Sensor mode uses the APK P190 Hall-current table for the
+    two current slots. Writes always read first, send exactly one full WP,1
+    frame, then require the complete 20-slot frame to match on read-back.
 
     The pedestrian command path is strategy-gated. Direct PED OPEN is blocked
     for controller identities with real-hardware unsafe evidence (currently
@@ -86,11 +88,11 @@ class TmtChowHub(BaseTmtChowHub):
             and self.configured_controller_type == _PS20040_APP_MODEL
         )
 
-    def _is_ps22027_read_only_profile(self) -> bool:
+    def _is_ps22027_verified_profile(self) -> bool:
         return (
             self.controller_type == PS22027
             and self.parameter_model_type == PS22027
-            and self.parameter_model_source == "ps22027_wire20_read_only"
+            and self.parameter_model_source == "ps22027_wire20_verified"
         )
 
     @property
@@ -137,10 +139,10 @@ class TmtChowHub(BaseTmtChowHub):
 
         if self.controller_type == PS22027 and self.parameter_model_type == PS22027:
             self.model_parameter_schema = PS22027_PARAMETERS
-            self.parameter_model_source = "ps22027_wire20_read_only"
+            self.parameter_model_source = "ps22027_wire20_verified"
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
-        if self._is_ps22027_read_only_profile():
+        if self._is_ps22027_verified_profile():
             return parse_ps22027_parameter_response(payload)
         return super()._decode_parameter_response(payload)
 
@@ -195,8 +197,8 @@ class TmtChowHub(BaseTmtChowHub):
     @property
     def parameter_write_schema_verified(self) -> bool:
         """Allow writes only for parameter layouts proven safe on live hardware."""
-        if self._is_ps22027_read_only_profile():
-            return False
+        if self._is_ps22027_verified_profile():
+            return True
         if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
@@ -228,8 +230,73 @@ class TmtChowHub(BaseTmtChowHub):
             translation_key="unsupported_controller",
         )
 
+    async def _async_set_ps22027_parameter(self, index: int, value: int) -> None:
+        """Write one PS22027 field and verify the complete 20-slot frame."""
+        schema = self.model_parameter_schema
+        if schema is None or not 0 <= index < len(schema):
+            raise TmtCommandError(
+                "Unknown gate parameter",
+                translation_key="unknown_parameter",
+            )
+        if not is_editable_parameter(schema[index]):
+            raise TmtCommandError(
+                "This vendor parameter is not directly writable",
+                translation_key="unknown_parameter",
+            )
+
+        transport = self._parameter_transport()
+        async with self._transaction_lock:
+            current_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            current = self._decode_parameter_response(current_response)
+            if current is None:
+                raise TmtCommandError(
+                    "Cannot write parameters before a valid PS22027 read",
+                    translation_key="parameters_not_ready",
+                )
+
+            updated = list(current)
+            updated[index] = int(value)
+            values = tuple(updated)
+            try:
+                command = encode_ps22027_parameter_write(values)
+            except PS22027ParameterError as err:
+                raise TmtCommandError(
+                    str(err),
+                    translation_key="unsupported_parameter_value",
+                ) from err
+
+            # Deliberately one write only. A timeout never resends WP,1.
+            await self._async_exchange(
+                f"c={command};src={self._source_tag}",
+                transport.write_ack,
+            )
+
+            # A successful write must return the complete frame we requested.
+            # This catches any unexpected collateral change to the other 19 slots.
+            verify_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            verified = self._decode_parameter_response(verify_response)
+            if verified != values:
+                raise TmtCommandError(
+                    "PS22027 parameter verification failed after write",
+                    translation_key="parameter_verification_failed",
+                )
+
+            self.parameters = verified
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
+            self._notify()
+
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one parameter using the model-specific verified codec."""
+        if self._is_ps22027_verified_profile():
+            await self._async_set_ps22027_parameter(index, value)
+            return
+
         if not self._is_ps21050d_alias():
             await super().async_set_parameter(index, value)
             return
