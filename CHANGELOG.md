@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4-beta.4
+
+- Enabled the real-hardware-verified PS22027 20-value `RP,1` / `WP,1` parameter write path without replacing the newer v1.0.4 runtime, pedestrian, MQTT, alias, or stale-position protections
+- PS22027 writes now always read a fresh complete 20-value frame first, change only the requested slot, validate the full mode-aware frame, send exactly one `WP,1`, then read back the controller state
+- Strengthened PS22027 write verification to require the entire returned 20-slot frame to equal the requested frame, so an unexpected collateral change to any other parameter is rejected
+- Added PS22027 Home Assistant selectors with dynamic Hall Sensor current mapping from the vendor P190 helper table and the verified wire offset
+- Diagnostics now report the PS22027 write-verified mapping profile while preserving the v1.0.4 pedestrian and FunctionSet evidence diagnostics
+- Added regression coverage for Hall-current option encoding, successful single-write/read-back, full-frame collateral-change rejection, and unsafe Function Mode transition blocking
+
 ## v1.0.4-beta.3
 
 - Added an exact `PS20005A` controller-identity alias for the APK-listed `PS20005` swing controller so its verified pedestrian capability is exposed without applying unsafe generic suffix stripping
