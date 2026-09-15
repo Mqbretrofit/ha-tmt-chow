@@ -323,7 +323,7 @@ def test_pedestrian_timer_expiry_clears_opening_state() -> None:
     asyncio.run(hub._expire_pedestrian_timed_open(0.0))
 
     assert hub.movement is None
-    assert hub.is_operating is False
+    assert hub.is_operating is None
 
 
 def test_pedestrian_capability_is_model_gated() -> None:
