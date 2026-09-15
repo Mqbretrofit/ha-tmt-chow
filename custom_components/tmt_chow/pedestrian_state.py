@@ -22,6 +22,7 @@ _TASK_ATTR = "_tmt_pedestrian_display_task"
 _LAST_LIVE_STAMP_ATTR = "_tmt_pedestrian_last_live_stamp"
 _LAST_LIVE_POSITION_ATTR = "_tmt_pedestrian_last_live_position"
 _PEAK_LIVE_POSITION_ATTR = "_tmt_pedestrian_peak_live_position"
+_LIVE_SEEN_ATTR = "_tmt_pedestrian_live_position_seen"
 _LAST_STATUS_STAMP_ATTR = "_tmt_pedestrian_last_status_stamp"
 
 
@@ -110,6 +111,7 @@ def begin_pedestrian_display_cycle(hub: Any) -> bool:
     current_position = getattr(hub, "position", None)
     setattr(hub, _LAST_LIVE_POSITION_ATTR, current_position)
     setattr(hub, _PEAK_LIVE_POSITION_ATTR, current_position)
+    setattr(hub, _LIVE_SEEN_ATTR, False)
     setattr(hub, _LAST_STATUS_STAMP_ATTR, getattr(hub, "_last_operating_status_monotonic", None))
 
     task = asyncio.create_task(
@@ -147,6 +149,7 @@ def cancel_pedestrian_display_cycle(hub: Any, *, notify: bool = True) -> None:
     setattr(hub, _LAST_LIVE_STAMP_ATTR, None)
     setattr(hub, _LAST_LIVE_POSITION_ATTR, None)
     setattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
+    setattr(hub, _LIVE_SEEN_ATTR, False)
     setattr(hub, _LAST_STATUS_STAMP_ATTR, None)
     if notify:
         hub._notify()
@@ -157,8 +160,10 @@ def process_pedestrian_display_telemetry(hub: Any) -> None:
 
     During the configured opening window the overlay wins over contradictory
     RS/Shadow frames. After that window, a fresh closing operating-status or a
-    decreasing dedicated /position value moves the display to closing. A final
-    live 0% (or stopped 0% after closing was already proven) ends the overlay.
+    decreasing dedicated /position value moves the display to closing. Once a
+    controller has emitted dedicated position telemetry in this cycle, only a
+    fresh live 0% may end the overlay; this prevents stale stopped Shadow frames
+    from making the cover jump to closed too early.
     """
     phase = pedestrian_display_phase(hub)
     if phase is None:
@@ -173,6 +178,7 @@ def process_pedestrian_display_telemetry(hub: Any) -> None:
     live_stamp = getattr(hub, "_last_live_position_monotonic", None)
     previous_live_stamp = getattr(hub, _LAST_LIVE_STAMP_ATTR, None)
     if live_stamp is not None and live_stamp != previous_live_stamp:
+        setattr(hub, _LIVE_SEEN_ATTR, True)
         position = getattr(hub, "position", None)
         last_position = getattr(hub, _LAST_LIVE_POSITION_ATTR, None)
         peak_position = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
@@ -208,9 +214,12 @@ def process_pedestrian_display_telemetry(hub: Any) -> None:
                 setattr(hub, _PHASE_ATTR, "closing")
                 phase = "closing"
 
+    # Fallback for controllers that never publish the dedicated position topic.
+    # If live position has been seen, do NOT trust a stopped Shadow 0% here.
     phase = pedestrian_display_phase(hub)
     if (
         phase == "closing"
+        and not getattr(hub, _LIVE_SEEN_ATTR, False)
         and getattr(hub, "position", None) == 0
         and getattr(hub, "is_operating", None) is False
     ):
