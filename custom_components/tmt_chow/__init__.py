@@ -27,7 +27,7 @@ from .const import (
 from .hub import TmtCommandError
 from .mqtt import MqttError
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
-from .ps21050d_hub import TmtChowHub
+from .ps25007a_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
 _FRONTEND_URL_BASE = "/tmt_chow_frontend"

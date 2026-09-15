@@ -16,6 +16,7 @@ from .const import (
     LOGIN_PATH,
     OAUTH_CLIENT,
     POLICY_PATH,
+    USER_PATH,
 )
 
 
@@ -60,6 +61,23 @@ def _value(data: dict[str, Any], *names: str) -> Any:
             if name in nested and nested[name] not in (None, ""):
                 return nested[name]
     return None
+
+
+def source_tag_from_user_id(user_id: Any) -> str:
+    """Format the authenticated TMT user id like the Android UART-v1 path."""
+    if isinstance(user_id, bool):
+        raise TmtApiError("TMT user profile did not contain a valid numeric id")
+
+    if isinstance(user_id, int):
+        value = user_id
+    elif isinstance(user_id, str) and user_id.strip().isdigit():
+        value = int(user_id.strip())
+    else:
+        raise TmtApiError("TMT user profile did not contain a valid numeric id")
+
+    if value < 0:
+        raise TmtApiError("TMT user profile id cannot be negative")
+    return f"P{value:07X}"
 
 
 class TmtChowApi:
@@ -112,12 +130,12 @@ class TmtChowApi:
         except (ClientError, TimeoutError) as err:
             raise TmtApiError("Cannot connect to the TMT API") from err
 
-    async def async_login(self, email: str, password: str) -> None:
+    async def async_login(self, username: str, password: str) -> None:
         payload = await self._request(
             "POST",
             LOGIN_PATH,
             json={
-                "username": email,
+                "username": username,
                 "password": password,
                 "grant_type": "password",
                 "scope": "user",
@@ -129,6 +147,11 @@ class TmtChowApi:
         if not isinstance(token, str) or not token:
             raise TmtAuthError("The TMT response did not contain an access token")
         self._access_token = token
+
+    async def async_get_source_tag(self) -> str:
+        """Return the identified-user UART-v1 source tag from the TMT profile."""
+        payload = await self._request("GET", USER_PATH)
+        return source_tag_from_user_id(_value(payload, "id", "user_id", "userId"))
 
     async def async_get_devices(self) -> list[TmtDevice]:
         payload = await self._request("GET", DEVICES_PATH)
