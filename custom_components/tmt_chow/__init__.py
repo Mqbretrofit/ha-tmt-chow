@@ -35,6 +35,7 @@ _FRONTEND_MODULE_URL = (
     f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.2"
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
+SERVICE_PS25007A_PEDESTRIAN_TEST = "ps25007a_pedestrian_test"
 
 
 async def _async_setup_frontend(hass: HomeAssistant) -> None:
@@ -61,40 +62,78 @@ async def _async_setup_frontend(hass: HomeAssistant) -> None:
     hass.data[_FRONTEND_DATA_KEY] = True
 
 
+def _find_hub(hass: HomeAssistant, uuid: str) -> TmtChowHub | None:
+    """Return the configured hub matching one gate UUID."""
+    return next(
+        (
+            candidate
+            for candidate in hass.data.get(DOMAIN, {}).values()
+            if isinstance(candidate, TmtChowHub) and candidate.uuid == uuid
+        ),
+        None,
+    )
+
+
 def _register_services(hass: HomeAssistant) -> None:
-    """Register integration services used by the frontend control."""
-    if hass.services.has_service(DOMAIN, SERVICE_PEDESTRIAN_OPEN):
-        return
+    """Register integration services used by the normal and test controls."""
+    if not hass.services.has_service(DOMAIN, SERVICE_PEDESTRIAN_OPEN):
 
-    async def _async_pedestrian_open(call: ServiceCall) -> None:
-        uuid = str(call.data.get("uuid", "")).strip()
-        if not uuid:
-            raise HomeAssistantError("Missing TMT Chow gate UUID")
+        async def _async_pedestrian_open(call: ServiceCall) -> None:
+            uuid = str(call.data.get("uuid", "")).strip()
+            if not uuid:
+                raise HomeAssistantError("Missing TMT Chow gate UUID")
 
-        hub = next(
-            (
-                candidate
-                for candidate in hass.data.get(DOMAIN, {}).values()
-                if isinstance(candidate, TmtChowHub) and candidate.uuid == uuid
-            ),
-            None,
+            hub = _find_hub(hass, uuid)
+            if hub is None:
+                raise HomeAssistantError("TMT Chow gate not found")
+            if (
+                pedestrian_strategy_for(
+                    hub.controller_type,
+                    hub.controller_capabilities,
+                )
+                == PEDESTRIAN_STRATEGY_NONE
+            ):
+                raise HomeAssistantError(
+                    "Pedestrian opening is not safely supported by this controller"
+                )
+
+            try:
+                await hub.async_pedestrian_open()
+            except TmtCommandError as err:
+                raise HomeAssistantError(str(err)) from err
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_PEDESTRIAN_OPEN,
+            _async_pedestrian_open,
         )
-        if hub is None:
-            raise HomeAssistantError("TMT Chow gate not found")
-        if (
-            pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
-            == PEDESTRIAN_STRATEGY_NONE
-        ):
-            raise HomeAssistantError(
-                "Pedestrian opening is not safely supported by this controller"
-            )
 
-        try:
-            await hub.async_pedestrian_open()
-        except TmtCommandError as err:
-            raise HomeAssistantError(str(err)) from err
+    if not hass.services.has_service(DOMAIN, SERVICE_PS25007A_PEDESTRIAN_TEST):
 
-    hass.services.async_register(DOMAIN, SERVICE_PEDESTRIAN_OPEN, _async_pedestrian_open)
+        async def _async_ps25007a_pedestrian_test(call: ServiceCall) -> None:
+            uuid = str(call.data.get("uuid", "")).strip()
+            confirmation = str(call.data.get("confirmation", "")).strip()
+            if not uuid:
+                raise HomeAssistantError("Missing TMT Chow gate UUID")
+            if not confirmation:
+                raise HomeAssistantError(
+                    "Missing PS25007A pedestrian test confirmation"
+                )
+
+            hub = _find_hub(hass, uuid)
+            if hub is None:
+                raise HomeAssistantError("TMT Chow gate not found")
+
+            try:
+                await hub.async_ps25007a_pedestrian_test(confirmation)
+            except TmtCommandError as err:
+                raise HomeAssistantError(str(err)) from err
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_PS25007A_PEDESTRIAN_TEST,
+            _async_ps25007a_pedestrian_test,
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

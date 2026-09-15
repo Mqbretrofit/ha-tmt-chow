@@ -9,3 +9,29 @@ pedestrian_open:
       example: "00000000-0000-0000-0000-000000000000"
       selector:
         text:
+
+ps25007a_pedestrian_test:
+  name: PS25007A controlled pedestrian test
+  description: >-
+    Experimental one-shot PED OPEN test for the exact configured PS25007 -> live
+    PS25007A alias. The normal pedestrian strategy remains blocked. The gate must
+    be fully closed and stopped, the source tag must be account-derived, and the
+    confirmation must contain the current source tag exactly. No movement command
+    retry or follow-up movement command is performed.
+  fields:
+    uuid:
+      name: Gate UUID
+      description: Internal UUID of the PS25007 / PS25007A test gate.
+      required: true
+      example: "00000000-0000-0000-0000-000000000000"
+      selector:
+        text:
+    confirmation:
+      name: Confirmation
+      description: >-
+        Enter PED OPEN followed by the current source tag, for example
+        PED OPEN P00317D9. The service refuses any other value.
+      required: true
+      example: "PED OPEN P00317D9"
+      selector:
+        text:
