@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from .model_parameter_schemas import parameter_options
+from .parameters import PARAMETERS
 
 _PEDESTRIAN_PARAMETER_KEYS = {"pedestrian_mode", "func_pedestrian_mode"}
 _SECONDS_SUFFIX_RE = re.compile(
@@ -15,6 +16,9 @@ _SECONDS_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _SECONDS_PREFIX_RE = re.compile(r"\bseconds?[_\s-]*(\d+(?:\.\d+)?)\b", re.IGNORECASE)
+_LEGACY_TIMED_MODELS = {"PS21053", "PS21053C"}
+_PS25007_APP_MODEL = "PS25007"
+_PS25007A_PARAMETER_MODEL = "PS25007A"
 
 _PHASE_ATTR = "_tmt_pedestrian_display_phase"
 _DEADLINE_ATTR = "_tmt_pedestrian_display_deadline"
@@ -26,15 +30,60 @@ _LIVE_SEEN_ATTR = "_tmt_pedestrian_live_position_seen"
 _LAST_STATUS_STAMP_ATTR = "_tmt_pedestrian_last_status_stamp"
 
 
+def _seconds_from_label(label: str) -> float | None:
+    match = _SECONDS_SUFFIX_RE.search(label) or _SECONDS_PREFIX_RE.search(label)
+    if match is None:
+        return None
+    seconds = float(match.group(1))
+    return seconds if seconds > 0 else None
+
+
+def _legacy_pedestrian_seconds(hub: Any, values: tuple[int, ...] | list[int]) -> float | None:
+    """Read the same 17-slot pedestrian option used by the legacy HA selects."""
+    controller_type = str(getattr(hub, "controller_type", "") or "").upper()
+    configured_type = str(
+        getattr(hub, "configured_controller_type", "") or ""
+    ).upper()
+    parameter_model = str(getattr(hub, "parameter_model_type", "") or "").upper()
+    legacy_profile = controller_type in _LEGACY_TIMED_MODELS or (
+        configured_type == _PS25007_APP_MODEL
+        and parameter_model == _PS25007A_PARAMETER_MODEL
+    )
+    if not legacy_profile or len(values) != len(PARAMETERS):
+        return None
+
+    for index, definition in enumerate(PARAMETERS):
+        if definition.key != "pedestrian_mode":
+            continue
+        try:
+            raw_value = int(values[index])
+        except (IndexError, TypeError, ValueError):
+            return None
+        if not 0 <= raw_value < len(definition.options):
+            return None
+        return _seconds_from_label(str(definition.options[raw_value]))
+    return None
+
+
 def pedestrian_open_duration_seconds(hub: Any) -> float | None:
     """Return the active time-based pedestrian setting from the vendor schema.
 
-    Only options explicitly expressed as seconds are accepted. Percentage-based
-    partial opening and simple OFF/ON pedestrian modes intentionally return None.
+    PS21053/PS21053C and the verified PS25007 -> PS25007A alias expose their
+    17-slot controls through ``parameters.PARAMETERS`` in Home Assistant, so
+    read those profiles from that exact same option source first. Other models
+    stay schema-driven. Percentage-based partial opening and simple OFF/ON
+    pedestrian modes intentionally return None.
     """
-    schema = getattr(hub, "model_parameter_schema", None)
     values = getattr(hub, "parameters", None)
-    if schema is None or values is None or len(schema) != len(values):
+    if values is None:
+        return None
+
+    legacy_seconds = _legacy_pedestrian_seconds(hub, values)
+    if legacy_seconds is not None:
+        return legacy_seconds
+
+    schema = getattr(hub, "model_parameter_schema", None)
+    if schema is None or len(schema) != len(values):
         return None
 
     for index, spec in enumerate(schema):
@@ -55,12 +104,9 @@ def pedestrian_open_duration_seconds(hub: Any) -> float | None:
         if not 0 <= raw_value < len(options):
             continue
 
-        label = str(options[raw_value])
-        match = _SECONDS_SUFFIX_RE.search(label) or _SECONDS_PREFIX_RE.search(label)
-        if match is None:
-            continue
-        seconds = float(match.group(1))
-        return seconds if seconds > 0 else None
+        seconds = _seconds_from_label(str(options[raw_value]))
+        if seconds is not None:
+            return seconds
 
     return None
 
@@ -141,6 +187,28 @@ def begin_pedestrian_display_cycle(hub: Any) -> bool:
     setattr(hub, _TASK_ATTR, task)
     hub._notify()
     return True
+
+
+async def async_pedestrian_open_with_display(hub: Any) -> None:
+    """Run PED OPEN with the same presentation state from every entry point.
+
+    The integration has two user-facing entry points: the normal ButtonEntity
+    and the custom cover more-info control, which calls the integration service.
+    Both must arm the timed presentation state before the command can emit any
+    controller telemetry. On command failure or cancellation, clear only the
+    presentation overlay and re-raise the original error.
+    """
+    display_started = begin_pedestrian_display_cycle(hub)
+    try:
+        await hub.async_pedestrian_open()
+    except asyncio.CancelledError:
+        if display_started:
+            cancel_pedestrian_display_cycle(hub)
+        raise
+    except Exception:
+        if display_started:
+            cancel_pedestrian_display_cycle(hub)
+        raise
 
 
 async def _finish_opening_phase(hub: Any, deadline: float) -> None:
