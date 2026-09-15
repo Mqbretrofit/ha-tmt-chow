@@ -11,12 +11,13 @@ PEDESTRIAN_STRATEGY_NONE: Final = "none"
 PEDESTRIAN_STRATEGY_PED_OPEN: Final = "ped_open"
 PEDESTRIAN_STRATEGY_RELAY4: Final = "relay4"
 
-# Real-hardware safety evidence from PS25007A (P500BU,PS25007A,V02): a direct
-# PED OPEN moved the gate but returned no ACK PED OPEN, and the next FULL CLOSE
-# executed with inverted direction until the vendor app recovered the board.
-# Keep this explicit deny-list even if a future capability import accidentally
-# classifies the model as pedestrian-capable.
-UNSAFE_DIRECT_PED_OPEN_CONTROLLERS: Final = frozenset({"PS25007A"})
+# Real-hardware safety evidence from the PS25007 account identity whose live
+# controller reports PS25007A (P500BU,PS25007A,V02): a direct PED OPEN moved
+# the gate but returned no ACK PED OPEN, and the next FULL CLOSE executed with
+# inverted direction until the vendor app recovered the board.  Block both the
+# configured/account and live identities so startup timing can never bypass the
+# safety guard.
+UNSAFE_DIRECT_PED_OPEN_CONTROLLERS: Final = frozenset({"PS25007", "PS25007A"})
 
 # TMT Chow 3.1.4 AutoProduct supports a separate Relay 4 pedestrian path, but
 # no concrete controller is enabled here until its cloud FunctionSet/real
