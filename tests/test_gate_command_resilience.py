@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from custom_components.tmt_chow.controller_types import (
     CAPABILITY_PEDESTRIAN,
@@ -25,6 +26,19 @@ def _hub(device_type: str = "PS21053C") -> TmtChowHub:
         product_type="112",
         device_type=device_type,
     )
+
+
+def _set_pedestrian_option(hub: TmtChowHub, raw_value: int) -> None:
+    schema = hub.model_parameter_schema
+    assert schema is not None
+    values = [0] * len(schema)
+    index = next(
+        index
+        for index, spec in enumerate(schema)
+        if spec[1] in {"pedestrian_mode", "func_pedestrian_mode"}
+    )
+    values[index] = raw_value
+    hub.parameters = tuple(values)
 
 
 def test_stale_stop_status_cannot_reopen_a_just_closed_gate() -> None:
@@ -247,6 +261,69 @@ def test_pedestrian_command_uses_verified_wire_command() -> None:
     asyncio.run(hub.async_pedestrian_open())
 
     assert captured == [("PED OPEN", "ACK PED OPEN", "opening")]
+
+
+def test_ps21053c_pedestrian_seconds_are_read_from_active_parameter() -> None:
+    hub = _hub("PS21053C")
+    _set_pedestrian_option(hub, 1)
+    assert hub.pedestrian_open_duration_seconds == 6.0
+
+
+def test_other_second_based_model_uses_same_generic_timing_parser() -> None:
+    hub = _hub("PS18020")
+    _set_pedestrian_option(hub, 1)
+    assert hub.pedestrian_open_duration_seconds == 6.0
+
+
+def test_percentage_based_pedestrian_mode_does_not_create_time_window() -> None:
+    hub = _hub("PS23065")
+    _set_pedestrian_option(hub, 1)
+    assert hub.pedestrian_open_duration_seconds is None
+
+
+def test_timed_pedestrian_window_masks_wrong_interim_direction_bit() -> None:
+    hub = _hub("PS21053C")
+    hub.position = 20
+    hub.movement = "opening"
+    hub.is_operating = True
+    hub._pedestrian_open_until_monotonic = time.monotonic() + 10
+
+    hub._apply_status(
+        GateStatus(
+            position=20,
+            is_operating=True,
+            is_open_direction=False,
+            battery_percent=90,
+        )
+    )
+
+    assert hub.is_operating is True
+    assert hub.movement == "opening"
+
+
+def test_decreasing_live_position_ends_pedestrian_open_window_and_shows_closing() -> None:
+    hub = _hub("PS21053C")
+    hub.position = 40
+    hub.movement = "opening"
+    hub.is_operating = True
+    hub._pedestrian_open_until_monotonic = time.monotonic() + 10
+
+    hub._apply_position(30)
+
+    assert hub._pedestrian_open_until_monotonic is None
+    assert hub.movement == "closing"
+
+
+def test_pedestrian_timer_expiry_clears_opening_state() -> None:
+    hub = _hub("PS21053C")
+    hub.movement = "opening"
+    hub.is_operating = True
+    hub._pedestrian_open_until_monotonic = 0.0
+
+    asyncio.run(hub._expire_pedestrian_timed_open(0.0))
+
+    assert hub.movement is None
+    assert hub.is_operating is None
 
 
 def test_pedestrian_capability_is_model_gated() -> None:
