@@ -25,7 +25,8 @@ from .select_base import (
     TmtParameterSelect,
 )
 
-_LEGACY_17_VALUE_MODELS = {"PS21053", "PS21053C", "PS25007", "PS25007A"}
+_LEGACY_PS21053 = {"PS21053", "PS21053C"}
+_PS25007_APP_MODEL = "PS25007"
 _PS25007A_PARAMETER_MODEL = "PS25007A"
 
 
@@ -36,14 +37,15 @@ async def async_setup_entry(
 ) -> None:
     hub = hass.data[DOMAIN][entry.entry_id]
     schema = hub.model_parameter_schema
-    legacy_17_value_profile = (
-        hub.controller_type in _LEGACY_17_VALUE_MODELS
-        or hub.parameter_model_type == _PS25007A_PARAMETER_MODEL
+    ps25007a_profile = (
+        hub.configured_controller_type == _PS25007_APP_MODEL
+        and hub.parameter_model_type == _PS25007A_PARAMETER_MODEL
     )
+    legacy_17_value_profile = hub.controller_type in _LEGACY_PS21053 or ps25007a_profile
     if schema is None or (not hub.supports_parameters and not legacy_17_value_profile):
         return
 
-    # PS21053/PS21053C and the verified PS25007 -> PS25007A AutoProduct alias
+    # PS21053/PS21053C and the exact PS25007 -> PS25007A AutoProduct alias
     # share the same 17 wire positions and option semantics.  During the short
     # configured-only PS25007 startup phase the entities may exist unavailable;
     # writes become possible only after live DEV INFO confirms PS25007A.
