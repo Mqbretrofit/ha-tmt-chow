@@ -114,6 +114,40 @@ def test_fresh_closing_status_after_timer_changes_display_to_closing() -> None:
     asyncio.run(run_test())
 
 
+def test_stale_stopped_zero_does_not_end_cycle_after_live_position_was_seen() -> None:
+    hub = _hub("PS21053C")
+    _set_pedestrian_raw_value(hub, 1)
+
+    async def run_test() -> None:
+        assert begin_pedestrian_display_cycle(hub) is True
+
+        hub.position = 40
+        hub._last_live_position_monotonic = time.monotonic()
+        process_pedestrian_display_telemetry(hub)
+        hub._tmt_pedestrian_display_deadline = time.monotonic() - 1
+        process_pedestrian_display_telemetry(hub)
+
+        hub.is_operating = True
+        hub.movement = "closing"
+        hub._last_operating_status_monotonic = time.monotonic() + 1
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "closing"
+
+        # Simulate a contradictory stopped Shadow/RS frame that claims 0%
+        # without a new dedicated /position update. The overlay must stay in
+        # closing instead of flickering to closed.
+        hub.position = 0
+        hub.is_operating = False
+        hub.movement = None
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "closing"
+        assert pedestrian_display_is_closed(hub) is False
+
+        cancel_pedestrian_display_cycle(hub, notify=False)
+
+    asyncio.run(run_test())
+
+
 def test_live_position_reverse_and_zero_complete_cycle() -> None:
     hub = _hub("PS21053C")
     _set_pedestrian_raw_value(hub, 1)
