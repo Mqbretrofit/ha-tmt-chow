@@ -177,8 +177,11 @@ class TmtChowHub(BaseTmtChowHub):
         self._pedestrian_state_task = None
         if self.movement == "opening":
             self.movement = None
+            # Do not force a false stopped state at the timing boundary. None
+            # keeps later /position telemetry able to derive a direction if the
+            # motor runs slightly beyond the configured nominal duration.
             if self.is_operating is True:
-                self.is_operating = False
+                self.is_operating = None
             self._notify()
 
     def _start_pedestrian_timed_open(self) -> None:
@@ -317,9 +320,6 @@ class TmtChowHub(BaseTmtChowHub):
         if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
-
-    async def async_start(self) -> None:
-        await super().async_start()
 
     async def async_stop(self) -> None:
         self._cancel_pedestrian_timed_open()
