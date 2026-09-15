@@ -75,6 +75,17 @@ def _find_hub(hass: HomeAssistant, uuid: str) -> TmtChowHub | None:
     )
 
 
+def _is_known_ouranos_candidate(hub: TmtChowHub) -> bool:
+    """Return whether this hub matches the confirmed PS19001 OURANOS case.
+
+    A 20-character identifier alone does not identify OURANOS: working WBT
+    controllers can use the same identifier length. Until uuid_type is persisted
+    in config entries, restrict this native diagnostic to the PS19001 hardware
+    confirmed by issue #14.
+    """
+    return hub.configured_controller_type == "PS19001" and len(hub.uuid) == 20
+
+
 def _register_services(hass: HomeAssistant) -> None:
     """Register integration services used by controls and diagnostics."""
     if not hass.services.has_service(DOMAIN, SERVICE_PEDESTRIAN_OPEN):
@@ -112,15 +123,20 @@ def _register_services(hass: HomeAssistant) -> None:
                 hub = _find_hub(hass, requested_uuid)
                 if hub is None:
                     raise HomeAssistantError("TMT Chow gate not found")
+                if not _is_known_ouranos_candidate(hub):
+                    raise HomeAssistantError(
+                        "Selected gate is not a confirmed PS19001 OURANOS candidate"
+                    )
             else:
                 candidates = [
                     candidate
                     for candidate in hass.data.get(DOMAIN, {}).values()
-                    if isinstance(candidate, TmtChowHub) and len(candidate.uuid) == 20
+                    if isinstance(candidate, TmtChowHub)
+                    and _is_known_ouranos_candidate(candidate)
                 ]
                 if len(candidates) != 1:
                     raise HomeAssistantError(
-                        "Specify uuid unless exactly one 20-character OURANOS candidate is configured"
+                        "Specify uuid unless exactly one confirmed PS19001 OURANOS candidate is configured"
                     )
                 hub = candidates[0]
 
