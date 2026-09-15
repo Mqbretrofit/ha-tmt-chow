@@ -17,6 +17,7 @@ PLATFORMS: Final = [
 
 BASE_URL: Final = "https://installer.tmt-automation.com/"
 LOGIN_PATH: Final = "v4.0/user/outh2/token/"
+USER_PATH: Final = "v4.0/user/"
 DEVICES_PATH: Final = "v4.0/user/devices/"
 CERTIFICATE_PATH: Final = "v4.0/devices/iot/user/certificate/"
 POLICY_PATH: Final = "v4.0/devices/iot/device/policy/"

@@ -1,48 +1,58 @@
 # PS25007A / AutoProduct pedestrian notes
 
-This note records why `PS25007A` must not inherit the normal direct `PED OPEN` path without model-specific verification.
+This note records the current evidence for the `PS25007` account identity whose live controller reports `PS25007A` (`P500BU,PS25007A,V02`). Parameter support and pedestrian-command safety remain separate decisions.
 
-## TMT Chow 3.1.4 APK findings
+## TMT Chow 3.1.4 APK and Proposal findings
 
-The TMT Chow 3.1.4 APK does not expose a dedicated `PS25007A` product implementation in the static controller class catalog that is used by the integration's 217-model matrix.
+The TMT Chow 3.1.4 APK uses its dynamic `AutoProduct` path for this product. The relevant logic is:
 
-The same APK contains the dynamic `AutoProduct` path and the following relevant identifiers/commands:
+- normal pedestrian path: `PED OPEN`
+- alternate path: `RELAY4`
+- `Relay 4` in the cloud `FunctionSet` is what switches AutoProduct to the alternate path
 
-- `AutoProduct`
-- `ResponseProposalInfo`
-- `FunctionSet`
-- `transferFunctionSet`
-- `Relay 4`
-- `RELAY4`
-- `ACK RELAY4`
-- `PED OPEN`
-- proposal endpoint template: `v4.0/devices/Proposal/{proposal}/latest/`
+The cloud Proposal requested with the account product identity `PS25007` explicitly declares:
 
-This is important because an AutoProduct can derive UI/functions from a cloud proposal/FunctionSet instead of from a dedicated static controller class. A vendor-app pedestrian button therefore does **not** prove that the raw command for that controller is `PED OPEN`; the dynamic path also contains a separate Relay 4 mechanism.
+- `PED Open`
+- notifications `PedOpening` and `PedOpened`
 
-## Real-hardware PS25007A evidence
+The same PS25007 Proposal does **not** declare a `Relay 4` FunctionSet command. With that Proposal, the APK therefore predicts the direct `PED OPEN` path rather than `RELAY4`.
 
-GitHub issue #5 contains a real-hardware test for `P500BU,PS25007A,V02` performed before the integration exposed a pedestrian control for this model.
+The UART-v1 command builder also contains two source identities:
 
-Observed after one manually patched direct `PED OPEN` command:
+- identified-user form: `;src=P%07X(user_id)`
+- privacy/GDPR anonymous form: `;src=P9999999`
+
+The exact privacy branch taken by the official app on this account has not yet been captured directly.
+
+## Real-hardware evidence
+
+### Official app
+
+The official TMT Chow app was tested on the real `P500BU,PS25007A,V02` controller and its pedestrian-opening action works correctly.
+
+A later passive MQTT capture on the correct PS25007 device observed the resulting controller traffic, including movement/status updates and a final `40%` position. The AWS IoT policy accepted subscriptions to `wbt01Tx`, `/position` and Shadow documents, but disconnected the passive client when it attempted to subscribe to outbound `wbt01Rx`. Because of that policy restriction, the exact command payload/source tag sent by the official app was not visible in the passive capture.
+
+### Earlier manual direct-command test
+
+An older unofficial test sent one manually constructed direct command using `c=PED OPEN;src=P9999999` on the same controller family. That test produced a serious unsafe state:
 
 - the gate physically opened to roughly 50%;
-- no `ACK PED OPEN` was received;
+- no expected `ACK PED OPEN` was received;
 - the gate did not auto-close;
 - the next normal `FULL CLOSE` executed with inverted physical direction and fully opened the gate;
 - normal `FULL OPEN` / `FULL CLOSE` behavior returned only after recovery through the vendor app.
 
-This is treated as a physical-safety signal, not merely an ACK compatibility issue.
+This remains a physical-safety signal even though the official app can perform pedestrian opening correctly.
 
-## Integration policy
+## Current hypothesis and integration policy
 
-Starting in `v1.0.4-beta.1`:
+The strongest unresolved context difference is now the command source identity. The integration historically stores `P9999999`, while the APK has an identified-user `P%07X(user_id)` path. Starting with `v1.0.4-beta.8`, the exact configured `PS25007` beta profile can refresh its source tag from the authenticated user profile through Home Assistant Reconfigure.
 
-- pedestrian control uses an explicit strategy: `ped_open`, `relay4`, or `none`;
-- `PS25007A` is on a hard deny-list for direct `PED OPEN`;
-- the deny-list wins even if a future capability import accidentally marks the model as pedestrian-capable;
-- no controller is currently assigned to the `relay4` strategy;
-- `RELAY4` must not be enabled for a concrete controller until its cloud FunctionSet and/or real-hardware behavior verifies that path;
-- diagnostics expose the selected strategy and whether FunctionSet/Relay4 evidence is actually available.
+This is an experiment to align command identity with the APK path, not proof that `P9999999` caused the earlier unsafe behavior.
 
-The purpose is to avoid assuming that every vendor pedestrian UI button maps to the same raw movement command.
+Until that difference is verified safely:
+
+- `PS25007` and `PS25007A` remain hard-blocked for direct `PED OPEN`;
+- `RELAY4` remains disabled because the PS25007 Proposal does not map pedestrian opening to Relay 4;
+- no pedestrian movement command should be manually injected merely to test the hypothesis;
+- benign command/parameter behavior with the refreshed source tag should be verified before considering any change to the pedestrian safety block.
