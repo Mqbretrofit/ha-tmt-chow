@@ -9,3 +9,18 @@ pedestrian_open:
       example: "00000000-0000-0000-0000-000000000000"
       selector:
         text:
+
+ouranos_probe:
+  name: OURANOS transport probe
+  description: >-
+    Run a read-only ThroughTek IOTC/RDT connectivity probe inside Home Assistant.
+    It sends no gate, status-read, parameter-read, or parameter-write command.
+  fields:
+    uuid:
+      name: Gate UUID
+      description: >-
+        Optional. Leave empty when exactly one 20-character OURANOS gate is configured.
+      required: false
+      example: "ABCDEFGHIJKLMNOPQRST"
+      selector:
+        text:
