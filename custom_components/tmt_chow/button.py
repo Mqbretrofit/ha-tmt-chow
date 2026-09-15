@@ -12,6 +12,10 @@ from .const import DOMAIN
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE
+from .pedestrian_state import (
+    begin_pedestrian_display_cycle,
+    cancel_pedestrian_display_cycle,
+)
 
 _PS25007_APP_MODEL = "PS25007"
 
@@ -51,9 +55,17 @@ class TmtPedestrianOpenButton(TmtChowEntity, ButtonEntity):
         )
 
     async def async_press(self) -> None:
+        # For controllers whose Pedestrian Mode is expressed in seconds, arm
+        # the HA presentation state BEFORE publishing/waiting for the command.
+        # Some controllers emit contradictory transient RS/Shadow frames while
+        # the PED command is still awaiting ACK; those must not make the cover
+        # flicker through closing/closed during the actual opening phase.
+        display_started = begin_pedestrian_display_cycle(self.hub)
         try:
             await self.hub.async_pedestrian_open()
         except TmtCommandError as err:
+            if display_started:
+                cancel_pedestrian_display_cycle(self.hub)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key=err.translation_key,
