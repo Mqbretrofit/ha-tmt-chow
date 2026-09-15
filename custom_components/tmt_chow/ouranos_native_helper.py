@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Short-lived read-only native TUTK helper used by Home Assistant.
 
-The 20-character UID is supplied on stdin and is never printed.  This helper
-intentionally has no RDT_Write binding and no application command payload.
+The 20-character UID is supplied on stdin and is never printed by this helper.
+It intentionally has no RDT_Write binding and no application command payload.
 """
 
 from __future__ import annotations
@@ -87,11 +87,15 @@ def _error_name(code: int | None, table: dict[int, str]) -> str | None:
     return table.get(code, "unknown_error")
 
 
-def _connect(lib: ctypes.CDLL, uid: str, sid: int, timeout: float) -> tuple[int | None, bool, int | None]:
+def _connect(
+    lib: ctypes.CDLL, uid: str, sid: int, timeout: float
+) -> tuple[int | None, bool, int | None]:
     result: dict[str, int] = {}
 
     def worker() -> None:
-        result["code"] = int(lib.IOTC_Connect_ByUID_Parallel(uid.encode("ascii"), sid))
+        result["code"] = int(
+            lib.IOTC_Connect_ByUID_Parallel(uid.encode("ascii"), sid)
+        )
 
     thread = threading.Thread(target=worker, name="tmt-iotc-connect", daemon=True)
     thread.start()
@@ -109,8 +113,8 @@ def _connect(lib: ctypes.CDLL, uid: str, sid: int, timeout: float) -> tuple[int 
     return result.get("code"), True, stop_code
 
 
-def main() -> int:
-    out: dict[str, Any] = {
+def _new_report() -> dict[str, Any]:
+    return {
         "library_loaded": False,
         "library_error": None,
         "symbols": {},
@@ -142,10 +146,126 @@ def main() -> int:
         },
     }
 
+
+def _run_transport_probe(lib: ctypes.CDLL, uid: str, out: dict[str, Any]) -> None:
+    """Populate one report using only connect/create/passive-read operations."""
+    lib.IOTC_Initialize2.argtypes = [ctypes.c_ushort]
+    lib.IOTC_Initialize2.restype = ctypes.c_int
+    lib.IOTC_Get_SessionID.argtypes = []
+    lib.IOTC_Get_SessionID.restype = ctypes.c_int
+    lib.IOTC_Connect_ByUID_Parallel.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    lib.IOTC_Connect_ByUID_Parallel.restype = ctypes.c_int
+    lib.IOTC_Session_Close.argtypes = [ctypes.c_int]
+    lib.IOTC_Session_Close.restype = ctypes.c_int
+    lib.IOTC_DeInitialize.argtypes = []
+    lib.IOTC_DeInitialize.restype = ctypes.c_int
+
+    sid: int | None = None
+    rdt_id: int | None = None
+    iotc_initialized = False
+    rdt_initialized = False
+    try:
+        init = int(lib.IOTC_Initialize2(0))
+        out["iotc_initialize_code"] = init
+        out["iotc_initialize_name"] = _error_name(init, IOTC_ERRORS)
+        if init not in (0, -3):
+            return
+        iotc_initialized = True
+
+        sid = int(lib.IOTC_Get_SessionID())
+        if sid < 0:
+            out["iotc_connect_code"] = sid
+            out["iotc_connect_name"] = _error_name(sid, IOTC_ERRORS)
+            return
+        out["session_id_allocated"] = True
+
+        out["iotc_connect_attempted"] = True
+        connect_code, timed_out, stop_code = _connect(lib, uid, sid, 25.0)
+        out["iotc_connect_code"] = connect_code
+        out["iotc_connect_name"] = _error_name(connect_code, IOTC_ERRORS)
+        out["iotc_connect_timed_out"] = timed_out
+        out["iotc_connect_stop_code"] = stop_code
+        if connect_code is None or connect_code < 0:
+            return
+        out["iotc_connected"] = True
+
+        if not all(out["symbols"].get(name) for name in RDT_SYMBOLS):
+            return
+
+        lib.RDT_Initialize.argtypes = []
+        lib.RDT_Initialize.restype = ctypes.c_int
+        lib.RDT_Create.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_ubyte]
+        lib.RDT_Create.restype = ctypes.c_int
+        lib.RDT_Read.argtypes = [
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        lib.RDT_Read.restype = ctypes.c_int
+        lib.RDT_Destroy.argtypes = [ctypes.c_int]
+        lib.RDT_Destroy.restype = ctypes.c_int
+        lib.RDT_DeInitialize.argtypes = []
+        lib.RDT_DeInitialize.restype = ctypes.c_int
+
+        rdt_init = int(lib.RDT_Initialize())
+        out["rdt_initialize_code"] = rdt_init
+        out["rdt_initialize_name"] = _error_name(rdt_init, RDT_ERRORS)
+        if rdt_init <= 0 and rdt_init != -10001:
+            return
+        rdt_initialized = True
+
+        out["rdt_create_attempted"] = True
+        rdt_id = int(lib.RDT_Create(sid, 10000, 0))
+        out["rdt_create_code"] = rdt_id
+        out["rdt_create_name"] = _error_name(rdt_id, RDT_ERRORS)
+        if rdt_id < 0:
+            return
+        out["rdt_connected"] = True
+
+        # Passive receive only. No RDT_Write symbol is bound anywhere in this file.
+        out["passive_read_attempted"] = True
+        buf = ctypes.create_string_buffer(4096)
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            ret = int(lib.RDT_Read(rdt_id, buf, len(buf), 300))
+            out["passive_read_last_code"] = ret
+            if ret > 0:
+                out["passive_read_count"] += 1
+                out["passive_read_bytes"] += ret
+            elif ret < 0 and ret != -10007:
+                break
+    finally:
+        cleanup = out["cleanup"]
+        if rdt_id is not None and rdt_id >= 0 and out["symbols"].get("RDT_Destroy"):
+            try:
+                cleanup["rdt_destroy_code"] = int(lib.RDT_Destroy(rdt_id))
+            except Exception as err:
+                cleanup["rdt_destroy_error"] = type(err).__name__
+        if sid is not None and sid >= 0:
+            try:
+                cleanup["iotc_session_close_code"] = int(lib.IOTC_Session_Close(sid))
+            except Exception as err:
+                cleanup["iotc_session_close_error"] = type(err).__name__
+        if rdt_initialized and out["symbols"].get("RDT_DeInitialize"):
+            try:
+                cleanup["rdt_deinitialize_code"] = int(lib.RDT_DeInitialize())
+            except Exception as err:
+                cleanup["rdt_deinitialize_error"] = type(err).__name__
+        if iotc_initialized:
+            try:
+                cleanup["iotc_deinitialize_code"] = int(lib.IOTC_DeInitialize())
+            except Exception as err:
+                cleanup["iotc_deinitialize_error"] = type(err).__name__
+
+
+def main() -> int:
+    out = _new_report()
     if len(sys.argv) != 2:
         out["library_error"] = "expected one library path"
         print(json.dumps(out, sort_keys=True))
         return 2
+
     uid = sys.stdin.readline().strip()
     if len(uid) != 20 or not uid.isascii():
         out["library_error"] = "invalid 20-character ASCII OURANOS UID"
@@ -171,112 +291,8 @@ def main() -> int:
         print(json.dumps(out, sort_keys=True))
         return 0
 
-    lib.IOTC_Initialize2.argtypes = [ctypes.c_ushort]
-    lib.IOTC_Initialize2.restype = ctypes.c_int
-    lib.IOTC_Get_SessionID.argtypes = []
-    lib.IOTC_Get_SessionID.restype = ctypes.c_int
-    lib.IOTC_Connect_ByUID_Parallel.argtypes = [ctypes.c_char_p, ctypes.c_int]
-    lib.IOTC_Connect_ByUID_Parallel.restype = ctypes.c_int
-    lib.IOTC_Session_Close.argtypes = [ctypes.c_int]
-    lib.IOTC_Session_Close.restype = ctypes.c_int
-    lib.IOTC_DeInitialize.argtypes = []
-    lib.IOTC_DeInitialize.restype = ctypes.c_int
-
-    sid: int | None = None
-    rdt_id: int | None = None
-    iotc_initialized = False
-    rdt_initialized = False
-    try:
-        init = int(lib.IOTC_Initialize2(0))
-        out["iotc_initialize_code"] = init
-        out["iotc_initialize_name"] = _error_name(init, IOTC_ERRORS)
-        if init not in (0, -3):
-            return _finish(out)
-        iotc_initialized = True
-
-        sid = int(lib.IOTC_Get_SessionID())
-        if sid < 0:
-            out["iotc_connect_code"] = sid
-            out["iotc_connect_name"] = _error_name(sid, IOTC_ERRORS)
-            return _finish(out)
-        out["session_id_allocated"] = True
-        out["iotc_connect_attempted"] = True
-        connect_code, timed_out, stop_code = _connect(lib, uid, sid, 25.0)
-        out["iotc_connect_code"] = connect_code
-        out["iotc_connect_name"] = _error_name(connect_code, IOTC_ERRORS)
-        out["iotc_connect_timed_out"] = timed_out
-        out["iotc_connect_stop_code"] = stop_code
-        if connect_code is None or connect_code < 0:
-            return _finish(out)
-        out["iotc_connected"] = True
-
-        if not all(out["symbols"].get(name) for name in RDT_SYMBOLS):
-            return _finish(out)
-
-        lib.RDT_Initialize.argtypes = []
-        lib.RDT_Initialize.restype = ctypes.c_int
-        lib.RDT_Create.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_ubyte]
-        lib.RDT_Create.restype = ctypes.c_int
-        lib.RDT_Read.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-        lib.RDT_Read.restype = ctypes.c_int
-        lib.RDT_Destroy.argtypes = [ctypes.c_int]
-        lib.RDT_Destroy.restype = ctypes.c_int
-        lib.RDT_DeInitialize.argtypes = []
-        lib.RDT_DeInitialize.restype = ctypes.c_int
-
-        rdt_init = int(lib.RDT_Initialize())
-        out["rdt_initialize_code"] = rdt_init
-        out["rdt_initialize_name"] = _error_name(rdt_init, RDT_ERRORS)
-        if rdt_init <= 0 and rdt_init != -10001:
-            return _finish(out)
-        rdt_initialized = True
-
-        out["rdt_create_attempted"] = True
-        rdt_id = int(lib.RDT_Create(sid, 10000, 0))
-        out["rdt_create_code"] = rdt_id
-        out["rdt_create_name"] = _error_name(rdt_id, RDT_ERRORS)
-        if rdt_id < 0:
-            return _finish(out)
-        out["rdt_connected"] = True
-
-        # Passive receive only. No RDT_Write symbol is bound anywhere in this file.
-        out["passive_read_attempted"] = True
-        buf = ctypes.create_string_buffer(4096)
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline:
-            ret = int(lib.RDT_Read(rdt_id, buf, len(buf), 300))
-            out["passive_read_last_code"] = ret
-            if ret > 0:
-                out["passive_read_count"] += 1
-                out["passive_read_bytes"] += ret
-            elif ret < 0 and ret != -10007:
-                break
-        return _finish(out)
-    finally:
-        cleanup = out["cleanup"]
-        if rdt_id is not None and rdt_id >= 0 and out["symbols"].get("RDT_Destroy"):
-            try:
-                cleanup["rdt_destroy_code"] = int(lib.RDT_Destroy(rdt_id))
-            except Exception as err:
-                cleanup["rdt_destroy_error"] = type(err).__name__
-        if sid is not None and sid >= 0:
-            try:
-                cleanup["iotc_session_close_code"] = int(lib.IOTC_Session_Close(sid))
-            except Exception as err:
-                cleanup["iotc_session_close_error"] = type(err).__name__
-        if rdt_initialized and out["symbols"].get("RDT_DeInitialize"):
-            try:
-                cleanup["rdt_deinitialize_code"] = int(lib.RDT_DeInitialize())
-            except Exception as err:
-                cleanup["rdt_deinitialize_error"] = type(err).__name__
-        if iotc_initialized:
-            try:
-                cleanup["iotc_deinitialize_code"] = int(lib.IOTC_DeInitialize())
-            except Exception as err:
-                cleanup["iotc_deinitialize_error"] = type(err).__name__
-
-
-def _finish(out: dict[str, Any]) -> int:
+    _run_transport_probe(lib, uid, out)
+    # Print only after cleanup, so Home Assistant receives the final report.
     print(json.dumps(out, sort_keys=True))
     return 0
 
