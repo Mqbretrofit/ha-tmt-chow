@@ -1,11 +1,11 @@
 """Home Assistant-hosted read-only OURANOS/TUTK transport probe.
 
-The native library is never loaded into the Home Assistant process.  A pinned
+The native library is never loaded into the Home Assistant process. A pinned,
 architecture-matched helper library is downloaded into /config/.storage and is
-executed by a short-lived child Python process.  A native crash therefore cannot
+executed by a short-lived child Python process. A native crash therefore cannot
 crash Home Assistant.
 
-The probe is transport-only.  It never calls RDT_Write and never sends a gate,
+The probe is transport-only. It never calls RDT_Write and never sends a gate,
 status-read, parameter-read, or parameter-write command.
 """
 
@@ -33,6 +33,8 @@ _DOWNLOAD_TIMEOUT: Final = 45
 _HELPER_TIMEOUT: Final = 40
 
 # The SHA values are Git blob SHA-1 values from the pinned repository commit.
+# Keeping all three architectures here lets the exact same Home Assistant action
+# run on HAOS x86-64, Raspberry Pi / other AArch64 systems, and 32-bit ARM.
 _LIBRARY_SOURCES: Final[dict[str, tuple[str, str]]] = {
     "x86_64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
     "amd64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
@@ -44,6 +46,7 @@ _LIBRARY_SOURCES: Final[dict[str, tuple[str, str]]] = {
 
 
 def _git_blob_sha1(data: bytes) -> str:
+    """Return the Git blob object SHA-1 for downloaded bytes."""
     return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
@@ -76,12 +79,15 @@ def _base_result(uuid: str) -> dict[str, Any]:
 
 
 async def _async_ensure_library(hass: HomeAssistant, machine: str) -> tuple[Path, bool]:
+    """Return an integrity-checked native library for this HA architecture."""
     source = _LIBRARY_SOURCES.get(machine)
     if source is None:
         raise RuntimeError(f"unsupported_machine:{machine}")
     filename, expected_blob_sha = source
     cache_dir = Path(hass.config.path(".storage", "tmt_chow_ouranos"))
-    await hass.async_add_executor_job(cache_dir.mkdir, parents=True, exist_ok=True)
+    await hass.async_add_executor_job(
+        lambda: cache_dir.mkdir(parents=True, exist_ok=True)
+    )
     target = cache_dir / filename
 
     def existing_ok() -> bool:
@@ -123,6 +129,33 @@ async def _async_ensure_library(hass: HomeAssistant, machine: str) -> tuple[Path
     return target, True
 
 
+def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
+    """Return the last JSON object emitted by the native helper.
+
+    Some native TUTK builds write their own informational messages to stdout.
+    Scanning from the end prevents those messages from making a valid probe look
+    like invalid JSON while still requiring the helper itself to emit one object.
+    """
+    text = stdout.decode("utf-8", "replace")
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _safe_helper_error(stderr: bytes, uuid: str) -> str | None:
+    """Return bounded helper stderr with the raw device UID removed."""
+    text = stderr.decode("utf-8", "replace").replace(uuid, "<redacted-uid>").strip()
+    return text[-1000:] if text else None
+
+
 async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str, Any]:
     """Run the isolated read-only OURANOS native connectivity probe on HA."""
     result = _base_result(uuid)
@@ -150,6 +183,7 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
         result["result"] = "helper_missing"
         return result
 
+    process: asyncio.subprocess.Process | None = None
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -166,7 +200,7 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
             timeout=_HELPER_TIMEOUT,
         )
     except TimeoutError:
-        if process.returncode is None:
+        if process is not None and process.returncode is None:
             process.kill()
             await process.wait()
         result["result"] = "helper_timeout"
@@ -178,17 +212,10 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
         return result
 
     result["helper_exit_code"] = process.returncode
-    stderr_text = stderr.decode("utf-8", "replace").strip()
-    if stderr_text:
-        # The helper is forbidden from printing the raw UID. Keep stderr bounded.
-        result["helper_error"] = stderr_text[-1000:]
+    result["helper_error"] = _safe_helper_error(stderr, uuid)
 
-    try:
-        payload = json.loads(stdout.decode("utf-8", "replace").strip())
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        result["result"] = "helper_invalid_output"
-        return result
-    if not isinstance(payload, dict):
+    payload = _parse_helper_stdout(stdout)
+    if payload is None:
         result["result"] = "helper_invalid_output"
         return result
 
