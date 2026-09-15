@@ -91,13 +91,33 @@ def pedestrian_display_is_closed(hub: Any) -> bool | None:
     return None if position is None else position == 0
 
 
+def pedestrian_display_position(hub: Any) -> int | None:
+    """Return a stable cover position while a timed pedestrian cycle is active.
+
+    During opening/open, stale controller frames may temporarily write raw 0%
+    even though the gate is in the pedestrian cycle. Hide that contradictory 0%
+    and retain the highest dedicated live position observed in this cycle. Once
+    real closing is proven, expose the raw live position again.
+    """
+    phase = pedestrian_display_phase(hub)
+    raw_position = getattr(hub, "position", None)
+    if phase not in {"opening", "open"}:
+        return raw_position
+
+    peak = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
+    if isinstance(peak, int) and peak > 0:
+        return peak
+    if isinstance(raw_position, int) and raw_position > 0:
+        return raw_position
+    return None
+
+
 def begin_pedestrian_display_cycle(hub: Any) -> bool:
     """Start the presentation cycle before the PED command is sent.
 
-    Starting before the publish/ACK wait is essential: some controllers send
-    transient/stale RS or Shadow frames while the PED command is still waiting
-    for its acknowledgement. Those frames must never make HA flicker through
-    closing/closed while the configured pedestrian opening phase is running.
+    For time-based pedestrian modes, the configured duration is authoritative
+    for the opening presentation phase. No RS, Shadow, or /position frame may
+    end or reverse that opening phase before its deadline.
     """
     duration = pedestrian_open_duration_seconds(hub)
     if duration is None:
@@ -155,22 +175,52 @@ def cancel_pedestrian_display_cycle(hub: Any, *, notify: bool = True) -> None:
         hub._notify()
 
 
-def process_pedestrian_display_telemetry(hub: Any) -> None:
-    """Advance an active presentation cycle using only strong live evidence.
+def _record_opening_window_telemetry(hub: Any) -> None:
+    """Track useful telemetry during opening without allowing a state transition."""
+    live_stamp = getattr(hub, "_last_live_position_monotonic", None)
+    previous_live_stamp = getattr(hub, _LAST_LIVE_STAMP_ATTR, None)
+    if live_stamp is not None and live_stamp != previous_live_stamp:
+        setattr(hub, _LIVE_SEEN_ATTR, True)
+        position = getattr(hub, "position", None)
+        last_position = getattr(hub, _LAST_LIVE_POSITION_ATTR, None)
+        peak_position = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
 
-    During the configured opening window the overlay wins over contradictory
-    RS/Shadow frames. After that window, a fresh closing operating-status or a
-    decreasing dedicated /position value moves the display to closing. Once a
-    controller has emitted dedicated position telemetry in this cycle, only a
-    fresh live 0% may end the overlay; this prevents stale stopped Shadow frames
-    from making the cover jump to closed too early.
+        if position is not None:
+            peak_position = position if peak_position is None else max(peak_position, position)
+            setattr(hub, _PEAK_LIVE_POSITION_ATTR, peak_position)
+            # While the configured opening duration is active, do not move the
+            # baseline backwards. A transient 40 -> 0 -> 40 sequence must not be
+            # interpreted as automatic closing before the timer expires.
+            if last_position is None or position > last_position:
+                setattr(hub, _LAST_LIVE_POSITION_ATTR, position)
+
+        setattr(hub, _LAST_LIVE_STAMP_ATTR, live_stamp)
+
+    status_stamp = getattr(hub, "_last_operating_status_monotonic", None)
+    previous_status_stamp = getattr(hub, _LAST_STATUS_STAMP_ATTR, None)
+    if status_stamp is not None and status_stamp != previous_status_stamp:
+        setattr(hub, _LAST_STATUS_STAMP_ATTR, status_stamp)
+
+
+def process_pedestrian_display_telemetry(hub: Any) -> None:
+    """Advance an active presentation cycle using only post-window evidence.
+
+    During the configured time-based opening window the presentation is locked
+    to `opening`; all contradictory RS, Shadow and /position direction changes
+    are ignored for presentation purposes. After the deadline, fresh closing
+    telemetry may advance the state to `closing`. A final dedicated live 0%
+    ends the cycle. This is intentionally stricter than the raw controller state
+    because the real devices can emit out-of-order/stale frames during PED.
     """
     phase = pedestrian_display_phase(hub)
     if phase is None:
         return
 
     deadline = getattr(hub, _DEADLINE_ATTR, None)
-    if phase == "opening" and deadline is not None and time.monotonic() >= deadline:
+    if phase == "opening":
+        if deadline is not None and time.monotonic() < deadline:
+            _record_opening_window_telemetry(hub)
+            return
         setattr(hub, _PHASE_ATTR, "open")
         setattr(hub, _DEADLINE_ATTR, None)
         phase = "open"

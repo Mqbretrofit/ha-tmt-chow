@@ -19,6 +19,7 @@ from .pedestrian_state import (
     cancel_pedestrian_display_cycle,
     pedestrian_display_is_closed,
     pedestrian_display_movement,
+    pedestrian_display_position,
     process_pedestrian_display_telemetry,
 )
 
@@ -56,7 +57,7 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
 
     @property
     def current_cover_position(self) -> int | None:
-        return self.hub.position
+        return pedestrian_display_position(self.hub)
 
     @property
     def is_closed(self) -> bool | None:
