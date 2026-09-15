@@ -177,6 +177,10 @@ class TmtChowHub(BaseAliasHub):
                     translation_key="command_failed",
                 ) from err
 
+        # Use the same generic second-based pedestrian-state handling as the
+        # other controllers. PS25007A shares the verified 17-slot semantics.
+        self._start_pedestrian_timed_open()
+
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one PS25007A setting with full-frame read-back verification."""
         if not self._is_ps25007a_live_alias():
