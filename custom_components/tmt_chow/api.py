@@ -151,8 +151,6 @@ class TmtChowApi:
                 uuid = str(raw["uuid"])
                 device_type = str(raw.get("devies_type") or raw.get("device_type") or "")
                 endpoint = str(raw.get("iot_endpoint") or "")
-                if not endpoint:
-                    continue
                 devices.append(
                     TmtDevice(
                         name=friendly_names.get(uuid, str(raw.get("name") or "TMT gate")),
