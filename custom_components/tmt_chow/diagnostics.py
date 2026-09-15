@@ -39,6 +39,7 @@ from .ps22027_parameters import (
     parameter_options_for as ps22027_parameter_options,
 )
 from .shadow_diagnostics import async_probe_shadow_get
+from .status_diagnostics import async_probe_status_read
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -124,6 +125,17 @@ async def async_get_config_entry_diagnostics(
         private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
     )
 
+    # Independently test the legacy WBT status-read path. This sends exactly one
+    # read-only c=RS request and waits for ACK RS without touching movement or
+    # parameter-write commands. It is especially useful for devices without a
+    # classic AWS IoT Shadow.
+    status_read_probe = await async_probe_status_read(
+        endpoint=str(entry.data.get(CONF_ENDPOINT) or ""),
+        uuid=str(entry.data.get(CONF_UUID) or ""),
+        certificate_pem=str(entry.data.get(CONF_CERTIFICATE_PEM) or ""),
+        private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
+    )
+
     # If the normal bootstrap failed, perform one additional read-only probe while
     # diagnostics are being generated. This captures the parameter ACK immediately
     # in ATTR_LAST_RESPONSE, instead of letting later status traffic overwrite it.
@@ -178,6 +190,14 @@ async def async_get_config_entry_diagnostics(
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],
             "shadow_get_probe_error": shadow_get_probe["probe_error"],
+            "status_read_probe_result": status_read_probe["result"],
+            "status_read_probe_ack": status_read_probe["ack"],
+            "status_read_probe_parsed": status_read_probe["parsed"],
+            "status_read_probe_position": status_read_probe["position"],
+            "status_read_probe_is_operating": status_read_probe["is_operating"],
+            "status_read_probe_open_direction": status_read_probe["open_direction"],
+            "status_read_probe_battery_percent": status_read_probe["battery_percent"],
+            "status_read_probe_error": status_read_probe["probe_error"],
             "device_online": hub.device_online,
             "position": hub.position,
             "movement": hub.movement,
