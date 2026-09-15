@@ -13,7 +13,10 @@ from .const import (
     ATTR_LAST_RESPONSE,
     CONF_CERTIFICATE_ARN,
     CONF_CERTIFICATE_PEM,
+    CONF_ENDPOINT,
     CONF_PRIVATE_KEY,
+    CONF_THING_NAME,
+    CONF_UUID,
     DOMAIN,
 )
 from .hub import TmtChowHub, TmtCommandError
@@ -35,6 +38,7 @@ from .ps22027_parameters import (
     decoded_parameter_values as ps22027_decoded_parameter_values,
     parameter_options_for as ps22027_parameter_options,
 )
+from .shadow_diagnostics import async_probe_shadow_get
 
 _REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
 
@@ -109,6 +113,17 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
 
+    # Probe the classic AWS IoT Shadow GET path using an isolated read-only MQTT
+    # connection. This distinguishes accepted/rejected/no-response without
+    # changing the live hub subscriptions or publishing to any gate command topic.
+    shadow_get_probe = await async_probe_shadow_get(
+        endpoint=str(entry.data.get(CONF_ENDPOINT) or ""),
+        uuid=str(entry.data.get(CONF_UUID) or ""),
+        thing_name=str(entry.data.get(CONF_THING_NAME) or ""),
+        certificate_pem=str(entry.data.get(CONF_CERTIFICATE_PEM) or ""),
+        private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
+    )
+
     # If the normal bootstrap failed, perform one additional read-only probe while
     # diagnostics are being generated. This captures the parameter ACK immediately
     # in ATTR_LAST_RESPONSE, instead of letting later status traffic overwrite it.
@@ -150,15 +165,19 @@ async def async_get_config_entry_diagnostics(
         hub.controller_type,
         hub.controller_capabilities,
     )
-    direct_blocked = direct_ped_open_blocked(hub.controller_type) or direct_ped_open_blocked(
-        hub.configured_controller_type
-    )
+    direct_blocked = direct_ped_open_blocked(
+        hub.controller_type
+    ) or direct_ped_open_blocked(hub.configured_controller_type)
 
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
         "runtime": {
             "available": hub.available,
             "mqtt_connected": hub.mqtt_connected,
+            "shadow_get_probe_result": shadow_get_probe["result"],
+            "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
+            "shadow_get_rejection_message": shadow_get_probe["rejection_message"],
+            "shadow_get_probe_error": shadow_get_probe["probe_error"],
             "device_online": hub.device_online,
             "position": hub.position,
             "movement": hub.movement,
