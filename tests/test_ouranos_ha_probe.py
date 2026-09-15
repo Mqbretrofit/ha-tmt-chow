@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 PROBE_PATH = ROOT / "custom_components" / "tmt_chow" / "ouranos_ha_probe.py"
 HELPER_PATH = ROOT / "custom_components" / "tmt_chow" / "ouranos_native_helper.py"
+INIT_PATH = ROOT / "custom_components" / "tmt_chow" / "__init__.py"
 
 
 def _load_probe():
@@ -35,7 +36,7 @@ def test_home_assistant_probe_supports_aarch64() -> None:
     assert probe._LIBRARY_SOURCES["armv7l"][0] == "lib.arm"
 
 
-def test_twenty_character_uid_is_ouranos_probe_candidate() -> None:
+def test_twenty_character_uid_is_accepted_by_transport_probe() -> None:
     probe = _load_probe()
     result = probe._base_result("ABCDEFGHIJKLMNOPQRST")
     assert result["applicable"] is True
@@ -44,6 +45,17 @@ def test_twenty_character_uid_is_ouranos_probe_candidate() -> None:
     assert result["safety"]["status_read_command_sent"] is False
     assert result["safety"]["parameter_read_command_sent"] is False
     assert result["safety"]["parameter_write_command_sent"] is False
+
+
+def test_ha_action_requires_confirmed_ps19001_candidate() -> None:
+    source = INIT_PATH.read_text(encoding="utf-8")
+
+    # A 20-character UUID alone is not a transport discriminator: working WBT
+    # devices can have the same length. The action must gate the native probe on
+    # the controller identity confirmed for issue #14.
+    assert 'hub.configured_controller_type == "PS19001"' in source
+    assert "_is_known_ouranos_candidate(candidate)" in source
+    assert "Selected gate is not a confirmed PS19001 OURANOS candidate" in source
 
 
 def test_helper_stdout_parser_uses_last_json_object() -> None:
