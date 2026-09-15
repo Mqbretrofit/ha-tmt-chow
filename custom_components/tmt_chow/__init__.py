@@ -27,12 +27,13 @@ from .const import (
 from .hub import TmtCommandError
 from .mqtt import MqttError
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE
+from .pedestrian_state import async_pedestrian_open_with_display
 from .ps25007a_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
 _FRONTEND_URL_BASE = "/tmt_chow_frontend"
 _FRONTEND_MODULE_URL = (
-    f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.2"
+    f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.14"
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 
@@ -85,7 +86,11 @@ def _register_services(hass: HomeAssistant) -> None:
             )
 
         try:
-            await hub.async_pedestrian_open()
+            # The custom cover more-info PED control calls this integration
+            # service directly. It must use the exact same display-state wrapper
+            # as the normal ButtonEntity; otherwise raw RS/Shadow telemetry can
+            # bypass the timed pedestrian presentation state entirely.
+            await async_pedestrian_open_with_display(hub)
         except TmtCommandError as err:
             raise HomeAssistantError(str(err)) from err
 
