@@ -66,6 +66,28 @@ def test_ps25007a_pedestrian_publishes_exactly_once_without_waiting_for_ack() ->
     assert hub._waiters == []
 
 
+def test_ps25007a_second_parameter_starts_timed_open_state() -> None:
+    hub = _hub()
+    values = [0] * 17
+    values[7] = 1  # Pedestrian Mode = 6 seconds.
+    hub.parameters = tuple(values)
+
+    async def fake_publish(topic: str, payload: str) -> None:
+        return None
+
+    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
+
+    async def run_test() -> None:
+        await hub.async_pedestrian_open()
+        assert hub.pedestrian_open_duration_seconds == 6.0
+        assert hub.movement == "opening"
+        assert hub.is_operating is True
+        assert hub._pedestrian_open_until_monotonic is not None
+        hub._cancel_pedestrian_timed_open()
+
+    asyncio.run(run_test())
+
+
 def test_ps25007a_pedestrian_requires_verified_closed_stopped_start() -> None:
     hub = _hub()
     hub.position = 40
