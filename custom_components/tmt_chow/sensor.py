@@ -16,6 +16,7 @@ from .controller_types import is_known_non_gate_controller
 from .entity import TmtChowEntity
 from .hub import TmtChowHub
 
+_PS25007_CONFIGURED_TYPE = "PS25007"
 _PS25007A_CONTROLLER_TYPE = "PS25007A"
 _PS25007A_SHADOW_PARAMETER_COUNT = 17
 
@@ -42,8 +43,16 @@ def _parse_ps25007a_shadow_parameters(raw: Any) -> tuple[int, ...] | None:
 
 
 def _is_ps25007a_discovery_target(hub: TmtChowHub) -> bool:
-    """Return whether the live controller is the observed PS25007A variant."""
-    return hub.controller_type == _PS25007A_CONTROLLER_TYPE
+    """Return whether this entry can represent the observed PS25007A variant.
+
+    The cloud account reports PS25007 while live DEV INFO reports PS25007A. The
+    configured identity is included so the diagnostic entities are not lost to
+    a startup race before the first Shadow response updates controller_type.
+    """
+    return (
+        hub.controller_type == _PS25007A_CONTROLLER_TYPE
+        or hub.configured_controller_type == _PS25007_CONFIGURED_TYPE
+    )
 
 
 async def async_setup_entry(
