@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4-beta.5
+
+- Fixed account discovery so otherwise valid devices are no longer discarded when the device-list API returns `iot_endpoint: null`
+- Confirmed the observed PS19001 / `product_type: 108` account shape can be discovered from UUID and model metadata even when the endpoint is omitted from the device list
+- Preserved the existing AWS certificate/policy bootstrap as the next endpoint source; MQTT connection, subscription, publishing and gate-command behavior are unchanged
+- Added regression coverage for the null-endpoint PS19001 discovery case while verifying existing endpoint-bearing devices still behave unchanged
+
 ## v1.0.4-beta.4
 
 - Enabled the real-hardware-verified PS22027 20-value `RP,1` / `WP,1` parameter write path without replacing the newer v1.0.4 runtime, pedestrian, MQTT, alias, or stale-position protections
