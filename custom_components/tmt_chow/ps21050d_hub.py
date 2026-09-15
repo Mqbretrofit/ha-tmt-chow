@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 
 from .const import ATTR_DEV_PARAM
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
+from .model_parameter_schemas import parameter_options
 from .parameter_codec import is_editable_parameter
 from .pedestrian import (
     PEDESTRIAN_STRATEGY_NONE,
@@ -14,6 +17,7 @@ from .pedestrian import (
     PEDESTRIAN_STRATEGY_RELAY4,
     pedestrian_strategy_for,
 )
+from .protocol import GateStatus
 from .ps21050d_parameters import (
     APP_MODEL,
     APP_PARAMETERS,
@@ -34,10 +38,15 @@ _PS20005A_CONTROLLER_TYPE = "PS20005A"
 _PS20040_APP_MODEL = "PS20040"
 _PS20040D_CONTROLLER_TYPE = "PS20040D"
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
+_PEDESTRIAN_SECONDS_RE = re.compile(
+    r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:seconds?|secs?|s)\b",
+    re.IGNORECASE,
+)
+_PEDESTRIAN_PARAMETER_KEYS = {"pedestrian_mode", "func_pedestrian_mode"}
 
 
 class TmtChowHub(BaseTmtChowHub):
-    """Runtime hub with verified app/live aliases and stale-stop protection.
+    """Runtime hub with verified app/live aliases and hardened gate state.
 
     TMT Chow 3.1.4 contains a PS21050 product implementation but no separate
     PS21050D implementation. The account API identifies this controller as
@@ -65,10 +74,12 @@ class TmtChowHub(BaseTmtChowHub):
     two current slots. Writes always read first, send exactly one full WP,1
     frame, then require the complete 20-slot frame to match on read-back.
 
-    The pedestrian command path is strategy-gated. Direct PED OPEN is blocked
-    for controller identities with real-hardware unsafe evidence (currently
-    PS25007A), while RELAY4 remains disabled until a concrete controller has
-    verified FunctionSet/hardware evidence.
+    The pedestrian command path is strategy-gated. When the active controller
+    parameter schema expresses Pedestrian Mode as seconds, that confirmed
+    parameter is also used as the opening-state window. This is model-generic:
+    PS21053/PS21053C, PS25007A and other second-based schemas use it, while
+    percentage-based and simple ON/OFF pedestrian modes keep pure telemetry
+    state handling.
 
     The vendor Shadow may also publish a stale stopped DEV STATUS position
     immediately after the dedicated /position topic has already reached 0 or
@@ -101,6 +112,89 @@ class TmtChowHub(BaseTmtChowHub):
         return pedestrian_strategy_for(
             self.controller_type,
             self.controller_capabilities,
+        )
+
+    @property
+    def pedestrian_open_duration_seconds(self) -> float | None:
+        """Return the active vendor pedestrian opening time when it is time-based.
+
+        The APK parameter matrix contains several different pedestrian concepts:
+        seconds, percentages, OFF/ON switches, and controller-specific variants.
+        Only a selected option that explicitly contains a time unit is treated
+        as an opening duration. This avoids hard-coding controller model names.
+        """
+        schema = self.model_parameter_schema
+        values = self.parameters
+        if schema is None or values is None or len(schema) != len(values):
+            return None
+
+        for index, spec in enumerate(schema):
+            try:
+                key = str(spec[1])
+            except (IndexError, TypeError):
+                continue
+            if key not in _PEDESTRIAN_PARAMETER_KEYS:
+                continue
+
+            options = parameter_options(spec)
+            if not options:
+                continue
+            try:
+                raw_value = int(values[index])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if not 0 <= raw_value < len(options):
+                continue
+
+            match = _PEDESTRIAN_SECONDS_RE.search(str(options[raw_value]))
+            if match is None:
+                continue
+            seconds = float(match.group(1))
+            return seconds if seconds > 0 else None
+
+        return None
+
+    def _pedestrian_timed_open_active(self) -> bool:
+        deadline = getattr(self, "_pedestrian_open_until_monotonic", None)
+        return deadline is not None and time.monotonic() < deadline
+
+    def _cancel_pedestrian_timed_open(self) -> None:
+        task = getattr(self, "_pedestrian_state_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+        self._pedestrian_state_task = None
+        self._pedestrian_open_until_monotonic = None
+
+    async def _expire_pedestrian_timed_open(self, deadline: float) -> None:
+        try:
+            await asyncio.sleep(max(0.0, deadline - time.monotonic()))
+        except asyncio.CancelledError:
+            return
+
+        if getattr(self, "_pedestrian_open_until_monotonic", None) != deadline:
+            return
+        self._pedestrian_open_until_monotonic = None
+        self._pedestrian_state_task = None
+        if self.movement == "opening":
+            self.movement = None
+            if self.is_operating is True:
+                self.is_operating = False
+            self._notify()
+
+    def _start_pedestrian_timed_open(self) -> None:
+        duration = self.pedestrian_open_duration_seconds
+        if duration is None:
+            return
+
+        self._cancel_pedestrian_timed_open()
+        deadline = time.monotonic() + duration
+        self._pedestrian_open_until_monotonic = deadline
+        self.is_operating = True
+        self.movement = "opening"
+        self._notify()
+        self._pedestrian_state_task = asyncio.create_task(
+            self._expire_pedestrian_timed_open(deadline),
+            name=f"tmt_chow_pedestrian_state_{self.uuid}",
         )
 
     def _set_controller_type(self, controller_type: str | None) -> None:
@@ -152,11 +246,32 @@ class TmtChowHub(BaseTmtChowHub):
         self._last_completed_motion_direction = direction
         self._last_completed_motion_monotonic = time.monotonic()
 
+    def _apply_status(self, status: GateStatus) -> None:
+        """Keep a timed pedestrian opening labeled as opening until its duration ends."""
+        super()._apply_status(status)
+        if self._pedestrian_timed_open_active():
+            # Some controllers expose a direction bit that is not reliable for
+            # the pedestrian cycle. The controller parameter itself defines how
+            # long that opening motor phase lasts, so do not let an interim RS
+            # direction/stop frame flip the HA cover to closing/idle early.
+            self.is_operating = True
+            self.movement = "opening"
+
     def _apply_position(self, position: int, *, derive_movement: bool = True) -> None:
-        """Remember the proven live direction even when an endpoint clears movement."""
+        """Remember live direction and let real reverse travel end a PED timer."""
         old_position = self.position
         prior_movement = self.movement
         super()._apply_position(position, derive_movement=derive_movement)
+
+        if derive_movement and old_position is not None and self.position is not None:
+            if self.position < old_position and self._pedestrian_timed_open_active():
+                # A decreasing dedicated /position value is stronger evidence
+                # than the timer: automatic closing (or another reverse motion)
+                # has actually started, so stop forcing the opening state.
+                self._cancel_pedestrian_timed_open()
+            elif self.position > old_position and self._pedestrian_timed_open_active():
+                self.is_operating = True
+                self.movement = "opening"
 
         if not derive_movement or old_position is None or self.position is None:
             return
@@ -203,6 +318,25 @@ class TmtChowHub(BaseTmtChowHub):
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
+    async def async_start(self) -> None:
+        await super().async_start()
+
+    async def async_stop(self) -> None:
+        self._cancel_pedestrian_timed_open()
+        await super().async_stop()
+
+    async def async_open(self) -> None:
+        self._cancel_pedestrian_timed_open()
+        await super().async_open()
+
+    async def async_close(self) -> None:
+        self._cancel_pedestrian_timed_open()
+        await super().async_close()
+
+    async def async_stop_gate(self) -> None:
+        self._cancel_pedestrian_timed_open()
+        await super().async_stop_gate()
+
     async def async_pedestrian_open(self) -> None:
         """Run only the pedestrian command strategy verified for this controller."""
         strategy = self.pedestrian_strategy
@@ -219,10 +353,12 @@ class TmtChowHub(BaseTmtChowHub):
             # added. RELAY4 is sent once and requires its own ACK; there is no
             # motion-telemetry rescue and no automatic retry.
             await self._async_command("RELAY4", "ACK RELAY4")
+            self._start_pedestrian_timed_open()
             return
 
         if strategy == PEDESTRIAN_STRATEGY_PED_OPEN:
             await super().async_pedestrian_open()
+            self._start_pedestrian_timed_open()
             return
 
         raise TmtCommandError(
