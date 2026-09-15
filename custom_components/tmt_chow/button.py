@@ -11,7 +11,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
-from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE
+
+_PS25007_APP_MODEL = "PS25007"
 
 
 async def async_setup_entry(
@@ -20,9 +22,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+    # PS25007 starts with the account identity and only becomes an enabled PED
+    # target after live DEV INFO confirms PS25007A. Create the entity up front
+    # and let ``available`` follow the effective runtime strategy.
     if (
-        pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
-        == PEDESTRIAN_STRATEGY_NONE
+        hub.pedestrian_strategy == PEDESTRIAN_STRATEGY_NONE
+        and hub.configured_controller_type != _PS25007_APP_MODEL
     ):
         return
     async_add_entities([TmtPedestrianOpenButton(hub)])
@@ -42,11 +47,7 @@ class TmtPedestrianOpenButton(TmtChowEntity, ButtonEntity):
     def available(self) -> bool:
         return (
             self.hub.available
-            and pedestrian_strategy_for(
-                self.hub.controller_type,
-                self.hub.controller_capabilities,
-            )
-            != PEDESTRIAN_STRATEGY_NONE
+            and self.hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE
         )
 
     async def async_press(self) -> None:

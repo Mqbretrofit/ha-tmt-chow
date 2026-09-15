@@ -1,8 +1,10 @@
-"""PS25007/PS25007A AutoProduct parameter support with strict safety guards."""
+"""PS25007/PS25007A AutoProduct support with exact safety guards."""
 
 from __future__ import annotations
 
-from .const import ATTR_DEV_PARAM
+import re
+
+from .const import ATTR_DEV_PARAM, DEFAULT_SOURCE_TAG
 from .controller_types import (
     CAPABILITY_EXTERNAL,
     CAPABILITY_PEDESTRIAN,
@@ -10,7 +12,9 @@ from .controller_types import (
 )
 from .hub import TmtCommandError
 from .model_parameter_schemas import parameter_schema_for
+from .mqtt import MqttError
 from .parameter_codec import ParameterTransport, is_editable_parameter
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE, PEDESTRIAN_STRATEGY_PED_OPEN
 from .ps21050d_hub import TmtChowHub as BaseAliasHub
 from .ps25007a_parameters import (
     APP_MODEL,
@@ -27,14 +31,16 @@ class TmtChowHub(BaseAliasHub):
     """Extend the hardened hub with the exact PS25007 -> PS25007A alias.
 
     The cloud account identity is PS25007 and the real controller reports
-    PS25007A in DEV INFO.  The PS25007 AutoProduct Proposal and live hardware
-    confirm a 17-slot RP,1/WP,1 layout matching the existing verified P500BU
-    option schema.  Parameter writes are enabled only after the live PS25007A
-    identity has been observed.
+    PS25007A in DEV INFO. The PS25007 AutoProduct Proposal and live hardware
+    confirm a 17-slot RP,1/WP,1 layout matching the verified P500BU option
+    schema.
 
-    Direct PED OPEN is intentionally unrelated to parameter support and remains
-    blocked by pedestrian.py because real-hardware testing proved it unsafe on
-    PS25007A.
+    Real-hardware beta.9 testing also verified the vendor pedestrian cycle for
+    exactly this alias when the Android-style authenticated user source tag is
+    used: one ``PED OPEN`` opened to the pedestrian position and the controller
+    automatically closed again. The controller did not emit ``ACK PED OPEN``,
+    so this exact path is deliberately publish-once/no-retry and lets normal
+    status/position telemetry report the resulting state.
     """
 
     def _is_ps25007a_profile(self) -> bool:
@@ -51,6 +57,24 @@ class TmtChowHub(BaseAliasHub):
             and self.parameter_model_type == CONTROLLER_TYPE
         )
 
+    def _identified_source_tag(self) -> str | None:
+        """Return the authenticated-user UART-v1 source tag when available."""
+        tag = str(self._source_tag or "").strip().upper()
+        if tag == DEFAULT_SOURCE_TAG:
+            return None
+        if re.fullmatch(r"P[0-9A-F]{7,}", tag) is None:
+            return None
+        return tag
+
+    @property
+    def pedestrian_strategy(self) -> str:
+        """Enable direct PED OPEN only for the exact verified alias/context."""
+        if self._is_ps25007a_live_alias():
+            if self._identified_source_tag() is not None:
+                return PEDESTRIAN_STRATEGY_PED_OPEN
+            return PEDESTRIAN_STRATEGY_NONE
+        return super().pedestrian_strategy
+
     def _set_controller_type(self, controller_type: str | None) -> None:
         normalized = (controller_type or "").strip().upper()
 
@@ -60,10 +84,9 @@ class TmtChowHub(BaseAliasHub):
         ):
             self.controller_type = normalized
             self.controller_family = FAMILY_SLIDING
-            # The Proposal declares Ext and PED Open.  Keep pedestrian absent
-            # during the provisional account-only phase so no unsafe button can
-            # be created before live DEV INFO confirms PS25007A.  Once live,
-            # pedestrian.py still hard-blocks direct PED OPEN for this model.
+            # The Proposal declares Ext and PED Open. Keep pedestrian absent
+            # during the provisional account-only phase. The effective strategy
+            # is enabled only after live PS25007A plus an identified source tag.
             capabilities = {CAPABILITY_EXTERNAL}
             if normalized == CONTROLLER_TYPE:
                 capabilities.add(CAPABILITY_PEDESTRIAN)
@@ -108,6 +131,52 @@ class TmtChowHub(BaseAliasHub):
             return parse_parameter_response(payload)
         return super()._decode_parameter_response(payload)
 
+    async def async_pedestrian_open(self) -> None:
+        """Run the verified PS25007A pedestrian cycle without requiring an ACK.
+
+        The live controller has been verified to execute the correct pedestrian
+        open/automatic-close cycle with the authenticated-user source tag while
+        emitting status/position telemetry instead of ``ACK PED OPEN``. Publish
+        exactly once and never retry. Restrict the command to a fully closed,
+        stopped gate because that is the real-hardware condition that was
+        verified.
+        """
+        if not self._is_ps25007a_live_alias():
+            await super().async_pedestrian_open()
+            return
+
+        source_tag = self._identified_source_tag()
+        if source_tag is None:
+            raise TmtCommandError(
+                "PS25007A pedestrian opening requires an authenticated-user source tag",
+                translation_key="unsupported_controller",
+            )
+        if self.position != 0 or self.is_operating is not False:
+            raise TmtCommandError(
+                "PS25007A pedestrian opening requires the gate to be fully closed and stopped",
+                translation_key="command_failed",
+            )
+        if not self._mqtt.connected or self.device_online is False:
+            raise TmtCommandError(
+                "The gate is offline",
+                translation_key="gate_offline",
+            )
+
+        async with self._transaction_lock:
+            try:
+                # Exactly one publish. PS25007A does not emit ACK PED OPEN on
+                # the verified path; subsequent state comes from ACK RS,
+                # /position and Shadow telemetry. Never auto-retry this command.
+                await self._mqtt.async_publish(
+                    self.rx_topic,
+                    f"c=PED OPEN;src={source_tag}",
+                )
+            except MqttError as err:
+                raise TmtCommandError(
+                    "Failed to publish PS25007A pedestrian command",
+                    translation_key="command_failed",
+                ) from err
+
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one PS25007A setting with full-frame read-back verification."""
         if not self._is_ps25007a_live_alias():
@@ -128,7 +197,7 @@ class TmtChowHub(BaseAliasHub):
 
         transport = self._parameter_transport()
         async with self._transaction_lock:
-            # Never write from stale Shadow state.  Read the complete current
+            # Never write from stale Shadow state. Read the complete current
             # frame from the controller immediately before constructing WP,1.
             current_response = await self._async_exchange(
                 f"c={transport.read_command}",
@@ -152,14 +221,14 @@ class TmtChowHub(BaseAliasHub):
                     translation_key="unsupported_parameter_value",
                 ) from err
 
-            # Exactly one write.  A timeout or lost ACK never resends WP,1.
+            # Exactly one write. A timeout or lost ACK never resends WP,1.
             await self._async_exchange(
                 f"c={command};src={self._source_tag}",
                 transport.write_ack,
             )
 
             # Require the entire 17-slot frame to match, not just the field
-            # that was changed.  This detects any unexpected collateral change.
+            # that was changed. This detects any unexpected collateral change.
             verify_response = await self._async_exchange(
                 f"c={transport.read_command}",
                 transport.read_ack,

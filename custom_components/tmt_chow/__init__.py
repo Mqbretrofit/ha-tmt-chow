@@ -26,7 +26,7 @@ from .const import (
 )
 from .hub import TmtCommandError
 from .mqtt import MqttError
-from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE
 from .ps25007a_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
@@ -42,8 +42,6 @@ async def _async_setup_frontend(hass: HomeAssistant) -> None:
     if hass.data.get(_FRONTEND_DATA_KEY):
         return
 
-    # A normal Home Assistant UI installation has both HTTP and frontend loaded.
-    # Keep the backend integration usable in headless/test environments too.
     if not hasattr(hass, "http") or DATA_EXTRA_MODULE_URL not in hass.data:
         return
 
@@ -81,10 +79,7 @@ def _register_services(hass: HomeAssistant) -> None:
         )
         if hub is None:
             raise HomeAssistantError("TMT Chow gate not found")
-        if (
-            pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
-            == PEDESTRIAN_STRATEGY_NONE
-        ):
+        if hub.pedestrian_strategy == PEDESTRIAN_STRATEGY_NONE:
             raise HomeAssistantError(
                 "Pedestrian opening is not safely supported by this controller"
             )

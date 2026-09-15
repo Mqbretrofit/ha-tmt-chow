@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .diagnostics_base import async_get_config_entry_diagnostics as _base_diagnostics
+from .pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
 
 _PS25007_APP_MODEL = "PS25007"
 _PS25007A_CONTROLLER_TYPE = "PS25007A"
@@ -16,7 +17,7 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> dict:
-    """Return normal diagnostics with explicit PS25007A codec metadata."""
+    """Return normal diagnostics with explicit PS25007A verified metadata."""
     result = await _base_diagnostics(hass, entry)
     hub = hass.data[DOMAIN][entry.entry_id]
     if not (
@@ -37,4 +38,22 @@ async def async_get_config_entry_diagnostics(
             "parameter_value_mapping_profile": "ps25007_proposal_wire17",
         }
     )
+
+    # diagnostics_base intentionally keeps the generic PS25007/PS25007A deny
+    # list visible. Override only the effective runtime result for the exact
+    # verified alias/context handled by ps25007a_hub.
+    runtime["pedestrian_strategy"] = hub.pedestrian_strategy
+    if (
+        hub.controller_type == _PS25007A_CONTROLLER_TYPE
+        and hub.pedestrian_strategy == PEDESTRIAN_STRATEGY_PED_OPEN
+    ):
+        runtime.update(
+            {
+                "pedestrian_strategy_reason": "ps25007a_identified_source_real_hardware_verified",
+                "pedestrian_direct_command_blocked": False,
+                "pedestrian_ack_policy": "no_ack_expected_use_status_position_telemetry",
+                "pedestrian_retry_policy": "never_retry",
+                "pedestrian_verified_start_condition": "fully_closed_and_stopped",
+            }
+        )
     return result
