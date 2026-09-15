@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import time
 
+import pytest
+
 from custom_components.tmt_chow.pedestrian_state import (
+    async_pedestrian_open_with_display,
     begin_pedestrian_display_cycle,
     cancel_pedestrian_display_cycle,
     pedestrian_display_is_closed,
@@ -54,10 +57,59 @@ def test_ps21053c_reads_configured_pedestrian_seconds() -> None:
     assert pedestrian_open_duration_seconds(hub) == 6.0
 
 
+def test_ps21053c_legacy_select_semantics_still_return_six_seconds() -> None:
+    hub = _hub("PS21053C")
+    values = [0] * 17
+    values[7] = 1
+    hub.parameters = tuple(values)
+    assert pedestrian_open_duration_seconds(hub) == 6.0
+
+
 def test_percentage_based_pedestrian_mode_is_not_treated_as_timer() -> None:
     hub = _hub("PS23065")
     _set_pedestrian_raw_value(hub, 1)
     assert pedestrian_open_duration_seconds(hub) is None
+
+
+def test_shared_wrapper_arms_display_before_command_runs() -> None:
+    hub = _hub("PS21053C")
+    values = [0] * 17
+    values[7] = 1
+    hub.parameters = tuple(values)
+
+    async def fake_pedestrian_open() -> None:
+        assert pedestrian_display_phase(hub) == "opening"
+        assert pedestrian_display_movement(hub) == "opening"
+        assert pedestrian_display_is_closed(hub) is False
+
+    hub.async_pedestrian_open = fake_pedestrian_open  # type: ignore[method-assign]
+
+    async def run_test() -> None:
+        await async_pedestrian_open_with_display(hub)
+        assert pedestrian_display_phase(hub) == "opening"
+        cancel_pedestrian_display_cycle(hub, notify=False)
+
+    asyncio.run(run_test())
+
+
+def test_shared_wrapper_clears_overlay_when_command_fails() -> None:
+    hub = _hub("PS21053C")
+    values = [0] * 17
+    values[7] = 1
+    hub.parameters = tuple(values)
+
+    async def fake_pedestrian_open() -> None:
+        assert pedestrian_display_phase(hub) == "opening"
+        raise RuntimeError("test failure")
+
+    hub.async_pedestrian_open = fake_pedestrian_open  # type: ignore[method-assign]
+
+    async def run_test() -> None:
+        with pytest.raises(RuntimeError, match="test failure"):
+            await async_pedestrian_open_with_display(hub)
+        assert pedestrian_display_phase(hub) is None
+
+    asyncio.run(run_test())
 
 
 def test_opening_overlay_wins_over_contradictory_raw_closed_state() -> None:
@@ -92,8 +144,6 @@ def test_reverse_live_position_before_deadline_cannot_change_opening_state() -> 
         assert pedestrian_display_phase(hub) == "opening"
         assert pedestrian_display_position(hub) == 40
 
-        # Real devices can emit an out-of-order/stale lower position during the
-        # configured PED opening time. It must not flip HA to closing/closed.
         hub.position = 0
         hub._last_live_position_monotonic = time.monotonic() + 1
         process_pedestrian_display_telemetry(hub)
@@ -208,9 +258,6 @@ def test_stale_stopped_zero_does_not_end_cycle_after_live_position_was_seen() ->
         process_pedestrian_display_telemetry(hub)
         assert pedestrian_display_phase(hub) == "closing"
 
-        # Simulate a contradictory stopped Shadow/RS frame that claims 0%
-        # without a new dedicated /position update. The overlay must stay in
-        # closing instead of flickering to closed.
         hub.position = 0
         hub.is_operating = False
         hub.movement = None
