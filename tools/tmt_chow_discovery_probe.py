@@ -33,7 +33,7 @@ KNOWN_BUCKETS = ("admin_devices", "user_devices", "share_devices")
 
 SAFE_VALUE_KEYS = {
     "device_type",
-    "devies_type",  # spelling used by the current TMT API/integration
+    "devies_type",
     "product_type",
     "role",
     "model",
