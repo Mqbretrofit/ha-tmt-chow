@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.4-beta.14
+
+- Added opt-in automatic PS19001 native cover status for the confirmed 20-character UID case, using the real-hardware-verified `ACK STATUS:PED CLOSED,0` response
+- Added a password-style integration option for the six-digit gate PIN; it is stored locally and redacted from diagnostics
+- Mapped native position and opening/closing state into the existing Home Assistant cover while leaving all movement commands on the unchanged AWS/MQTT path
+- Removed the obsolete two-second passive read before each fixed status request, added failure backoff, process-cancellation cleanup and native availability expiry handling
+- Kept the native helper restricted to one fixed `READ STATUS` request with no arbitrary, movement, function or parameter command input
+
+## v1.0.4-beta.13
+
+- Added the fixed, APK-compatible, PIN-XOR `READ STATUS` request and sanitized `ACK STATUS` response to the isolated PS19001 helper
+- Preserved the executable mode of the bundled helper in the published release archive
+
 ## v1.0.4-beta.11
 
 - Replaced the legacy Linux x86-64 IOTC 1.13.7.0 / RDT 1.7.4.0 probe libraries with IOTC/RDT 3.1.5.38 from the same 3.1.5 API generation as the TMT Chow Android application's IOTC 3.1.5.33 library

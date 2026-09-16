@@ -135,20 +135,19 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
-### Experimental PS19001 OURANOS probe
+### Experimental PS19001 native status
 
-`v1.0.4-beta.13` extends the confirmed PS19001 / 20-character UID probe with one APK-compatible, read-only `READ STATUS` request. Enter the gate's six-digit TMT Chow PIN only in the action form; it is passed to the isolated helper over standard input, is not saved, and is never returned. The helper has no arbitrary-command input and cannot send movement or parameter commands. Existing AWS/MQTT controllers continue to use the unchanged cloud-push path.
+`v1.0.4-beta.14` can automatically update the cover position and opening/closing state for the confirmed PS19001 / 20-character UID case through the APK-compatible native `READ STATUS` path. This remains opt-in and read-only: native open, close, stop and parameter commands are not implemented. Existing AWS/MQTT controllers continue to use the unchanged cloud-push and command paths.
 
-The probe currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
+The native reader currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
 
-To run it:
+To enable automatic status:
 
-1. Open **Developer tools → Actions** in Home Assistant.
-2. Select **TMT Chow: OURANOS transport probe** (`tmt_chow.ouranos_probe`).
-3. Leave the UUID empty when exactly one configured PS19001 candidate exists. Otherwise enter the UUID locally; do not post the UUID publicly.
-4. Run the action with response data enabled and copy the complete response JSON to the relevant issue.
+1. Open **Settings → Devices & services → TMT Chow**.
+2. Open **Configure** for the PS19001 gate.
+3. Enter the gate's six-digit TMT Chow PIN and save.
 
-The probe initializes IOTC and RDT, attempts a native UID session, opens RDT channel 0 and passively listens for up to two seconds. It does not bind or call `RDT_Write`, and it sends no gate-control, status-read, function-read or parameter command. Actual PS19001 control remains disabled until this transport stage is validated on matching hardware.
+The PIN is stored locally in the Home Assistant config entry, displayed as a password field, passed to the isolated helper over standard input, and redacted from diagnostics. Clear the field and save to disable polling. The fixed helper sends only `READ STATUS`, validates and sanitizes the response, and exits after each attempt. Failed attempts back off to 30 seconds. The manual `tmt_chow.ouranos_probe` action remains available for troubleshooting.
 
 ## Home Assistant entities
 

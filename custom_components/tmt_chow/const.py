@@ -37,6 +37,7 @@ CONF_DEVICE_TYPE: Final = "device_type"
 CONF_PRODUCT_TYPE: Final = "product_type"
 CONF_ROLE: Final = "role"
 CONF_SOURCE_TAG: Final = "source_tag"
+CONF_OURANOS_PIN: Final = "ouranos_pin"
 
 DEFAULT_SOURCE_TAG: Final = "P9999999"
 MQTT_PORT: Final = 8883
@@ -48,6 +49,8 @@ SHADOW_REFRESH_SECONDS: Final = 15
 COMMAND_TIMEOUT: Final = 10
 PARAMETER_REFRESH_SECONDS: Final = 300
 PARAMETER_BOOTSTRAP_RETRY_SECONDS: Final = 15
+OURANOS_STATUS_POLL_SECONDS: Final = 5
+OURANOS_STATUS_AVAILABILITY_SECONDS: Final = 30
 
 ATTR_DEV_STATUS: Final = "dev_status"
 ATTR_DEV_INFO: Final = "dev_info"
@@ -57,3 +60,5 @@ ATTR_WBT_VERSION: Final = "wbt_version"
 ATTR_LOCAL_IP: Final = "local_ip"
 ATTR_WIFI_SSID: Final = "wifi_ssid"
 ATTR_LAST_RESPONSE: Final = "last_response"
+ATTR_OURANOS_STATUS: Final = "ouranos_status"
+ATTR_OURANOS_STATUS_RESPONSE: Final = "ouranos_status_response"

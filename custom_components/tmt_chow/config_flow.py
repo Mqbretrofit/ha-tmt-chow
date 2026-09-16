@@ -6,9 +6,20 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_DEVICE, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .api import TmtApiError, TmtAuthError, TmtChowApi, TmtDevice
 from .const import (
@@ -16,6 +27,7 @@ from .const import (
     CONF_CERTIFICATE_PEM,
     CONF_DEVICE_TYPE,
     CONF_ENDPOINT,
+    CONF_OURANOS_PIN,
     CONF_PRIVATE_KEY,
     CONF_PRODUCT_TYPE,
     CONF_ROLE,
@@ -35,6 +47,12 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._api: TmtChowApi | None = None
         self._devices: dict[str, TmtDevice] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the TMT Chow options flow."""
+        return TmtChowOptionsFlow()
 
     async def async_step_user(
         self,
@@ -127,4 +145,44 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_ROLE: device.role,
                 CONF_SOURCE_TAG: DEFAULT_SOURCE_TAG,
             },
+        )
+
+
+class TmtChowOptionsFlow(OptionsFlow):
+    """Configure the opt-in native PS19001 status reader."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure native status polling for confirmed PS19001 hardware."""
+        if (
+            self.config_entry.data.get(CONF_DEVICE_TYPE) != "PS19001"
+            or len(str(self.config_entry.data.get(CONF_UUID, ""))) != 20
+        ):
+            return self.async_abort(reason="not_ouranos_candidate")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            pin_code = str(user_input.get(CONF_OURANOS_PIN, "")).strip()
+            if pin_code and (
+                len(pin_code) != 6
+                or any(char < "0" or char > "9" for char in pin_code)
+            ):
+                errors[CONF_OURANOS_PIN] = "invalid_pin"
+            else:
+                return self.async_create_entry(
+                    title="", data={CONF_OURANOS_PIN: pin_code}
+                )
+
+        current_pin = str(self.config_entry.options.get(CONF_OURANOS_PIN, ""))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_OURANOS_PIN, default=current_pin): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    )
+                }
+            ),
+            errors=errors,
         )

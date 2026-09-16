@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,6 +70,62 @@ def parse_ack_rs(payload: str | None) -> GateStatus | None:
     if not payload or not payload.startswith("ACK RS:"):
         return None
     return decode_dev_status(payload.removeprefix("ACK RS:"))
+
+
+_OURANOS_STATUS_RE = re.compile(
+    r"^ACK STATUS:(?P<state>[^,]+),(?P<position>-?\d+)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_ouranos_status_response(payload: str | None) -> tuple[str, GateStatus] | None:
+    """Parse the APK-compatible PS19001 native ``ACK STATUS`` response."""
+    if not payload:
+        return None
+    try:
+        envelope = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not isinstance(envelope, dict)
+        or str(envelope.get("CMD", "")).upper() != "UART"
+        or envelope.get("RESULT") != 0
+        or not isinstance(envelope.get("DATA"), str)
+    ):
+        return None
+
+    match = _OURANOS_STATUS_RE.match(envelope["DATA"].strip())
+    if match is None:
+        return None
+    state = " ".join(match.group("state").upper().split())
+    position = int(match.group("position"))
+    if not 0 <= position <= 100:
+        return None
+
+    if "OPENING" in state:
+        operating = True
+        open_direction: bool | None = True
+    elif "CLOSING" in state or "CLOSEING" in state:
+        operating = True
+        open_direction = False
+    elif "STOPPED" in state:
+        operating = False
+        open_direction = None
+    elif "OPENED" in state:
+        operating = False
+        open_direction = True
+    elif "CLOSED" in state:
+        operating = False
+        open_direction = False
+    else:
+        return None
+
+    return state, GateStatus(
+        position=position,
+        is_operating=operating,
+        is_open_direction=open_direction,
+        battery_percent=None,
+    )
 
 
 def extract_shadow_reported(payload: dict[str, Any]) -> dict[str, Any] | None:

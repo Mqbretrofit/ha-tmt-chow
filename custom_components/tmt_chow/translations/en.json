@@ -29,6 +29,23 @@
       "invalid_auth": "Authentication failed"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PS19001 native status",
+        "description": "Opt in to read the gate position through the isolated, read-only TUTK/RDT connection. The six-digit gate PIN is stored locally by Home Assistant and is never included in diagnostics. Clear the field to disable native status polling.",
+        "data": {
+          "ouranos_pin": "Six-digit gate PIN"
+        }
+      }
+    },
+    "error": {
+      "invalid_pin": "The gate PIN must contain exactly six digits"
+    },
+    "abort": {
+      "not_ouranos_candidate": "Native status is available only for a confirmed 20-character PS19001 gate"
+    }
+  },
   "entity": {
     "sensor": {
       "battery": {

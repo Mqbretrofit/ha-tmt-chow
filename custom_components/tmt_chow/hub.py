@@ -16,11 +16,14 @@ from .const import (
     ATTR_DEV_STATUS,
     ATTR_LAST_RESPONSE,
     ATTR_LOCAL_IP,
+    ATTR_OURANOS_STATUS,
+    ATTR_OURANOS_STATUS_RESPONSE,
     ATTR_UART_VERSION,
     ATTR_WBT_VERSION,
     ATTR_WIFI_SSID,
     COMMAND_TIMEOUT,
     MQTT_AVAILABILITY_GRACE_SECONDS,
+    OURANOS_STATUS_AVAILABILITY_SECONDS,
     PARAMETER_BOOTSTRAP_RETRY_SECONDS,
     PARAMETER_REFRESH_SECONDS,
     SHADOW_REFRESH_SECONDS,
@@ -45,6 +48,7 @@ from .protocol import (
     decode_dev_status,
     extract_shadow_reported,
     parse_ack_rs,
+    parse_ouranos_status_response,
     parse_position,
 )
 from .ps21050d_parameters import (
@@ -118,6 +122,7 @@ class TmtChowHub:
         self._last_shadow_monotonic: float | None = None
         self._last_live_position_monotonic: float | None = None
         self._last_operating_status_monotonic: float | None = None
+        self._last_ouranos_status_monotonic: float | None = None
         self._state_synchronized = False
         self._stopping = False
 
@@ -145,6 +150,8 @@ class TmtChowHub:
 
     @property
     def available(self) -> bool:
+        if self.ouranos_status_available:
+            return True
         if self.device_online is False:
             return False
         if self._mqtt.connected and self._state_synchronized:
@@ -153,6 +160,15 @@ class TmtChowHub:
             self._last_shadow_monotonic is not None
             and time.monotonic() - self._last_shadow_monotonic
             < MQTT_AVAILABILITY_GRACE_SECONDS
+        )
+
+    @property
+    def ouranos_status_available(self) -> bool:
+        """Return whether a recent native PS19001 response proves availability."""
+        return (
+            self._last_ouranos_status_monotonic is not None
+            and time.monotonic() - self._last_ouranos_status_monotonic
+            < OURANOS_STATUS_AVAILABILITY_SECONDS
         )
 
     @property
@@ -647,6 +663,31 @@ class TmtChowHub:
             self.movement = None
         if status.battery_percent is not None:
             self.battery_percent = status.battery_percent
+
+    def apply_ouranos_status_response(self, payload: str | None) -> bool:
+        """Apply one verified read-only PS19001 ``ACK STATUS`` response."""
+        parsed = parse_ouranos_status_response(payload)
+        if parsed is None:
+            return False
+
+        state, status = parsed
+        if status.position is not None:
+            self._apply_position(status.position, derive_movement=False)
+        self.is_operating = status.is_operating
+        if status.is_operating and status.is_open_direction is not None:
+            self.movement = "opening" if status.is_open_direction else "closing"
+        elif not status.is_operating:
+            self.movement = None
+
+        self._last_ouranos_status_monotonic = time.monotonic()
+        self.attributes[ATTR_OURANOS_STATUS] = state
+        self.attributes[ATTR_OURANOS_STATUS_RESPONSE] = payload
+        self._notify()
+        return True
+
+    def notify_ouranos_status_failure(self) -> None:
+        """Refresh entity availability after a failed native status attempt."""
+        self._notify()
 
     def _status_position_is_plausible(self, status_position: int) -> bool:
         """Reject a stale stop-position that contradicts the completed motion."""

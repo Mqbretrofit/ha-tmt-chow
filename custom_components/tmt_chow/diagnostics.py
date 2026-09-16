@@ -14,6 +14,7 @@ from .const import (
     CONF_CERTIFICATE_ARN,
     CONF_CERTIFICATE_PEM,
     CONF_ENDPOINT,
+    CONF_OURANOS_PIN,
     CONF_PRIVATE_KEY,
     CONF_THING_NAME,
     CONF_UUID,
@@ -41,7 +42,12 @@ from .ps22027_parameters import (
 from .shadow_diagnostics import async_probe_shadow_get
 from .status_diagnostics import async_probe_status_read
 
-_REDACT = {CONF_CERTIFICATE_PEM, CONF_PRIVATE_KEY, CONF_CERTIFICATE_ARN}
+_REDACT = {
+    CONF_CERTIFICATE_PEM,
+    CONF_PRIVATE_KEY,
+    CONF_CERTIFICATE_ARN,
+    CONF_OURANOS_PIN,
+}
 
 
 def _inspect_parameter_payload(payload: Any) -> dict[str, Any] | None:
@@ -183,9 +189,12 @@ async def async_get_config_entry_diagnostics(
 
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
+        "options": async_redact_data(dict(entry.options), _REDACT),
         "runtime": {
             "available": hub.available,
             "mqtt_connected": hub.mqtt_connected,
+            "ouranos_status_enabled": bool(entry.options.get(CONF_OURANOS_PIN)),
+            "ouranos_status_available": hub.ouranos_status_available,
             "shadow_get_probe_result": shadow_get_probe["result"],
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],

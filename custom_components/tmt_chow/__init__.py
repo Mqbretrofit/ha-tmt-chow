@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
@@ -15,6 +16,7 @@ from .const import (
     CONF_CERTIFICATE_PEM,
     CONF_DEVICE_TYPE,
     CONF_ENDPOINT,
+    CONF_OURANOS_PIN,
     CONF_PRIVATE_KEY,
     CONF_PRODUCT_TYPE,
     CONF_SOURCE_TAG,
@@ -27,16 +29,20 @@ from .const import (
 from .hub import TmtCommandError
 from .mqtt import MqttError
 from .ouranos_ha_probe import async_probe_ouranos_on_ha
+from .ouranos_status import OuranosStatusPoller
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
 from .ps21050d_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
+_OURANOS_POLLERS_DATA_KEY = f"{DOMAIN}_ouranos_pollers"
 _FRONTEND_URL_BASE = "/tmt_chow_frontend"
 _FRONTEND_MODULE_URL = (
     f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.2"
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 SERVICE_OURANOS_PROBE = "ouranos_probe"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def _async_setup_frontend(hass: HomeAssistant) -> None:
@@ -114,7 +120,6 @@ def _register_services(hass: HomeAssistant) -> None:
         hass.services.async_register(
             DOMAIN, SERVICE_PEDESTRIAN_OPEN, _async_pedestrian_open
         )
-
     if not hass.services.has_service(DOMAIN, SERVICE_OURANOS_PROBE):
 
         async def _async_ouranos_probe(call: ServiceCall) -> dict:
@@ -155,6 +160,11 @@ def _register_services(hass: HomeAssistant) -> None:
         )
 
 
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload an entry after its native status option changes."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub = TmtChowHub(
         uuid=entry.data[CONF_UUID],
@@ -173,15 +183,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(str(err)) from err
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = hub
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _register_services(hass)
     await _async_setup_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
+    if pin_code:
+        if (
+            _is_known_ouranos_candidate(hub)
+            and len(pin_code) == 6
+            and all("0" <= char <= "9" for char in pin_code)
+        ):
+            poller = OuranosStatusPoller(hass, hub, pin_code)
+            hass.data.setdefault(_OURANOS_POLLERS_DATA_KEY, {})[
+                entry.entry_id
+            ] = poller
+            await poller.async_start()
+        else:
+            _LOGGER.warning(
+                "Ignoring invalid native PS19001 status configuration for %s",
+                entry.title,
+            )
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
+    poller = hass.data.get(_OURANOS_POLLERS_DATA_KEY, {}).pop(entry.entry_id, None)
+    if poller is not None:
+        await poller.async_stop()
     hub: TmtChowHub = hass.data[DOMAIN].pop(entry.entry_id)
     await hub.async_stop()
     return True

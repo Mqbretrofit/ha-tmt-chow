@@ -193,12 +193,7 @@ int main(int argc, char **argv) {
         if (rdt_init_code > 0 || rdt_init_code == -10001) {
             rdt_initialized=1; rdt_create_attempted=1; rdt_id=RDT_Create(sid,5000,0);
             if (rdt_id >= 0) {
-                rdt_connected=1; passive_attempted=1; char buf[4096]; long deadline=monotonic_ms()+2000;
-                while (monotonic_ms() < deadline) {
-                    int ret=RDT_Read(rdt_id,buf,sizeof(buf),300); passive_last=ret; passive_last_set=1;
-                    if (ret>0) { passive_count++; passive_bytes += ret; }
-                    else if (ret<0 && ret!=-10007) break;
-                }
+                rdt_connected=1; char buf[4096];
                 {
                     static const char request_json[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
                     char request[sizeof(request_json)];
@@ -209,7 +204,7 @@ int main(int argc, char **argv) {
                     status_write_code=RDT_Write(rdt_id,request,request_len); status_write_set=1;
                     memset(request,0,sizeof(request));
                     if (status_write_code >= 0) {
-                        status_request_sent=1; deadline=monotonic_ms()+5000;
+                        status_request_sent=1; long deadline=monotonic_ms()+5000;
                         while (monotonic_ms() < deadline) {
                             int ret=RDT_Read(rdt_id,buf,sizeof(buf)-1,500); response_last=ret; response_last_set=1;
                             if (ret>0) {

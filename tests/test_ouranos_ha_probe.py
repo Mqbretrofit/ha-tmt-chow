@@ -193,9 +193,10 @@ def test_native_helper_has_only_allowlisted_status_write_path() -> None:
     assert '"gate_command_sent\\\":false' in c_source
     assert '"parameter_read_command_sent\\\":false' in c_source
     assert '"parameter_write_command_sent\\\":false' in c_source
+    assert "passive_attempted=1" not in c_source
 
 
-def test_status_probe_requires_ephemeral_six_digit_pin() -> None:
+def test_status_probe_requires_six_digit_pin_and_keeps_options_local() -> None:
     init_source = INIT_PATH.read_text(encoding="utf-8")
     service_source = (ROOT / "custom_components/tmt_chow/services.yaml").read_text(
         encoding="utf-8"
@@ -205,6 +206,16 @@ def test_status_probe_requires_ephemeral_six_digit_pin() -> None:
     assert "Gate PIN must contain exactly 6 digits" in init_source
     assert "async_probe_ouranos_on_ha(hass, hub.uuid, pin_code)" in init_source
     assert "type: password" in service_source
+
+    config_flow_source = (
+        ROOT / "custom_components/tmt_chow/config_flow.py"
+    ).read_text(encoding="utf-8")
+    diagnostics_source = (
+        ROOT / "custom_components/tmt_chow/diagnostics.py"
+    ).read_text(encoding="utf-8")
+    assert "TextSelectorType.PASSWORD" in config_flow_source
+    assert "CONF_OURANOS_PIN" in diagnostics_source
+    assert '"options": async_redact_data(dict(entry.options), _REDACT)' in diagnostics_source
 
 
 def test_glibc_helper_sends_and_decodes_exact_status_request(tmp_path: Path) -> None:

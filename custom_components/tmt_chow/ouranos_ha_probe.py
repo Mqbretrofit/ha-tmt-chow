@@ -63,7 +63,7 @@ _GLIBC_SHA512: Final = (
 )
 _MAX_GLIBC_BUNDLE_BYTES: Final = 64 * 1024 * 1024
 _GLIBC_HELPER_SHA256: Final = (
-    "16b09794a79863a1a56589912fb85792222196c071f007f057449ffee411ac06"
+    "db88aee4b4995254378165456b2d7041dfa17b6637873f1d6a299690ba89e9d2"
 )
 
 
@@ -324,7 +324,7 @@ async def _async_run_process(
             process.communicate((uuid + "\n" + pin_code + "\n").encode("ascii")),
             timeout=_HELPER_TIMEOUT,
         )
-    except TimeoutError:
+    except (TimeoutError, asyncio.CancelledError):
         if process.returncode is None:
             process.kill()
             await process.wait()

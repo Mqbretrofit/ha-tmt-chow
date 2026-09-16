@@ -29,6 +29,23 @@
       "invalid_auth": "Sikertelen hitelesítés"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PS19001 natív állapot",
+        "description": "Bekapcsolja a kapu helyzetének lekérdezését az elkülönített, csak olvasásra képes TUTK/RDT kapcsolaton. A hatjegyű kapu-PIN-t a Home Assistant helyben tárolja, és nem teszi bele a diagnosztikába. A natív állapotlekérdezés kikapcsolásához törölje a mező tartalmát.",
+        "data": {
+          "ouranos_pin": "Hatjegyű kapu-PIN"
+        }
+      }
+    },
+    "error": {
+      "invalid_pin": "A kapu-PIN-nek pontosan hat számjegyből kell állnia"
+    },
+    "abort": {
+      "not_ouranos_candidate": "A natív állapot csak megerősített, 20 karakteres azonosítójú PS19001 kapunál érhető el"
+    }
+  },
   "entity": {
     "sensor": {
       "battery": {
