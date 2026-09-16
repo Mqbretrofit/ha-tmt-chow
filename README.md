@@ -135,6 +135,21 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
+### Experimental PS19001 OURANOS probe
+
+`v1.0.4-beta.9` includes a read-only transport probe for the confirmed PS19001 / 20-character UID case. It runs inside the normal TMT Chow integration; no separate add-on is needed. Existing AWS/MQTT controllers continue to use the unchanged cloud-push path.
+
+The probe currently supports x86-64 Home Assistant installations. On its first run it downloads a pinned TUTK SDK archive and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory.
+
+To run it:
+
+1. Open **Developer tools → Actions** in Home Assistant.
+2. Select **TMT Chow: OURANOS transport probe** (`tmt_chow.ouranos_probe`).
+3. Leave the UUID empty when exactly one configured PS19001 candidate exists. Otherwise enter the UUID locally; do not post the UUID publicly.
+4. Run the action with response data enabled and copy the complete response JSON to the relevant issue.
+
+The probe initializes IOTC and RDT, attempts a native UID session, opens RDT channel 0 and passively listens for up to two seconds. It does not bind or call `RDT_Write`, and it sends no gate-control, status-read, function-read or parameter command. Actual PS19001 control remains disabled until this transport stage is validated on matching hardware.
+
 ## Home Assistant entities
 
 A configured gate can provide:

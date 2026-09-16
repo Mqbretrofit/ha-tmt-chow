@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.4-beta.9
+
+- Added an experimental, read-only PS19001 OURANOS transport probe directly to the TMT Chow integration; no separate Home Assistant add-on is required
+- Matched the TMT Chow 3.1.4 application flow: `IOTC_Initialize2(0)` → parallel UID connection → `RDT_Initialize()` → `RDT_Create(session, 5000, 0)` → passive `RDT_Read()`
+- Replaced the incompatible combined, license-key-dependent 4.2.x TUTK library with separately loaded legacy Linux x86-64 IOTC 1.13.7.0 and RDT 1.7.4.0 libraries, pinned by source commit and SHA-256
+- Run the native libraries in a separate helper process through a private integrity-checked glibc runtime, keeping native failures isolated from Home Assistant Core
+- Restricted the probe to confirmed 20-character PS19001 candidates and x86-64 Home Assistant systems; other controllers and architectures are not guessed
+- Kept the probe transport-only: it binds no `RDT_Write` symbol and sends no open, close, stop, status-read, function-read, or parameter-write payload
+- Added library extraction, helper-integrity, UUID redaction, candidate-selection and no-write regression coverage
+
 ## v1.0.4-beta.5
 
 - Fixed account discovery so otherwise valid devices are no longer discarded when the device-list API returns `iot_endpoint: null`

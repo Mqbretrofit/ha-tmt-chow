@@ -1,9 +1,10 @@
 """Home Assistant-hosted read-only OURANOS/TUTK transport probe.
 
-The native library is never loaded into the Home Assistant process. A pinned,
-architecture-matched helper library is downloaded into /config/.storage and is
-executed by a short-lived child Python process. A native crash therefore cannot
-crash Home Assistant.
+The native TUTK library is never loaded into the Home Assistant Core process.
+On x86_64 HAOS, where Core uses musl, the probe launches a tiny bundled glibc
+helper through a private integrity-checked glibc loader/runtime. This avoids
+relying on the host's missing ``ld-linux-x86-64.so.2`` and keeps native crashes
+isolated from Home Assistant.
 
 The probe is transport-only. It never calls RDT_Write and never sends a gate,
 status-read, parameter-read, or parameter-write command.
@@ -13,41 +14,58 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import os
 import platform
 import sys
-from pathlib import Path
+import tarfile
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-_WYZE_COMMIT: Final = "bf893749b748f142199c9bce14fac44f8a661d6e"
-_LIBRARY_BASE: Final = (
-    "https://raw.githubusercontent.com/mrlt8/docker-wyze-bridge/"
-    f"{_WYZE_COMMIT}/app/lib/"
+_TUTK_SDK_COMMIT: Final = "1ef38620c25032ef7538b09da3f9c7b6830d6235"
+_TUTK_SDK_ARCHIVE: Final = "TUTK_IOTC_Platform_14W42P1.zip"
+_TUTK_SDK_URL: Final = (
+    "https://raw.githubusercontent.com/nblavoie/wyzecam-api/"
+    f"{_TUTK_SDK_COMMIT}/wyzecam-sdk/{_TUTK_SDK_ARCHIVE}"
 )
-_MAX_LIBRARY_BYTES: Final = 8 * 1024 * 1024
+_TUTK_SDK_SHA256: Final = (
+    "05463b5a35e83edc3c185b6173723ea191a4331530c97f097d74c48fed6943e7"
+)
+_TUTK_LIBRARY_MEMBERS: Final[dict[str, tuple[str, str]]] = {
+    "iotc": (
+        "Lib/Linux/x64/libIOTCAPIs.so",
+        "955557829e7aebd6d258320fb024b453f07493d3747bb0afb3294d9bbd45464d",
+    ),
+    "rdt": (
+        "Lib/Linux/x64/libRDTAPIs.so",
+        "5a5a59fc2490bafa88012a8df0d7f35ec51fcee214880f5439fc3c5951c17dca",
+    ),
+}
+_SUPPORTED_MACHINES: Final = frozenset({"x86_64", "amd64"})
+_TMT_APK_IOTC_VERSION: Final = "0x03010521"
+_PROBE_IOTC_VERSION: Final = "0x010d0700"
+_MAX_SDK_ARCHIVE_BYTES: Final = 80 * 1024 * 1024
 _DOWNLOAD_TIMEOUT: Final = 45
 _HELPER_TIMEOUT: Final = 40
 
-# The SHA values are Git blob SHA-1 values from the pinned repository commit.
-# Keeping all three architectures here lets the exact same Home Assistant action
-# run on HAOS x86-64, Raspberry Pi / other AArch64 systems, and 32-bit ARM.
-_LIBRARY_SOURCES: Final[dict[str, tuple[str, str]]] = {
-    "x86_64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
-    "amd64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
-    "aarch64": ("lib.arm64", "a3ff9de4300ed869c2ba9a589a1bd1bfede979b6"),
-    "arm64": ("lib.arm64", "a3ff9de4300ed869c2ba9a589a1bd1bfede979b6"),
-    "armv7l": ("lib.arm", "2fee47acb86ac1b853949467e63f5af689684540"),
-    "armv7": ("lib.arm", "2fee47acb86ac1b853949467e63f5af689684540"),
-}
-
-
-def _git_blob_sha1(data: bytes) -> str:
-    """Return the Git blob object SHA-1 for downloaded bytes."""
-    return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+_GLIBC_VERSION: Final = "2.35-0"
+_GLIBC_URL: Final = (
+    "https://github.com/sgerrand/docker-glibc-builder/releases/download/"
+    f"{_GLIBC_VERSION}/glibc-bin-{_GLIBC_VERSION}-x86_64.tar.gz"
+)
+_GLIBC_SHA512: Final = (
+    "0aff0ec76f4d341957a792b8635c0770148eba9a5cb64f9bbd85228c14d9cb93"
+    "c1a402063cab533a9f536f5f7be92c27bc5be8ed13c2b4f7aa416510c754d071"
+)
+_MAX_GLIBC_BUNDLE_BYTES: Final = 32 * 1024 * 1024
+_GLIBC_HELPER_SHA256: Final = (
+    "c2f517c1b43fe2253a6b599c4db42cc4a1de671efcaa872a23fcdc46cea31e84"
+)
 
 
 def _base_result(uuid: str) -> dict[str, Any]:
@@ -57,10 +75,20 @@ def _base_result(uuid: str) -> dict[str, Any]:
         "applicable": len(uuid) == 20,
         "home_assistant_machine": machine,
         "home_assistant_platform": sys.platform,
-        "library_source_commit": _WYZE_COMMIT,
-        "library_architecture_supported": machine in _LIBRARY_SOURCES,
+        "library_source_commit": _TUTK_SDK_COMMIT,
+        "library_source_archive": _TUTK_SDK_ARCHIVE,
+        "library_architecture_supported": machine in _SUPPORTED_MACHINES,
         "library_downloaded": False,
         "library_integrity_verified": False,
+        "iotc_library_integrity_verified": False,
+        "rdt_library_integrity_verified": False,
+        "tmt_apk_iotc_version": _TMT_APK_IOTC_VERSION,
+        "probe_iotc_version_expected": _PROBE_IOTC_VERSION,
+        "helper_runtime": "private_glibc" if machine in _SUPPORTED_MACHINES else None,
+        "glibc_version": _GLIBC_VERSION if machine in _SUPPORTED_MACHINES else None,
+        "glibc_runtime_downloaded": False,
+        "glibc_runtime_integrity_verified": False,
+        "glibc_helper_integrity_verified": False,
         "helper_started": False,
         "helper_exit_code": None,
         "helper_error": None,
@@ -78,64 +106,178 @@ def _base_result(uuid: str) -> dict[str, Any]:
     }
 
 
-async def _async_ensure_library(hass: HomeAssistant, machine: str) -> tuple[Path, bool]:
-    """Return an integrity-checked native library for this HA architecture."""
-    source = _LIBRARY_SOURCES.get(machine)
-    if source is None:
-        raise RuntimeError(f"unsupported_machine:{machine}")
-    filename, expected_blob_sha = source
-    cache_dir = Path(hass.config.path(".storage", "tmt_chow_ouranos"))
-    await hass.async_add_executor_job(
-        lambda: cache_dir.mkdir(parents=True, exist_ok=True)
-    )
-    target = cache_dir / filename
-
-    def existing_ok() -> bool:
-        try:
-            data = target.read_bytes()
-        except OSError:
-            return False
-        return _git_blob_sha1(data) == expected_blob_sha
-
-    if await hass.async_add_executor_job(existing_ok):
-        return target, False
-
+async def _async_download(hass: HomeAssistant, url: str, max_bytes: int) -> bytes:
     session = async_get_clientsession(hass)
-    url = _LIBRARY_BASE + filename
     try:
         async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
             async with session.get(url) as response:
                 response.raise_for_status()
                 data = await response.read()
     except Exception as err:
-        raise RuntimeError(f"library_download_failed:{type(err).__name__}") from err
+        raise RuntimeError(f"download_failed:{type(err).__name__}") from err
+    if not data or len(data) > max_bytes:
+        raise RuntimeError(f"download_size_invalid:{len(data)}")
+    return data
 
-    if not data or len(data) > _MAX_LIBRARY_BYTES:
-        raise RuntimeError(f"library_size_invalid:{len(data)}")
-    actual = _git_blob_sha1(data)
-    if actual != expected_blob_sha:
+
+def _safe_extract_tutk_libraries(data: bytes, target: Path) -> None:
+    """Extract only the two pinned x86-64 libraries from the SDK archive."""
+    staging = target.with_name(target.name + ".tmp")
+    if staging.exists():
+        import shutil
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        for output_name, (member_name, expected_sha) in _TUTK_LIBRARY_MEMBERS.items():
+            info = archive.getinfo(member_name)
+            if info.file_size <= 0 or info.file_size > 2 * 1024 * 1024:
+                raise RuntimeError(f"tutk_library_size_invalid:{output_name}")
+            payload = archive.read(info)
+            actual = hashlib.sha256(payload).hexdigest()
+            if actual != expected_sha:
+                raise RuntimeError(
+                    f"tutk_library_integrity_failed:{output_name}:"
+                    f"expected={expected_sha}:actual={actual}"
+                )
+            output = staging / f"lib{output_name.upper()}APIs.so"
+            output.write_bytes(payload)
+            os.chmod(output, 0o700)
+    (staging / ".archive-sha256").write_text(_TUTK_SDK_SHA256, encoding="ascii")
+    if target.exists():
+        import shutil
+        shutil.rmtree(target)
+    os.replace(staging, target)
+
+
+async def _async_ensure_libraries(hass: HomeAssistant) -> tuple[Path, Path, bool]:
+    cache_dir = Path(hass.config.path(".storage", "tmt_chow_ouranos"))
+    await hass.async_add_executor_job(lambda: cache_dir.mkdir(parents=True, exist_ok=True))
+    target = cache_dir / "tutk-14W42P1-x64"
+    iotc = target / "libIOTCAPIs.so"
+    rdt = target / "libRDTAPIs.so"
+    marker = target / ".archive-sha256"
+
+    def existing_ok() -> bool:
+        try:
+            return (
+                marker.read_text(encoding="ascii").strip() == _TUTK_SDK_SHA256
+                and hashlib.sha256(iotc.read_bytes()).hexdigest()
+                == _TUTK_LIBRARY_MEMBERS["iotc"][1]
+                and hashlib.sha256(rdt.read_bytes()).hexdigest()
+                == _TUTK_LIBRARY_MEMBERS["rdt"][1]
+            )
+        except OSError:
+            return False
+
+    if await hass.async_add_executor_job(existing_ok):
+        return iotc, rdt, False
+
+    data = await _async_download(hass, _TUTK_SDK_URL, _MAX_SDK_ARCHIVE_BYTES)
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != _TUTK_SDK_SHA256:
         raise RuntimeError(
-            f"library_integrity_failed:expected={expected_blob_sha}:actual={actual}"
+            f"sdk_archive_integrity_failed:expected={_TUTK_SDK_SHA256}:actual={actual}"
         )
+    await hass.async_add_executor_job(_safe_extract_tutk_libraries, data, target)
+    return iotc, rdt, True
 
-    temp = target.with_suffix(target.suffix + ".tmp")
 
-    def store() -> None:
-        temp.write_bytes(data)
-        os.chmod(temp, 0o700)
-        os.replace(temp, target)
+def _safe_extract_glibc_bundle(data: bytes, target: Path) -> None:
+    staging = target.with_name(target.name + ".tmp")
+    if staging.exists():
+        import shutil
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
 
-    await hass.async_add_executor_job(store)
-    return target, True
+    allowed_prefixes = (
+        PurePosixPath("usr/glibc-compat/lib"),
+        PurePosixPath("usr/glibc-compat/lib64"),
+    )
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        for member in archive.getmembers():
+            member_path = PurePosixPath(member.name.lstrip("./"))
+            if not any(
+                member_path == prefix or prefix in member_path.parents
+                for prefix in allowed_prefixes
+            ):
+                continue
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise RuntimeError("glibc_archive_unsafe_path")
+            output = staging.joinpath(*member_path.parts)
+            if member.isdir():
+                output.mkdir(parents=True, exist_ok=True)
+                continue
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if member.issym():
+                link = PurePosixPath(member.linkname)
+                if link.is_absolute() or ".." in link.parts:
+                    raise RuntimeError("glibc_archive_unsafe_symlink")
+                output.symlink_to(member.linkname)
+                continue
+            if not member.isfile():
+                continue
+            source = archive.extractfile(member)
+            if source is None:
+                raise RuntimeError("glibc_archive_member_unreadable")
+            output.write_bytes(source.read())
+            os.chmod(output, member.mode & 0o777)
+
+    loader = staging / "usr/glibc-compat/lib/ld-linux-x86-64.so.2"
+    libc = staging / "usr/glibc-compat/lib/libc.so.6"
+    if not loader.exists() or not libc.exists():
+        raise RuntimeError("glibc_runtime_incomplete")
+    (staging / ".bundle-sha512").write_text(_GLIBC_SHA512, encoding="ascii")
+    if target.exists():
+        import shutil
+        shutil.rmtree(target)
+    os.replace(staging, target)
+
+
+async def _async_ensure_glibc_runtime(hass: HomeAssistant) -> tuple[Path, Path, bool]:
+    cache = Path(hass.config.path(".storage", "tmt_chow_ouranos", "glibc-2.35"))
+    loader = cache / "usr/glibc-compat/lib/ld-linux-x86-64.so.2"
+    libdir = cache / "usr/glibc-compat/lib"
+    marker = cache / ".bundle-sha512"
+
+    def existing_ok() -> bool:
+        try:
+            return (
+                loader.exists()
+                and (libdir / "libc.so.6").exists()
+                and marker.read_text(encoding="ascii").strip() == _GLIBC_SHA512
+            )
+        except OSError:
+            return False
+
+    if await hass.async_add_executor_job(existing_ok):
+        return loader, libdir, False
+
+    data = await _async_download(hass, _GLIBC_URL, _MAX_GLIBC_BUNDLE_BYTES)
+    actual = hashlib.sha512(data).hexdigest()
+    if actual != _GLIBC_SHA512:
+        raise RuntimeError(
+            f"glibc_integrity_failed:expected={_GLIBC_SHA512}:actual={actual}"
+        )
+    await hass.async_add_executor_job(_safe_extract_glibc_bundle, data, cache)
+    return loader, libdir, True
+
+
+def _verify_bundled_glibc_helper() -> Path:
+    helper = Path(__file__).with_name("native") / "ouranos_glibc_helper.amd64"
+    try:
+        data = helper.read_bytes()
+    except OSError as err:
+        raise RuntimeError("glibc_helper_missing") from err
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != _GLIBC_HELPER_SHA256:
+        raise RuntimeError(
+            f"glibc_helper_integrity_failed:expected={_GLIBC_HELPER_SHA256}:actual={actual}"
+        )
+    return helper
 
 
 def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
-    """Return the last JSON object emitted by the native helper.
-
-    Some native TUTK builds write their own informational messages to stdout.
-    Scanning from the end prevents those messages from making a valid probe look
-    like invalid JSON while still requiring the helper itself to emit one object.
-    """
     text = stdout.decode("utf-8", "replace")
     for line in reversed(text.splitlines()):
         line = line.strip()
@@ -151,25 +293,46 @@ def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
 
 
 def _safe_helper_error(stderr: bytes, uuid: str) -> str | None:
-    """Return bounded helper stderr with the raw device UID removed."""
     text = stderr.decode("utf-8", "replace").replace(uuid, "<redacted-uid>").strip()
     return text[-1000:] if text else None
 
 
+async def _async_run_process(
+    argv: list[str], uuid: str, *, env: dict[str, str] | None = None
+) -> tuple[asyncio.subprocess.Process, bytes, bytes]:
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate((uuid + "\n").encode("ascii")),
+            timeout=_HELPER_TIMEOUT,
+        )
+    except TimeoutError:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        raise
+    return process, stdout, stderr
+
+
 async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str, Any]:
-    """Run the isolated read-only OURANOS native connectivity probe on HA."""
     result = _base_result(uuid)
     if len(uuid) != 20:
         result["result"] = "not_applicable"
         return result
 
     machine = result["home_assistant_machine"]
-    if machine not in _LIBRARY_SOURCES:
+    if machine not in _SUPPORTED_MACHINES:
         result["result"] = "unsupported_architecture"
         return result
 
     try:
-        library_path, downloaded = await _async_ensure_library(hass, machine)
+        iotc_path, rdt_path, downloaded = await _async_ensure_libraries(hass)
     except RuntimeError as err:
         result["result"] = "library_unavailable"
         result["helper_error"] = str(err)
@@ -177,34 +340,35 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
 
     result["library_downloaded"] = downloaded
     result["library_integrity_verified"] = True
-
-    helper = Path(__file__).with_name("ouranos_native_helper.py")
-    if not helper.is_file():
-        result["result"] = "helper_missing"
-        return result
+    result["iotc_library_integrity_verified"] = True
+    result["rdt_library_integrity_verified"] = True
 
     process: asyncio.subprocess.Process | None = None
     try:
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
+        loader, libdir, glibc_downloaded = await _async_ensure_glibc_runtime(hass)
+        result["glibc_runtime_downloaded"] = glibc_downloaded
+        result["glibc_runtime_integrity_verified"] = True
+        helper = await hass.async_add_executor_job(_verify_bundled_glibc_helper)
+        result["glibc_helper_integrity_verified"] = True
+        argv = [
+            str(loader),
+            "--library-path",
+            str(libdir),
             str(helper),
-            str(library_path),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        )
+            str(iotc_path),
+            str(rdt_path),
+        ]
+        env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
+
+        process, stdout, stderr = await _async_run_process(argv, uuid, env=env)
         result["helper_started"] = True
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate((uuid + "\n").encode("ascii")),
-            timeout=_HELPER_TIMEOUT,
-        )
     except TimeoutError:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await process.wait()
         result["result"] = "helper_timeout"
         result["helper_error"] = "native helper exceeded safety timeout"
+        return result
+    except RuntimeError as err:
+        result["result"] = "helper_runtime_unavailable"
+        result["helper_error"] = str(err)
         return result
     except Exception as err:
         result["result"] = "helper_start_failed"

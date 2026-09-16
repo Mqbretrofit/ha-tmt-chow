@@ -13,13 +13,14 @@ pedestrian_open:
 ouranos_probe:
   name: OURANOS transport probe
   description: >-
-    Run a read-only ThroughTek IOTC/RDT connectivity probe inside Home Assistant.
-    It sends no gate, status-read, parameter-read, or parameter-write command.
+    Run a read-only ThroughTek IOTC/RDT connectivity probe inside Home Assistant
+    for the confirmed PS19001 OURANOS case. It sends no gate, status-read,
+    parameter-read, or parameter-write command.
   fields:
     uuid:
       name: Gate UUID
       description: >-
-        Optional. Leave empty when exactly one 20-character OURANOS gate is configured.
+        Optional. Leave empty when exactly one configured PS19001 OURANOS candidate exists.
       required: false
       example: "ABCDEFGHIJKLMNOPQRST"
       selector:
