@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4-beta.11
+
+- Replaced the legacy Linux x86-64 IOTC 1.13.7.0 / RDT 1.7.4.0 probe libraries with IOTC/RDT 3.1.5.38 from the same 3.1.5 API generation as the TMT Chow Android application's IOTC 3.1.5.33 library
+- Pin both native files to an immutable source commit and verify each file with its own SHA-256 before installation
+- Download only the two required native files instead of extracting an entire third-party SDK archive
+- Kept the private glibc runtime, helper-process isolation, confirmed-PS19001 restriction and read-only/no-command safety guarantees unchanged
+
 ## v1.0.4-beta.10
 
 - Raised the private glibc download safety ceiling from 32 MiB to 64 MiB so the verified 52,484,557-byte runtime archive can be accepted

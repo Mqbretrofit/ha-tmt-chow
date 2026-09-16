@@ -20,36 +20,34 @@ import os
 import platform
 import sys
 import tarfile
-import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-_TUTK_SDK_COMMIT: Final = "1ef38620c25032ef7538b09da3f9c7b6830d6235"
-_TUTK_SDK_ARCHIVE: Final = "TUTK_IOTC_Platform_14W42P1.zip"
-_TUTK_SDK_URL: Final = (
-    "https://raw.githubusercontent.com/nblavoie/wyzecam-api/"
-    f"{_TUTK_SDK_COMMIT}/wyzecam-sdk/{_TUTK_SDK_ARCHIVE}"
+_TUTK_SDK_REPOSITORY: Final = "Soldier-Sen/tutk"
+_TUTK_SDK_COMMIT: Final = "8a93626da7c12c936d550750e887a020c3049dc0"
+_TUTK_SDK_PATH: Final = "Lib/Linux/x64/tmp_so"
+_TUTK_SDK_BASE_URL: Final = (
+    f"https://raw.githubusercontent.com/{_TUTK_SDK_REPOSITORY}/"
+    f"{_TUTK_SDK_COMMIT}/{_TUTK_SDK_PATH}"
 )
-_TUTK_SDK_SHA256: Final = (
-    "05463b5a35e83edc3c185b6173723ea191a4331530c97f097d74c48fed6943e7"
-)
-_TUTK_LIBRARY_MEMBERS: Final[dict[str, tuple[str, str]]] = {
+_TUTK_LIBRARY_FILES: Final[dict[str, tuple[str, str]]] = {
     "iotc": (
-        "Lib/Linux/x64/libIOTCAPIs.so",
-        "955557829e7aebd6d258320fb024b453f07493d3747bb0afb3294d9bbd45464d",
+        "libIOTCAPIs.so",
+        "bf92a8f33f6a69f9c40f5d1a825e993763bc614a0e364112d325e32ec01de843",
     ),
     "rdt": (
-        "Lib/Linux/x64/libRDTAPIs.so",
-        "5a5a59fc2490bafa88012a8df0d7f35ec51fcee214880f5439fc3c5951c17dca",
+        "libRDTAPIs.so",
+        "739575ad864b0e76c7fe89546e55e08e5ff8e63c36a95e08e5e744a607362296",
     ),
 }
 _SUPPORTED_MACHINES: Final = frozenset({"x86_64", "amd64"})
 _TMT_APK_IOTC_VERSION: Final = "0x03010521"
-_PROBE_IOTC_VERSION: Final = "0x010d0700"
-_MAX_SDK_ARCHIVE_BYTES: Final = 80 * 1024 * 1024
+_PROBE_IOTC_VERSION: Final = "0x03010526"
+_PROBE_RDT_VERSION: Final = "0x03010526"
+_MAX_TUTK_LIBRARY_BYTES: Final = 2 * 1024 * 1024
 _DOWNLOAD_TIMEOUT: Final = 45
 _HELPER_TIMEOUT: Final = 40
 
@@ -75,8 +73,9 @@ def _base_result(uuid: str) -> dict[str, Any]:
         "applicable": len(uuid) == 20,
         "home_assistant_machine": machine,
         "home_assistant_platform": sys.platform,
+        "library_source_repository": _TUTK_SDK_REPOSITORY,
         "library_source_commit": _TUTK_SDK_COMMIT,
-        "library_source_archive": _TUTK_SDK_ARCHIVE,
+        "library_source_path": _TUTK_SDK_PATH,
         "library_architecture_supported": machine in _SUPPORTED_MACHINES,
         "library_downloaded": False,
         "library_integrity_verified": False,
@@ -84,6 +83,7 @@ def _base_result(uuid: str) -> dict[str, Any]:
         "rdt_library_integrity_verified": False,
         "tmt_apk_iotc_version": _TMT_APK_IOTC_VERSION,
         "probe_iotc_version_expected": _PROBE_IOTC_VERSION,
+        "probe_rdt_version_expected": _PROBE_RDT_VERSION,
         "helper_runtime": "private_glibc" if machine in _SUPPORTED_MACHINES else None,
         "glibc_version": _GLIBC_VERSION if machine in _SUPPORTED_MACHINES else None,
         "glibc_runtime_downloaded": False,
@@ -120,30 +120,30 @@ async def _async_download(hass: HomeAssistant, url: str, max_bytes: int) -> byte
     return data
 
 
-def _safe_extract_tutk_libraries(data: bytes, target: Path) -> None:
-    """Extract only the two pinned x86-64 libraries from the SDK archive."""
+def _safe_install_tutk_libraries(payloads: dict[str, bytes], target: Path) -> None:
+    """Verify and install only the two pinned x86-64 TUTK libraries."""
     staging = target.with_name(target.name + ".tmp")
     if staging.exists():
         import shutil
         shutil.rmtree(staging)
     staging.mkdir(parents=True, exist_ok=True)
 
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        for output_name, (member_name, expected_sha) in _TUTK_LIBRARY_MEMBERS.items():
-            info = archive.getinfo(member_name)
-            if info.file_size <= 0 or info.file_size > 2 * 1024 * 1024:
-                raise RuntimeError(f"tutk_library_size_invalid:{output_name}")
-            payload = archive.read(info)
-            actual = hashlib.sha256(payload).hexdigest()
-            if actual != expected_sha:
-                raise RuntimeError(
-                    f"tutk_library_integrity_failed:{output_name}:"
-                    f"expected={expected_sha}:actual={actual}"
-                )
-            output = staging / f"lib{output_name.upper()}APIs.so"
-            output.write_bytes(payload)
-            os.chmod(output, 0o700)
-    (staging / ".archive-sha256").write_text(_TUTK_SDK_SHA256, encoding="ascii")
+    if set(payloads) != set(_TUTK_LIBRARY_FILES):
+        raise RuntimeError("tutk_library_set_invalid")
+    for library_name, (filename, expected_sha) in _TUTK_LIBRARY_FILES.items():
+        payload = payloads[library_name]
+        if not payload or len(payload) > _MAX_TUTK_LIBRARY_BYTES:
+            raise RuntimeError(f"tutk_library_size_invalid:{library_name}")
+        actual = hashlib.sha256(payload).hexdigest()
+        if actual != expected_sha:
+            raise RuntimeError(
+                f"tutk_library_integrity_failed:{library_name}:"
+                f"expected={expected_sha}:actual={actual}"
+            )
+        output = staging / filename
+        output.write_bytes(payload)
+        os.chmod(output, 0o700)
+    (staging / ".source-commit").write_text(_TUTK_SDK_COMMIT, encoding="ascii")
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -153,19 +153,19 @@ def _safe_extract_tutk_libraries(data: bytes, target: Path) -> None:
 async def _async_ensure_libraries(hass: HomeAssistant) -> tuple[Path, Path, bool]:
     cache_dir = Path(hass.config.path(".storage", "tmt_chow_ouranos"))
     await hass.async_add_executor_job(lambda: cache_dir.mkdir(parents=True, exist_ok=True))
-    target = cache_dir / "tutk-14W42P1-x64"
+    target = cache_dir / "tutk-3.1.5.38-x64"
     iotc = target / "libIOTCAPIs.so"
     rdt = target / "libRDTAPIs.so"
-    marker = target / ".archive-sha256"
+    marker = target / ".source-commit"
 
     def existing_ok() -> bool:
         try:
             return (
-                marker.read_text(encoding="ascii").strip() == _TUTK_SDK_SHA256
+                marker.read_text(encoding="ascii").strip() == _TUTK_SDK_COMMIT
                 and hashlib.sha256(iotc.read_bytes()).hexdigest()
-                == _TUTK_LIBRARY_MEMBERS["iotc"][1]
+                == _TUTK_LIBRARY_FILES["iotc"][1]
                 and hashlib.sha256(rdt.read_bytes()).hexdigest()
-                == _TUTK_LIBRARY_MEMBERS["rdt"][1]
+                == _TUTK_LIBRARY_FILES["rdt"][1]
             )
         except OSError:
             return False
@@ -173,13 +173,19 @@ async def _async_ensure_libraries(hass: HomeAssistant) -> tuple[Path, Path, bool
     if await hass.async_add_executor_job(existing_ok):
         return iotc, rdt, False
 
-    data = await _async_download(hass, _TUTK_SDK_URL, _MAX_SDK_ARCHIVE_BYTES)
-    actual = hashlib.sha256(data).hexdigest()
-    if actual != _TUTK_SDK_SHA256:
-        raise RuntimeError(
-            f"sdk_archive_integrity_failed:expected={_TUTK_SDK_SHA256}:actual={actual}"
+    library_names = tuple(_TUTK_LIBRARY_FILES)
+    downloads = await asyncio.gather(
+        *(
+            _async_download(
+                hass,
+                f"{_TUTK_SDK_BASE_URL}/{_TUTK_LIBRARY_FILES[name][0]}",
+                _MAX_TUTK_LIBRARY_BYTES,
+            )
+            for name in library_names
         )
-    await hass.async_add_executor_job(_safe_extract_tutk_libraries, data, target)
+    )
+    payloads = dict(zip(library_names, downloads, strict=True))
+    await hass.async_add_executor_job(_safe_install_tutk_libraries, payloads, target)
     return iotc, rdt, True
 
 

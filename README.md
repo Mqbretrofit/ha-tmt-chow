@@ -137,9 +137,9 @@ The integration receives the device credentials required for the TMT Chow cloud 
 
 ### Experimental PS19001 OURANOS probe
 
-`v1.0.4-beta.10` includes a read-only transport probe for the confirmed PS19001 / 20-character UID case. It runs inside the normal TMT Chow integration; no separate add-on is needed. Existing AWS/MQTT controllers continue to use the unchanged cloud-push path.
+`v1.0.4-beta.11` includes a read-only transport probe for the confirmed PS19001 / 20-character UID case. It runs inside the normal TMT Chow integration; no separate add-on is needed. Existing AWS/MQTT controllers continue to use the unchanged cloud-push path.
 
-The probe currently supports x86-64 Home Assistant installations. On its first run it downloads a pinned TUTK SDK archive and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory.
+The probe currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
 
 To run it:
 

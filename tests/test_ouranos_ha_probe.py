@@ -9,7 +9,6 @@ from pathlib import Path
 import sys
 import tarfile
 import types
-import zipfile
 
 
 ROOT = Path(__file__).parents[1]
@@ -45,15 +44,25 @@ def _load_probe():
     return module
 
 
-def test_home_assistant_probe_uses_pinned_legacy_x64_sdk() -> None:
+def test_home_assistant_probe_uses_pinned_tmt_generation_x64_sdk() -> None:
     probe = _load_probe()
     assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64"})
-    assert probe._TUTK_SDK_COMMIT == "1ef38620c25032ef7538b09da3f9c7b6830d6235"
-    assert probe._TUTK_SDK_SHA256 == (
-        "05463b5a35e83edc3c185b6173723ea191a4331530c97f097d74c48fed6943e7"
-    )
+    assert probe._TUTK_SDK_REPOSITORY == "Soldier-Sen/tutk"
+    assert probe._TUTK_SDK_COMMIT == "8a93626da7c12c936d550750e887a020c3049dc0"
+    assert probe._TUTK_SDK_PATH == "Lib/Linux/x64/tmp_so"
+    assert probe._TUTK_LIBRARY_FILES == {
+        "iotc": (
+            "libIOTCAPIs.so",
+            "bf92a8f33f6a69f9c40f5d1a825e993763bc614a0e364112d325e32ec01de843",
+        ),
+        "rdt": (
+            "libRDTAPIs.so",
+            "739575ad864b0e76c7fe89546e55e08e5ff8e63c36a95e08e5e744a607362296",
+        ),
+    }
     assert probe._TMT_APK_IOTC_VERSION == "0x03010521"
-    assert probe._PROBE_IOTC_VERSION == "0x010d0700"
+    assert probe._PROBE_IOTC_VERSION == "0x03010526"
+    assert probe._PROBE_RDT_VERSION == "0x03010526"
 
 
 def test_twenty_character_uid_is_accepted_by_transport_probe() -> None:
@@ -116,29 +125,27 @@ def test_safe_glibc_bundle_extracts_only_private_runtime(tmp_path: Path) -> None
     assert not (target / "etc/should-not-be-extracted").exists()
 
 
-def test_safe_tutk_archive_extracts_only_pinned_libraries(
+def test_safe_tutk_install_writes_only_pinned_libraries(
     tmp_path: Path, monkeypatch
 ) -> None:
     probe = _load_probe()
     iotc = b"iotc-library"
     rdt = b"rdt-library"
-    members = {
-        "iotc": ("sdk/libIOTCAPIs.so", hashlib.sha256(iotc).hexdigest()),
-        "rdt": ("sdk/libRDTAPIs.so", hashlib.sha256(rdt).hexdigest()),
+    files = {
+        "iotc": ("libIOTCAPIs.so", hashlib.sha256(iotc).hexdigest()),
+        "rdt": ("libRDTAPIs.so", hashlib.sha256(rdt).hexdigest()),
     }
-    monkeypatch.setattr(probe, "_TUTK_LIBRARY_MEMBERS", members)
-    archive_buffer = io.BytesIO()
-    with zipfile.ZipFile(archive_buffer, mode="w") as archive:
-        archive.writestr("sdk/libIOTCAPIs.so", iotc)
-        archive.writestr("sdk/libRDTAPIs.so", rdt)
-        archive.writestr("sdk/should-not-be-extracted", b"nope")
+    monkeypatch.setattr(probe, "_TUTK_LIBRARY_FILES", files)
 
     target = tmp_path / "tutk"
-    probe._safe_extract_tutk_libraries(archive_buffer.getvalue(), target)
+    probe._safe_install_tutk_libraries({"iotc": iotc, "rdt": rdt}, target)
 
     assert (target / "libIOTCAPIs.so").read_bytes() == iotc
     assert (target / "libRDTAPIs.so").read_bytes() == rdt
     assert not (target / "should-not-be-extracted").exists()
+    assert (target / ".source-commit").read_text(encoding="ascii") == (
+        probe._TUTK_SDK_COMMIT
+    )
 
 
 def test_helper_stdout_parser_uses_last_json_object() -> None:
