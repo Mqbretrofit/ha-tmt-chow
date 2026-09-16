@@ -78,6 +78,8 @@ def test_private_glibc_runtime_is_pinned() -> None:
     probe = _load_probe()
     assert probe._GLIBC_VERSION == "2.35-0"
     assert probe._GLIBC_URL.endswith("/2.35-0/glibc-bin-2.35-0-x86_64.tar.gz")
+    assert probe._MAX_GLIBC_BUNDLE_BYTES == 64 * 1024 * 1024
+    assert probe._MAX_GLIBC_BUNDLE_BYTES > 52_484_557
     assert probe._GLIBC_SHA512 == (
         "0aff0ec76f4d341957a792b8635c0770148eba9a5cb64f9bbd85228c14d9cb93"
         "c1a402063cab533a9f536f5f7be92c27bc5be8ed13c2b4f7aa416510c754d071"

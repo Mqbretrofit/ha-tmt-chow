@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.4-beta.10
+
+- Raised the private glibc download safety ceiling from 32 MiB to 64 MiB so the verified 52,484,557-byte runtime archive can be accepted
+- Kept the pinned SHA-512 integrity verification unchanged; an oversized or hash-mismatched archive is still rejected before extraction
+- Added regression coverage for the exact archive size reported by the first beta.9 PS19001 test
+
 ## v1.0.4-beta.9
 
 - Added an experimental, read-only PS19001 OURANOS transport probe directly to the TMT Chow integration; no separate Home Assistant add-on is required
