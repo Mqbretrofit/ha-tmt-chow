@@ -20,8 +20,8 @@ from .pedestrian_state import (
     pedestrian_display_is_closed,
     pedestrian_display_movement,
     pedestrian_display_position,
-    process_pedestrian_display_telemetry,
 )
+from .pedestrian_state_v17 import process_pedestrian_display_telemetry
 
 
 async def async_setup_entry(
