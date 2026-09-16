@@ -13,7 +13,6 @@ status-read, parameter-read, or parameter-write command.
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import io
 import json
@@ -56,7 +55,7 @@ _GLIBC_SHA512: Final = (
 )
 _MAX_GLIBC_BUNDLE_BYTES: Final = 32 * 1024 * 1024
 _GLIBC_HELPER_SHA256: Final = (
-    "b8e0f23e5705e8dcca63174eac10ceb04b59b009c9f4bf1b23a0355b285c1528"
+    "401942e411fdde6727376ef0cb40e402c58b00fc1a9ef010223c53c388c948ec"
 )
 
 
@@ -228,38 +227,18 @@ async def _async_ensure_glibc_runtime(hass: HomeAssistant) -> tuple[Path, Path, 
     return loader, libdir, True
 
 
-def _materialize_bundled_glibc_helper(target: Path) -> Path:
-    native_dir = Path(__file__).with_name("native")
-    chunks = sorted(native_dir.glob("ouranos_glibc_helper.amd64.b64.*"))
-    if len(chunks) != 5:
-        raise RuntimeError(f"glibc_helper_chunks_missing:{len(chunks)}")
+def _verify_bundled_glibc_helper() -> Path:
+    helper = Path(__file__).with_name("native") / "ouranos_glibc_helper.amd64"
     try:
-        encoded = "".join(chunk.read_text(encoding="ascii").strip() for chunk in chunks)
-        data = base64.b64decode(encoded, validate=True)
-    except (OSError, ValueError) as err:
-        raise RuntimeError("glibc_helper_decode_failed") from err
+        data = helper.read_bytes()
+    except OSError as err:
+        raise RuntimeError("glibc_helper_missing") from err
     actual = hashlib.sha256(data).hexdigest()
     if actual != _GLIBC_HELPER_SHA256:
         raise RuntimeError(
             f"glibc_helper_integrity_failed:expected={_GLIBC_HELPER_SHA256}:actual={actual}"
         )
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if (
-            target.exists()
-            and hashlib.sha256(target.read_bytes()).hexdigest() == _GLIBC_HELPER_SHA256
-        ):
-            os.chmod(target, 0o700)
-            return target
-    except OSError:
-        pass
-
-    temp = target.with_suffix(target.suffix + ".tmp")
-    temp.write_bytes(data)
-    os.chmod(temp, 0o700)
-    os.replace(temp, target)
-    return target
+    return helper
 
 
 def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
@@ -332,14 +311,7 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
             loader, libdir, glibc_downloaded = await _async_ensure_glibc_runtime(hass)
             result["glibc_runtime_downloaded"] = glibc_downloaded
             result["glibc_runtime_integrity_verified"] = True
-            helper_target = Path(
-                hass.config.path(
-                    ".storage", "tmt_chow_ouranos", "ouranos_glibc_helper.amd64"
-                )
-            )
-            helper = await hass.async_add_executor_job(
-                _materialize_bundled_glibc_helper, helper_target
-            )
+            helper = await hass.async_add_executor_job(_verify_bundled_glibc_helper)
             result["glibc_helper_integrity_verified"] = True
             argv = [
                 str(loader),
