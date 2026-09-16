@@ -1,0 +1,52 @@
+name: Build OURANOS glibc helper
+
+on:
+  push:
+    branches:
+      - ouranos-self-contained-glibc-helper
+    paths:
+      - tools/ouranos_glibc_helper.c
+      - .github/workflows/build-ouranos-helper.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-x86-64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Build helper
+        run: |
+          set -euo pipefail
+          mkdir -p custom_components/tmt_chow/native
+          gcc -O2 -Wall -Wextra \
+            tools/ouranos_glibc_helper.c \
+            -ldl -lpthread \
+            -o custom_components/tmt_chow/native/ouranos_glibc_helper.amd64
+          strip custom_components/tmt_chow/native/ouranos_glibc_helper.amd64
+          sha256sum custom_components/tmt_chow/native/ouranos_glibc_helper.amd64 \
+            | awk '{print $1}' \
+            > custom_components/tmt_chow/native/ouranos_glibc_helper.amd64.sha256
+          file custom_components/tmt_chow/native/ouranos_glibc_helper.amd64
+
+      - name: Commit generated helper
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            custom_components/tmt_chow/native/ouranos_glibc_helper.amd64 \
+            custom_components/tmt_chow/native/ouranos_glibc_helper.amd64.sha256
+          if git diff --cached --quiet; then
+            echo "Generated helper is already up to date."
+            exit 0
+          fi
+          git commit -m "Build x86_64 OURANOS helper [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
