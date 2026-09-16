@@ -92,8 +92,6 @@ def test_ps25007a_uses_same_verified_17_slot_auto_close_timer() -> None:
 
 
 def test_dedicated_ped_auto_close_overrides_normal_auto_close() -> None:
-    # option_auto_closing = OFF,30,60,...; dedicated raw=1 therefore 30 sec,
-    # normal raw=2 therefore 60 sec. The dedicated field must win.
     hub = SimpleNamespace(
         controller_type="OTHER",
         configured_controller_type="OTHER",
@@ -246,8 +244,6 @@ def test_closing_telemetry_is_ignored_during_configured_auto_close_hold() -> Non
         process_pedestrian_display_telemetry(hub)
         assert pedestrian_display_phase(hub) == "open"
 
-        # Contradictory/stale closing frames before the 30-second hold expires
-        # must not make HA say Closing early.
         hub.position = 20
         hub.movement = "closing"
         hub.is_operating = True
@@ -275,7 +271,6 @@ def test_auto_close_deadline_starts_closing_even_before_fresh_motion_frame() -> 
         process_pedestrian_display_telemetry(hub)
         assert pedestrian_display_phase(hub) == "open"
 
-        # Force the configured 30-second hold boundary to expire.
         hub._tmt_pedestrian_display_deadline = time.monotonic() - 1
         process_pedestrian_display_telemetry(hub)
         assert pedestrian_display_phase(hub) == "closing"
@@ -312,7 +307,7 @@ def test_fresh_live_zero_after_timed_closing_completes_cycle() -> None:
     asyncio.run(run_test())
 
 
-def test_auto_closing_off_keeps_post_open_phase_telemetry_driven() -> None:
+def test_auto_closing_off_single_stale_zero_keeps_partial_open_state() -> None:
     hub = _hub("PS21053C")
     _set_legacy_timers(hub, pedestrian_raw=1, auto_close_raw=0)
 
@@ -327,12 +322,78 @@ def test_auto_closing_off_keeps_post_open_phase_telemetry_driven() -> None:
         assert pedestrian_display_phase(hub) == "open"
         assert hub._tmt_pedestrian_display_deadline is None
 
+        # Reproduce the PS25007A real-hardware symptom: one isolated fresh 0%
+        # appears even though the physical gate is still parked at PED position.
+        hub.position = 0
+        hub.is_operating = False
+        hub.movement = None
+        hub._last_live_position_monotonic = time.monotonic() + 1
+        process_pedestrian_display_telemetry(hub)
+
+        assert pedestrian_display_phase(hub) == "open"
+        assert pedestrian_display_movement(hub) is None
+        assert pedestrian_display_is_closed(hub) is False
+        assert pedestrian_display_position(hub) == 40
+        cancel_pedestrian_display_cycle(hub, notify=False)
+
+    asyncio.run(run_test())
+
+
+def test_auto_closing_off_requires_confirmed_live_reverse_before_closing() -> None:
+    hub = _hub("PS21053C")
+    _set_legacy_timers(hub, pedestrian_raw=1, auto_close_raw=0)
+
+    async def run_test() -> None:
+        assert begin_pedestrian_display_cycle(hub) is True
+        hub.position = 40
+        hub._last_live_position_monotonic = time.monotonic()
+        process_pedestrian_display_telemetry(hub)
+
+        hub._tmt_pedestrian_display_deadline = time.monotonic() - 1
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "open"
+
         hub.position = 30
         hub.movement = "closing"
         hub.is_operating = True
         hub._last_live_position_monotonic = time.monotonic() + 1
         process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "open"
+
+        hub.position = 20
+        hub._last_live_position_monotonic = time.monotonic() + 2
+        process_pedestrian_display_telemetry(hub)
         assert pedestrian_display_phase(hub) == "closing"
+        assert pedestrian_display_movement(hub) == "closing"
+        cancel_pedestrian_display_cycle(hub, notify=False)
+
+    asyncio.run(run_test())
+
+
+def test_auto_closing_off_rebound_resets_false_closing_candidate() -> None:
+    hub = _hub("PS21053C")
+    _set_legacy_timers(hub, pedestrian_raw=1, auto_close_raw=0)
+
+    async def run_test() -> None:
+        assert begin_pedestrian_display_cycle(hub) is True
+        hub.position = 40
+        hub._last_live_position_monotonic = time.monotonic()
+        process_pedestrian_display_telemetry(hub)
+
+        hub._tmt_pedestrian_display_deadline = time.monotonic() - 1
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "open"
+
+        hub.position = 0
+        hub._last_live_position_monotonic = time.monotonic() + 1
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "open"
+
+        hub.position = 40
+        hub._last_live_position_monotonic = time.monotonic() + 2
+        process_pedestrian_display_telemetry(hub)
+        assert pedestrian_display_phase(hub) == "open"
+        assert pedestrian_display_position(hub) == 40
         cancel_pedestrian_display_cycle(hub, notify=False)
 
     asyncio.run(run_test())
