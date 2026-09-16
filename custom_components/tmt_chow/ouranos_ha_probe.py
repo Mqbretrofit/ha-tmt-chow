@@ -64,7 +64,7 @@ _GLIBC_SHA512: Final = (
 )
 _MAX_GLIBC_BUNDLE_BYTES: Final = 32 * 1024 * 1024
 _GLIBC_HELPER_SHA256: Final = (
-    "0bd0e422a64080a8c9d66aaf820d8c5dda5ff9fb578a14b34b64f913d3677cd9"
+    "c2f517c1b43fe2253a6b599c4db42cc4a1de671efcaa872a23fcdc46cea31e84"
 )
 
 
