@@ -20,6 +20,7 @@ _SECONDS_PREFIX_RE = re.compile(r"\bseconds?[_\s-]*(\d+(?:\.\d+)?)\b", re.IGNORE
 _LEGACY_TIMED_MODELS = {"PS21053", "PS21053C"}
 _PS25007_APP_MODEL = "PS25007"
 _PS25007A_PARAMETER_MODEL = "PS25007A"
+_CLOSING_CONFIRMATION_COUNT = 2
 
 _PHASE_ATTR = "_tmt_pedestrian_display_phase"
 _DEADLINE_ATTR = "_tmt_pedestrian_display_deadline"
@@ -30,6 +31,8 @@ _LAST_LIVE_POSITION_ATTR = "_tmt_pedestrian_last_live_position"
 _PEAK_LIVE_POSITION_ATTR = "_tmt_pedestrian_peak_live_position"
 _LIVE_SEEN_ATTR = "_tmt_pedestrian_live_position_seen"
 _LAST_STATUS_STAMP_ATTR = "_tmt_pedestrian_last_status_stamp"
+_CLOSING_POSITION_COUNT_ATTR = "_tmt_pedestrian_closing_position_count"
+_CLOSING_STATUS_COUNT_ATTR = "_tmt_pedestrian_closing_status_count"
 
 
 def _seconds_from_label(label: str) -> float | None:
@@ -198,7 +201,8 @@ def pedestrian_display_position(hub: Any) -> int | None:
     During opening/open, stale controller frames may temporarily write raw 0%
     even though the gate is in the pedestrian cycle. Hide that contradictory 0%
     and retain the highest dedicated live position observed in this cycle. Once
-    the configured auto-closing delay expires, expose the raw closing position.
+    closing is confirmed or the configured auto-close delay expires, expose the
+    raw closing position again.
     """
     phase = pedestrian_display_phase(hub)
     raw_position = getattr(hub, "position", None)
@@ -211,6 +215,11 @@ def pedestrian_display_position(hub: Any) -> int | None:
     if isinstance(raw_position, int) and raw_position > 0:
         return raw_position
     return None
+
+
+def _reset_closing_confirmation(hub: Any) -> None:
+    setattr(hub, _CLOSING_POSITION_COUNT_ATTR, 0)
+    setattr(hub, _CLOSING_STATUS_COUNT_ATTR, 0)
 
 
 def begin_pedestrian_display_cycle(hub: Any) -> bool:
@@ -231,12 +240,21 @@ def begin_pedestrian_display_cycle(hub: Any) -> bool:
     setattr(hub, _PHASE_ATTR, "opening")
     setattr(hub, _DEADLINE_ATTR, opening_deadline)
     setattr(hub, _AUTO_CLOSE_DELAY_ATTR, auto_close_delay)
-    setattr(hub, _LAST_LIVE_STAMP_ATTR, getattr(hub, "_last_live_position_monotonic", None))
+    setattr(
+        hub,
+        _LAST_LIVE_STAMP_ATTR,
+        getattr(hub, "_last_live_position_monotonic", None),
+    )
     current_position = getattr(hub, "position", None)
     setattr(hub, _LAST_LIVE_POSITION_ATTR, current_position)
     setattr(hub, _PEAK_LIVE_POSITION_ATTR, current_position)
     setattr(hub, _LIVE_SEEN_ATTR, False)
-    setattr(hub, _LAST_STATUS_STAMP_ATTR, getattr(hub, "_last_operating_status_monotonic", None))
+    setattr(
+        hub,
+        _LAST_STATUS_STAMP_ATTR,
+        getattr(hub, "_last_operating_status_monotonic", None),
+    )
+    _reset_closing_confirmation(hub)
 
     task = asyncio.create_task(
         _run_timed_phases(hub, opening_deadline, auto_close_delay),
@@ -268,6 +286,7 @@ def _transition_to_open(hub: Any, opening_deadline: float) -> float | None:
         return None
 
     setattr(hub, _PHASE_ATTR, "open")
+    _reset_closing_confirmation(hub)
     auto_close_delay = getattr(hub, _AUTO_CLOSE_DELAY_ATTR, None)
     if auto_close_delay is None:
         setattr(hub, _DEADLINE_ATTR, None)
@@ -281,16 +300,24 @@ def _transition_to_open(hub: Any, opening_deadline: float) -> float | None:
 
 
 def _transition_to_closing(hub: Any) -> None:
-    """Start the displayed closing phase at the configured timer boundary."""
+    """Start the displayed closing phase after timer or telemetry confirmation."""
     if pedestrian_display_phase(hub) != "open":
         return
     setattr(hub, _PHASE_ATTR, "closing")
     setattr(hub, _DEADLINE_ATTR, None)
-    # Require a fresh post-boundary position/status update before ending the
-    # cycle. A stale raw 0% already present at the timer boundary must not make
-    # Home Assistant jump directly from Open to Closed.
-    setattr(hub, _LAST_LIVE_STAMP_ATTR, getattr(hub, "_last_live_position_monotonic", None))
-    setattr(hub, _LAST_STATUS_STAMP_ATTR, getattr(hub, "_last_operating_status_monotonic", None))
+    _reset_closing_confirmation(hub)
+    # Require post-transition evidence before accepting an endpoint from a stale
+    # raw value already present when the phase changed.
+    setattr(
+        hub,
+        _LAST_LIVE_STAMP_ATTR,
+        getattr(hub, "_last_live_position_monotonic", None),
+    )
+    setattr(
+        hub,
+        _LAST_STATUS_STAMP_ATTR,
+        getattr(hub, "_last_operating_status_monotonic", None),
+    )
     hub._notify()
 
 
@@ -344,6 +371,7 @@ def cancel_pedestrian_display_cycle(hub: Any, *, notify: bool = True) -> None:
     setattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
     setattr(hub, _LIVE_SEEN_ATTR, False)
     setattr(hub, _LAST_STATUS_STAMP_ATTR, None)
+    _reset_closing_confirmation(hub)
     if notify:
         hub._notify()
 
@@ -359,7 +387,9 @@ def _record_timed_phase_telemetry(hub: Any) -> None:
         peak_position = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
 
         if position is not None:
-            peak_position = position if peak_position is None else max(peak_position, position)
+            peak_position = (
+                position if peak_position is None else max(peak_position, position)
+            )
             setattr(hub, _PEAK_LIVE_POSITION_ATTR, peak_position)
             if last_position is None or position > last_position:
                 setattr(hub, _LAST_LIVE_POSITION_ATTR, position)
@@ -372,15 +402,56 @@ def _record_timed_phase_telemetry(hub: Any) -> None:
         setattr(hub, _LAST_STATUS_STAMP_ATTR, status_stamp)
 
 
+def _record_untimed_open_live_position(hub: Any, position: int) -> bool:
+    """Return True only after repeated live decreases prove real closing.
+
+    A single 40 -> 0 update is not enough: PS25007A real-hardware testing with
+    Auto-closing OFF showed that an isolated stale 0% can arrive while the gate
+    remains physically parked at its pedestrian position. Two consecutive
+    decreasing dedicated /position updates are required before the presentation
+    leaves ``open``.
+    """
+    last_position = getattr(hub, _LAST_LIVE_POSITION_ATTR, None)
+    peak_position = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
+    count = int(getattr(hub, _CLOSING_POSITION_COUNT_ATTR, 0) or 0)
+
+    if (
+        last_position is not None
+        and peak_position is not None
+        and peak_position > 5
+        and position < last_position
+    ):
+        count += 1
+    elif last_position is not None and position > last_position:
+        count = 0
+
+    setattr(hub, _CLOSING_POSITION_COUNT_ATTR, count)
+    setattr(hub, _LAST_LIVE_POSITION_ATTR, position)
+    return count >= _CLOSING_CONFIRMATION_COUNT
+
+
+def _record_untimed_open_status(hub: Any) -> bool:
+    """Return True only after repeated operating/closing status confirmation."""
+    count = int(getattr(hub, _CLOSING_STATUS_COUNT_ATTR, 0) or 0)
+    if (
+        getattr(hub, "is_operating", None) is True
+        and getattr(hub, "movement", None) == "closing"
+    ):
+        count += 1
+    else:
+        count = 0
+    setattr(hub, _CLOSING_STATUS_COUNT_ATTR, count)
+    return count >= _CLOSING_CONFIRMATION_COUNT
+
+
 def process_pedestrian_display_telemetry(hub: Any) -> None:
     """Advance the PED presentation while respecting configured timers.
 
     ``opening`` is locked until Pedestrian Mode seconds expire. When a timed
     Auto-closing value exists, ``open`` is then locked for exactly that delay and
-    ``closing`` starts at the timer boundary. Raw RS/Shadow/position frames are
-    still recorded during those windows but cannot move the displayed phase
-    early. With Auto-closing OFF/unknown, the post-opening phase falls back to
-    telemetry-driven closing detection.
+    ``closing`` starts at the timer boundary. With Auto-closing OFF/unknown, an
+    isolated stale 0% or one contradictory closing status cannot collapse the
+    partial-open state: repeated live movement evidence is required.
     """
     phase = pedestrian_display_phase(hub)
     if phase is None:
@@ -409,29 +480,28 @@ def process_pedestrian_display_telemetry(hub: Any) -> None:
     if live_stamp is not None and live_stamp != previous_live_stamp:
         setattr(hub, _LIVE_SEEN_ATTR, True)
         position = getattr(hub, "position", None)
-        last_position = getattr(hub, _LAST_LIVE_POSITION_ATTR, None)
         peak_position = getattr(hub, _PEAK_LIVE_POSITION_ATTR, None)
 
         if position is not None:
-            peak_position = position if peak_position is None else max(peak_position, position)
+            peak_position = (
+                position if peak_position is None else max(peak_position, position)
+            )
             setattr(hub, _PEAK_LIVE_POSITION_ATTR, peak_position)
 
-            # Only telemetry-driven (Auto-closing OFF/unknown) open phases may
-            # infer the beginning of closing from a decreasing live position.
             if (
                 phase == "open"
                 and getattr(hub, _DEADLINE_ATTR, None) is None
-                and last_position is not None
-                and peak_position is not None
-                and peak_position > 5
-                and position < last_position
+                and _record_untimed_open_live_position(hub, position)
             ):
-                setattr(hub, _PHASE_ATTR, "closing")
+                _transition_to_closing(hub)
                 phase = "closing"
 
-            setattr(hub, _LAST_LIVE_POSITION_ATTR, position)
-
             if phase == "closing" and position == 0:
+                # In the untimed path, reaching this branch on the same event
+                # that confirmed closing means at least two consecutive live
+                # decreases have already been observed. In the timed path,
+                # _transition_to_closing() snapshots the current stamp, so only
+                # a genuinely fresh post-boundary 0% reaches this branch.
                 cancel_pedestrian_display_cycle(hub, notify=False)
                 return
 
@@ -445,10 +515,9 @@ def process_pedestrian_display_telemetry(hub: Any) -> None:
         if (
             phase == "open"
             and getattr(hub, _DEADLINE_ATTR, None) is None
-            and getattr(hub, "is_operating", None) is True
-            and getattr(hub, "movement", None) == "closing"
+            and _record_untimed_open_status(hub)
         ):
-            setattr(hub, _PHASE_ATTR, "closing")
+            _transition_to_closing(hub)
             phase = "closing"
 
     # Fallback for controllers that never publish the dedicated position topic.
