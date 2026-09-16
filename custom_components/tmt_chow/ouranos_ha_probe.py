@@ -13,6 +13,7 @@ status-read, parameter-read, or parameter-write command.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -35,7 +36,6 @@ _MAX_LIBRARY_BYTES: Final = 8 * 1024 * 1024
 _DOWNLOAD_TIMEOUT: Final = 45
 _HELPER_TIMEOUT: Final = 40
 
-# The SHA values are Git blob SHA-1 values from the pinned repository commit.
 _LIBRARY_SOURCES: Final[dict[str, tuple[str, str]]] = {
     "x86_64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
     "amd64": ("lib.amd64", "99dbdf9f15f2d1c6eb926b7d1b67697e67a33a13"),
@@ -45,10 +45,6 @@ _LIBRARY_SOURCES: Final[dict[str, tuple[str, str]]] = {
     "armv7": ("lib.arm", "2fee47acb86ac1b853949467e63f5af689684540"),
 }
 
-# x86_64 HA Core is musl-based while the available TUTK build is glibc-linked.
-# Use a private glibc runtime extracted under /config/.storage instead of changing
-# the HA container or requiring an add-on. The SHA-512 comes from the upstream
-# alpine-pkg-glibc APKBUILD for the exact source archive.
 _GLIBC_VERSION: Final = "2.35-0"
 _GLIBC_URL: Final = (
     "https://github.com/sgerrand/docker-glibc-builder/releases/download/"
@@ -65,7 +61,6 @@ _GLIBC_HELPER_SHA256: Final = (
 
 
 def _git_blob_sha1(data: bytes) -> str:
-    """Return the Git blob object SHA-1 for downloaded bytes."""
     return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
@@ -103,7 +98,6 @@ def _base_result(uuid: str) -> dict[str, Any]:
 
 
 async def _async_download(hass: HomeAssistant, url: str, max_bytes: int) -> bytes:
-    """Download one bounded artifact using Home Assistant's shared session."""
     session = async_get_clientsession(hass)
     try:
         async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
@@ -118,7 +112,6 @@ async def _async_download(hass: HomeAssistant, url: str, max_bytes: int) -> byte
 
 
 async def _async_ensure_library(hass: HomeAssistant, machine: str) -> tuple[Path, bool]:
-    """Return an integrity-checked native TUTK library for this HA architecture."""
     source = _LIBRARY_SOURCES.get(machine)
     if source is None:
         raise RuntimeError(f"unsupported_machine:{machine}")
@@ -156,7 +149,6 @@ async def _async_ensure_library(hass: HomeAssistant, machine: str) -> tuple[Path
 
 
 def _safe_extract_glibc_bundle(data: bytes, target: Path) -> None:
-    """Extract only the glibc runtime subtree from the pinned tarball."""
     staging = target.with_name(target.name + ".tmp")
     if staging.exists():
         import shutil
@@ -167,7 +159,6 @@ def _safe_extract_glibc_bundle(data: bytes, target: Path) -> None:
         PurePosixPath("usr/glibc-compat/lib"),
         PurePosixPath("usr/glibc-compat/lib64"),
     )
-
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
         for member in archive.getmembers():
             member_path = PurePosixPath(member.name.lstrip("./"))
@@ -209,7 +200,6 @@ def _safe_extract_glibc_bundle(data: bytes, target: Path) -> None:
 
 
 async def _async_ensure_glibc_runtime(hass: HomeAssistant) -> tuple[Path, Path, bool]:
-    """Return private x86_64 glibc loader/library directory, downloading once."""
     cache = Path(hass.config.path(".storage", "tmt_chow_ouranos", "glibc-2.35"))
     loader = cache / "usr/glibc-compat/lib/ld-linux-x86-64.so.2"
     libdir = cache / "usr/glibc-compat/lib"
@@ -238,23 +228,41 @@ async def _async_ensure_glibc_runtime(hass: HomeAssistant) -> tuple[Path, Path, 
     return loader, libdir, True
 
 
-def _verify_bundled_glibc_helper() -> Path:
-    """Return the bundled x86_64 helper only when its bytes match the pinned hash."""
-    helper = Path(__file__).with_name("native") / "ouranos_glibc_helper.amd64"
+def _materialize_bundled_glibc_helper(target: Path) -> Path:
+    native_dir = Path(__file__).with_name("native")
+    chunks = sorted(native_dir.glob("ouranos_glibc_helper.amd64.b64.*"))
+    if len(chunks) != 5:
+        raise RuntimeError(f"glibc_helper_chunks_missing:{len(chunks)}")
     try:
-        data = helper.read_bytes()
-    except OSError as err:
-        raise RuntimeError("glibc_helper_missing") from err
+        encoded = "".join(chunk.read_text(encoding="ascii").strip() for chunk in chunks)
+        data = base64.b64decode(encoded, validate=True)
+    except (OSError, ValueError) as err:
+        raise RuntimeError("glibc_helper_decode_failed") from err
     actual = hashlib.sha256(data).hexdigest()
     if actual != _GLIBC_HELPER_SHA256:
         raise RuntimeError(
             f"glibc_helper_integrity_failed:expected={_GLIBC_HELPER_SHA256}:actual={actual}"
         )
-    return helper
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if (
+            target.exists()
+            and hashlib.sha256(target.read_bytes()).hexdigest() == _GLIBC_HELPER_SHA256
+        ):
+            os.chmod(target, 0o700)
+            return target
+    except OSError:
+        pass
+
+    temp = target.with_suffix(target.suffix + ".tmp")
+    temp.write_bytes(data)
+    os.chmod(temp, 0o700)
+    os.replace(temp, target)
+    return target
 
 
 def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
-    """Return the last JSON object emitted by the native helper."""
     text = stdout.decode("utf-8", "replace")
     for line in reversed(text.splitlines()):
         line = line.strip()
@@ -270,7 +278,6 @@ def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
 
 
 def _safe_helper_error(stderr: bytes, uuid: str) -> str | None:
-    """Return bounded helper stderr with the raw device UID removed."""
     text = stderr.decode("utf-8", "replace").replace(uuid, "<redacted-uid>").strip()
     return text[-1000:] if text else None
 
@@ -278,7 +285,6 @@ def _safe_helper_error(stderr: bytes, uuid: str) -> str | None:
 async def _async_run_process(
     argv: list[str], uuid: str, *, env: dict[str, str] | None = None
 ) -> tuple[asyncio.subprocess.Process, bytes, bytes]:
-    """Launch one isolated helper and feed the private UID only through stdin."""
     process = await asyncio.create_subprocess_exec(
         *argv,
         stdin=asyncio.subprocess.PIPE,
@@ -300,7 +306,6 @@ async def _async_run_process(
 
 
 async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str, Any]:
-    """Run the isolated read-only OURANOS native connectivity probe on HA."""
     result = _base_result(uuid)
     if len(uuid) != 20:
         result["result"] = "not_applicable"
@@ -327,7 +332,14 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
             loader, libdir, glibc_downloaded = await _async_ensure_glibc_runtime(hass)
             result["glibc_runtime_downloaded"] = glibc_downloaded
             result["glibc_runtime_integrity_verified"] = True
-            helper = await hass.async_add_executor_job(_verify_bundled_glibc_helper)
+            helper_target = Path(
+                hass.config.path(
+                    ".storage", "tmt_chow_ouranos", "ouranos_glibc_helper.amd64"
+                )
+            )
+            helper = await hass.async_add_executor_job(
+                _materialize_bundled_glibc_helper, helper_target
+            )
             result["glibc_helper_integrity_verified"] = True
             argv = [
                 str(loader),
