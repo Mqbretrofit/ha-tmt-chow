@@ -6,7 +6,10 @@ import hashlib
 import importlib.util
 import io
 from pathlib import Path
+import sys
 import tarfile
+import types
+import zipfile
 
 
 ROOT = Path(__file__).parents[1]
@@ -21,6 +24,19 @@ INIT_PATH = ROOT / "custom_components" / "tmt_chow" / "__init__.py"
 
 
 def _load_probe():
+    try:
+        __import__("homeassistant.core")
+    except ModuleNotFoundError:
+        homeassistant = types.ModuleType("homeassistant")
+        core = types.ModuleType("homeassistant.core")
+        helpers = types.ModuleType("homeassistant.helpers")
+        aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+        core.HomeAssistant = object
+        aiohttp_client.async_get_clientsession = lambda hass: None
+        sys.modules.setdefault("homeassistant", homeassistant)
+        sys.modules.setdefault("homeassistant.core", core)
+        sys.modules.setdefault("homeassistant.helpers", helpers)
+        sys.modules.setdefault("homeassistant.helpers.aiohttp_client", aiohttp_client)
     spec = importlib.util.spec_from_file_location("tmt_chow_ouranos_ha_probe", PROBE_PATH)
     assert spec is not None
     assert spec.loader is not None
@@ -29,19 +45,15 @@ def _load_probe():
     return module
 
 
-def test_git_blob_integrity_helper() -> None:
+def test_home_assistant_probe_uses_pinned_legacy_x64_sdk() -> None:
     probe = _load_probe()
-    assert probe._git_blob_sha1(b"abc123") == "49fbc054731540fa68b565e398d3574fde7366e9"
-
-
-def test_home_assistant_probe_supports_expected_architectures() -> None:
-    probe = _load_probe()
-    assert probe._LIBRARY_SOURCES["aarch64"] == (
-        "lib.arm64",
-        "a3ff9de4300ed869c2ba9a589a1bd1bfede979b6",
+    assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64"})
+    assert probe._TUTK_SDK_COMMIT == "1ef38620c25032ef7538b09da3f9c7b6830d6235"
+    assert probe._TUTK_SDK_SHA256 == (
+        "05463b5a35e83edc3c185b6173723ea191a4331530c97f097d74c48fed6943e7"
     )
-    assert probe._LIBRARY_SOURCES["x86_64"][0] == "lib.amd64"
-    assert probe._LIBRARY_SOURCES["armv7l"][0] == "lib.arm"
+    assert probe._TMT_APK_IOTC_VERSION == "0x03010521"
+    assert probe._PROBE_IOTC_VERSION == "0x010d0700"
 
 
 def test_twenty_character_uid_is_accepted_by_transport_probe() -> None:
@@ -100,6 +112,31 @@ def test_safe_glibc_bundle_extracts_only_private_runtime(tmp_path: Path) -> None
     assert (target / "usr/glibc-compat/lib/ld-linux-x86-64.so.2").read_bytes() == b"loader"
     assert (target / "usr/glibc-compat/lib/libc.so.6").read_bytes() == b"libc"
     assert not (target / "etc/should-not-be-extracted").exists()
+
+
+def test_safe_tutk_archive_extracts_only_pinned_libraries(
+    tmp_path: Path, monkeypatch
+) -> None:
+    probe = _load_probe()
+    iotc = b"iotc-library"
+    rdt = b"rdt-library"
+    members = {
+        "iotc": ("sdk/libIOTCAPIs.so", hashlib.sha256(iotc).hexdigest()),
+        "rdt": ("sdk/libRDTAPIs.so", hashlib.sha256(rdt).hexdigest()),
+    }
+    monkeypatch.setattr(probe, "_TUTK_LIBRARY_MEMBERS", members)
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, mode="w") as archive:
+        archive.writestr("sdk/libIOTCAPIs.so", iotc)
+        archive.writestr("sdk/libRDTAPIs.so", rdt)
+        archive.writestr("sdk/should-not-be-extracted", b"nope")
+
+    target = tmp_path / "tutk"
+    probe._safe_extract_tutk_libraries(archive_buffer.getvalue(), target)
+
+    assert (target / "libIOTCAPIs.so").read_bytes() == iotc
+    assert (target / "libRDTAPIs.so").read_bytes() == rdt
+    assert not (target / "should-not-be-extracted").exists()
 
 
 def test_helper_stdout_parser_uses_last_json_object() -> None:
