@@ -1,4 +1,4 @@
-"""Home Assistant-hosted read-only OURANOS/TUTK transport probe.
+"""Home Assistant-hosted read-only OURANOS/TUTK status probe.
 
 The native TUTK library is never loaded into the Home Assistant Core process.
 On x86_64 HAOS, where Core uses musl, the probe launches a tiny bundled glibc
@@ -6,8 +6,9 @@ helper through a private integrity-checked glibc loader/runtime. This avoids
 relying on the host's missing ``ld-linux-x86-64.so.2`` and keeps native crashes
 isolated from Home Assistant.
 
-The probe is transport-only. It never calls RDT_Write and never sends a gate,
-status-read, parameter-read, or parameter-write command.
+The helper sends exactly one APK-compatible ``READ STATUS`` request. It cannot
+accept arbitrary commands and never sends gate, parameter-read, or
+parameter-write commands.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ _GLIBC_SHA512: Final = (
 )
 _MAX_GLIBC_BUNDLE_BYTES: Final = 64 * 1024 * 1024
 _GLIBC_HELPER_SHA256: Final = (
-    "c2f517c1b43fe2253a6b599c4db42cc4a1de671efcaa872a23fcdc46cea31e84"
+    "16b09794a79863a1a56589912fb85792222196c071f007f057449ffee411ac06"
 )
 
 
@@ -298,13 +299,18 @@ def _parse_helper_stdout(stdout: bytes) -> dict[str, Any] | None:
     return None
 
 
-def _safe_helper_error(stderr: bytes, uuid: str) -> str | None:
-    text = stderr.decode("utf-8", "replace").replace(uuid, "<redacted-uid>").strip()
+def _safe_helper_error(stderr: bytes, uuid: str, pin_code: str) -> str | None:
+    text = stderr.decode("utf-8", "replace")
+    text = (
+        text.replace(uuid, "<redacted-uid>")
+        .replace(pin_code, "<redacted-pin>")
+        .strip()
+    )
     return text[-1000:] if text else None
 
 
 async def _async_run_process(
-    argv: list[str], uuid: str, *, env: dict[str, str] | None = None
+    argv: list[str], uuid: str, pin_code: str, *, env: dict[str, str] | None = None
 ) -> tuple[asyncio.subprocess.Process, bytes, bytes]:
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -315,7 +321,7 @@ async def _async_run_process(
     )
     try:
         stdout, stderr = await asyncio.wait_for(
-            process.communicate((uuid + "\n").encode("ascii")),
+            process.communicate((uuid + "\n" + pin_code + "\n").encode("ascii")),
             timeout=_HELPER_TIMEOUT,
         )
     except TimeoutError:
@@ -326,10 +332,15 @@ async def _async_run_process(
     return process, stdout, stderr
 
 
-async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str, Any]:
+async def async_probe_ouranos_on_ha(
+    hass: HomeAssistant, uuid: str, pin_code: str
+) -> dict[str, Any]:
     result = _base_result(uuid)
     if len(uuid) != 20:
         result["result"] = "not_applicable"
+        return result
+    if len(pin_code) != 6 or any(char < "0" or char > "9" for char in pin_code):
+        result["result"] = "invalid_pin"
         return result
 
     machine = result["home_assistant_machine"]
@@ -366,7 +377,9 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
         ]
         env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
 
-        process, stdout, stderr = await _async_run_process(argv, uuid, env=env)
+        process, stdout, stderr = await _async_run_process(
+            argv, uuid, pin_code, env=env
+        )
         result["helper_started"] = True
     except TimeoutError:
         result["result"] = "helper_timeout"
@@ -382,7 +395,7 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
         return result
 
     result["helper_exit_code"] = process.returncode
-    result["helper_error"] = _safe_helper_error(stderr, uuid)
+    result["helper_error"] = _safe_helper_error(stderr, uuid, pin_code)
 
     payload = _parse_helper_stdout(stdout)
     if payload is None:
@@ -390,8 +403,17 @@ async def async_probe_ouranos_on_ha(hass: HomeAssistant, uuid: str) -> dict[str,
         return result
 
     result["native"] = payload
+    native_safety = payload.get("safety")
+    if isinstance(native_safety, dict):
+        for key in result["safety"]:
+            if key in native_safety:
+                result["safety"][key] = native_safety[key] is True
     if process.returncode not in (0, None):
         result["result"] = "helper_failed"
+    elif payload.get("status_response_received") is True:
+        result["result"] = "status_response_received"
+    elif payload.get("status_request_sent") is True:
+        result["result"] = "status_request_sent"
     elif payload.get("rdt_connected") is True:
         result["result"] = "rdt_connected"
     elif payload.get("iotc_connected") is True:

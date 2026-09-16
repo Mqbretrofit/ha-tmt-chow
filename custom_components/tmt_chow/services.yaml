@@ -13,9 +13,9 @@ pedestrian_open:
 ouranos_probe:
   name: OURANOS transport probe
   description: >-
-    Run a read-only ThroughTek IOTC/RDT connectivity probe inside Home Assistant
-    for the confirmed PS19001 OURANOS case. It sends no gate, status-read,
-    parameter-read, or parameter-write command.
+    Run one APK-compatible read-only status request over ThroughTek IOTC/RDT
+    for the confirmed PS19001 OURANOS case. It sends no gate, parameter-read,
+    or parameter-write command. The PIN is used only for this action and is not saved.
   fields:
     uuid:
       name: Gate UUID
@@ -25,3 +25,10 @@ ouranos_probe:
       example: "ABCDEFGHIJKLMNOPQRST"
       selector:
         text:
+    pin_code:
+      name: Gate PIN
+      description: Six-digit PIN used by the TMT Chow app for this gate. It is not saved.
+      required: true
+      selector:
+        text:
+          type: password

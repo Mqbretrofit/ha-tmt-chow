@@ -5,9 +5,12 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import io
+import json
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
+import textwrap
 import types
 
 
@@ -157,19 +160,25 @@ def test_helper_stdout_parser_uses_last_json_object() -> None:
 def test_helper_error_redacts_uid() -> None:
     probe = _load_probe()
     uid = "ABCDEFGHIJKLMNOPQRST"
-    error = probe._safe_helper_error(f"failed for UID {uid}".encode(), uid)
-    assert error == "failed for UID <redacted-uid>"
+    pin_code = "123456"
+    error = probe._safe_helper_error(
+        f"failed for UID {uid} with PIN {pin_code}".encode(), uid, pin_code
+    )
+    assert error == "failed for UID <redacted-uid> with PIN <redacted-pin>"
     assert uid not in error
+    assert pin_code not in error
 
 
-def test_native_helpers_have_no_write_or_gate_command_path() -> None:
+def test_native_helper_has_only_allowlisted_status_write_path() -> None:
     python_source = HELPER_PATH.read_text(encoding="utf-8")
     c_source = GLIBC_HELPER_SOURCE.read_text(encoding="utf-8")
 
     assert ".RDT_Write(" not in python_source
     assert ".RDT_Write.argtypes" not in python_source
     assert ".RDT_Write.restype" not in python_source
-    assert "RDT_Write" not in c_source
+    assert "RDT_Write" in c_source
+    assert c_source.count("RDT_Write(rdt_id,request,request_len)") == 1
+    assert "READ STATUS;src=P9999999\\\\r\\\\n" in c_source
 
     for command in (
         "FULL OPEN",
@@ -180,3 +189,114 @@ def test_native_helpers_have_no_write_or_gate_command_path() -> None:
     ):
         assert command not in python_source
         assert command not in c_source
+
+    assert '"gate_command_sent\\\":false' in c_source
+    assert '"parameter_read_command_sent\\\":false' in c_source
+    assert '"parameter_write_command_sent\\\":false' in c_source
+
+
+def test_status_probe_requires_ephemeral_six_digit_pin() -> None:
+    init_source = INIT_PATH.read_text(encoding="utf-8")
+    service_source = (ROOT / "custom_components/tmt_chow/services.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'call.data.get("pin_code", "")' in init_source
+    assert "Gate PIN must contain exactly 6 digits" in init_source
+    assert "async_probe_ouranos_on_ha(hass, hub.uuid, pin_code)" in init_source
+    assert "type: password" in service_source
+
+
+def test_glibc_helper_sends_and_decodes_exact_status_request(tmp_path: Path) -> None:
+    iotc_source = tmp_path / "iotc.c"
+    rdt_source = tmp_path / "rdt.c"
+    iotc_library = tmp_path / "libIOTCAPIs.so"
+    rdt_library = tmp_path / "libRDTAPIs.so"
+
+    iotc_source.write_text(
+        textwrap.dedent(
+            """
+            void IOTC_Get_Version(unsigned int *version) { *version = 0x03010526; }
+            int IOTC_Initialize2(unsigned short port) { (void)port; return 0; }
+            int IOTC_Get_SessionID(void) { return 7; }
+            int IOTC_Connect_ByUID_Parallel(const char *uid, int sid) {
+                (void)uid; (void)sid; return 0;
+            }
+            void IOTC_Session_Close(int sid) { (void)sid; }
+            int IOTC_DeInitialize(void) { return 0; }
+            int IOTC_Connect_Stop_BySID(int sid) { (void)sid; return 0; }
+            """
+        ),
+        encoding="utf-8",
+    )
+    rdt_source.write_text(
+        textwrap.dedent(
+            r'''
+            #include <string.h>
+            static int wrote = 0;
+            static const char pin[] = "123456";
+            static const char request[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
+            static const char response[] = "{\"VER\":1,\"CMD\":\"UART\",\"RESULT\":0,\"DATA\":\"ACK STATUS,CLOSE;src=P1234567\"}";
+            int RDT_GetRDTApiVer(void) { return 0x03010526; }
+            int RDT_Initialize(void) { return 128; }
+            int RDT_Create(int sid, int timeout, unsigned char channel) {
+                (void)sid; (void)timeout; (void)channel; return 0;
+            }
+            int RDT_Write(int id, const char *data, int length) {
+                int i;
+                (void)id;
+                if (length != (int)strlen(request)) return -10014;
+                for (i = 0; i < length; ++i) {
+                    if ((data[i] ^ pin[i % 6]) != request[i]) return -10014;
+                }
+                wrote = 1;
+                return length;
+            }
+            int RDT_Read(int id, char *data, int length, int timeout) {
+                int i, size = (int)strlen(response);
+                (void)id; (void)timeout;
+                if (!wrote) return -10007;
+                if (length < size) return -10014;
+                for (i = 0; i < size; ++i) data[i] = response[i] ^ pin[i % 6];
+                wrote = 0;
+                return size;
+            }
+            int RDT_Destroy(int id) { (void)id; return 0; }
+            int RDT_DeInitialize(void) { return 0; }
+            '''
+        ),
+        encoding="utf-8",
+    )
+    for source, output in (
+        (iotc_source, iotc_library),
+        (rdt_source, rdt_library),
+    ):
+        subprocess.run(
+            ["gcc", "-shared", "-fPIC", str(source), "-o", str(output)],
+            check=True,
+        )
+
+    completed = subprocess.run(
+        [str(GLIBC_HELPER_PATH), str(iotc_library), str(rdt_library)],
+        input="ABCDEFGHIJKLMNOPQRST\n123456\n",
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=15,
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["status_write_code"] > 0
+    assert payload["status_request_sent"] is True
+    assert payload["status_response_received"] is True
+    assert "ACK STATUS,CLOSE;src=PXXXXXXX" in payload["status_response"]
+    assert "123456" not in completed.stdout
+    assert payload["safety"] == {
+        "rdt_write_bound": True,
+        "rdt_write_called": True,
+        "application_payload_written": True,
+        "status_read_command_sent": True,
+        "gate_command_sent": False,
+        "parameter_read_command_sent": False,
+        "parameter_write_command_sent": False,
+    }

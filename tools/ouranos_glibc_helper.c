@@ -17,6 +17,7 @@ typedef int (*fn_stop_sid)(int);
 typedef int (*fn_rdt_version)(void);
 typedef int (*fn_rdt_init)(void);
 typedef int (*fn_rdt_create)(int, int, unsigned char);
+typedef int (*fn_rdt_write)(int, const char *, int);
 typedef int (*fn_rdt_read)(int, char *, int, int);
 typedef int (*fn_rdt_destroy)(int);
 typedef int (*fn_rdt_deinit)(void);
@@ -80,6 +81,32 @@ static const char *rdt_name(int code) {
     }
 }
 
+static void xor_with_pin(char *data, int length, const char pin[6]) {
+    int i;
+    for (i = 0; i < length; ++i) data[i] = (char)(data[i] ^ pin[i % 6]);
+}
+
+static void redact_response(char *data, int length, const char *uid, const char pin[6]) {
+    int i;
+    size_t uid_len = strlen(uid);
+    for (i = 0; i + 12 <= length; ++i) {
+        if (memcmp(data + i, "src=P", 5) == 0) memset(data + i + 5, 'X', 7);
+    }
+    if (uid_len > 0 && uid_len <= (size_t)length) {
+        for (i = 0; i + (int)uid_len <= length; ++i) {
+            if (memcmp(data + i, uid, uid_len) == 0) memset(data + i, 'X', uid_len);
+        }
+    }
+    for (i = 0; i + 6 <= length; ++i) {
+        if (memcmp(data + i, pin, 6) == 0) memset(data + i, 'X', 6);
+    }
+    for (i = 0; i < length; ++i) {
+        unsigned char c = (unsigned char)data[i];
+        if (c < 0x20 || c >= 0x7f) data[i] = ' ';
+    }
+    data[length] = 0;
+}
+
 int main(int argc, char **argv) {
     if (argc != 3) { fprintf(stderr, "usage: helper IOTC_LIB RDT_LIB\n"); return 2; }
     const char *iotc_libpath = argv[1];
@@ -89,6 +116,10 @@ int main(int argc, char **argv) {
     uidbuf[strcspn(uidbuf, "\r\n")] = 0;
     const char *uid = uidbuf;
     if (strlen(uid) != 20) { fprintf(stderr, "invalid uid length\n"); return 2; }
+    char pin[16] = {0};
+    if (!fgets(pin, sizeof(pin), stdin)) { fprintf(stderr, "missing pin\n"); return 2; }
+    pin[strcspn(pin, "\r\n")] = 0;
+    if (strlen(pin) != 6 || strspn(pin, "0123456789") != 6) { fprintf(stderr, "invalid pin\n"); return 2; }
 
     int iotc_library_loaded=0, rdt_library_loaded=0, iotc_init_code=0, iotc_init_set=0, sid=-1, connect_attempted=0, connect_code=0, connect_set=0;
     int connect_timeout=0, connect_stop_code=0, stop_set=0, worker_stuck=0, iotc_connected=0;
@@ -96,6 +127,9 @@ int main(int argc, char **argv) {
     int rdt_version=0, rdt_version_set=0;
     int rdt_init_code=0, rdt_init_set=0, rdt_create_attempted=0, rdt_id=-1, rdt_connected=0;
     int passive_attempted=0, passive_count=0, passive_bytes=0, passive_last=0, passive_last_set=0;
+    int status_write_attempted=0, status_write_code=0, status_write_set=0, status_request_sent=0;
+    int response_read_count=0, response_read_bytes=0, response_last=0, response_last_set=0, status_response_received=0;
+    char status_response[4097] = {0};
     int close_called=0, rdt_destroy_code=0, rdt_destroy_set=0, rdt_deinit_code=0, rdt_deinit_set=0, iotc_deinit_code=0, iotc_deinit_set=0;
     char library_error[512] = {0};
 
@@ -117,7 +151,7 @@ int main(int argc, char **argv) {
 #undef IOTC_SYM
 #define RDT_SYM(type,name) type name = rdt_h ? (type)dlsym(rdt_h, #name) : NULL
     RDT_SYM(fn_rdt_version, RDT_GetRDTApiVer); RDT_SYM(fn_rdt_init, RDT_Initialize);
-    RDT_SYM(fn_rdt_create, RDT_Create); RDT_SYM(fn_rdt_read, RDT_Read);
+    RDT_SYM(fn_rdt_create, RDT_Create); RDT_SYM(fn_rdt_write, RDT_Write); RDT_SYM(fn_rdt_read, RDT_Read);
     RDT_SYM(fn_rdt_destroy, RDT_Destroy); RDT_SYM(fn_rdt_deinit, RDT_DeInitialize);
 #undef RDT_SYM
     void *TUTK_SDK_Set_License_Key = iotc_h ? dlsym(iotc_h, "TUTK_SDK_Set_License_Key") : NULL;
@@ -154,7 +188,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!worker_stuck && iotc_connected && rdt_library_loaded && RDT_Initialize && RDT_Create && RDT_Read && RDT_Destroy && RDT_DeInitialize) {
+    if (!worker_stuck && iotc_connected && rdt_library_loaded && RDT_Initialize && RDT_Create && RDT_Write && RDT_Read && RDT_Destroy && RDT_DeInitialize) {
         rdt_init_code=RDT_Initialize(); rdt_init_set=1;
         if (rdt_init_code > 0 || rdt_init_code == -10001) {
             rdt_initialized=1; rdt_create_attempted=1; rdt_id=RDT_Create(sid,5000,0);
@@ -164,6 +198,33 @@ int main(int argc, char **argv) {
                     int ret=RDT_Read(rdt_id,buf,sizeof(buf),300); passive_last=ret; passive_last_set=1;
                     if (ret>0) { passive_count++; passive_bytes += ret; }
                     else if (ret<0 && ret!=-10007) break;
+                }
+                {
+                    static const char request_json[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
+                    char request[sizeof(request_json)];
+                    int request_len = (int)strlen(request_json);
+                    memcpy(request, request_json, sizeof(request_json));
+                    xor_with_pin(request, request_len, pin);
+                    status_write_attempted=1;
+                    status_write_code=RDT_Write(rdt_id,request,request_len); status_write_set=1;
+                    memset(request,0,sizeof(request));
+                    if (status_write_code >= 0) {
+                        status_request_sent=1; deadline=monotonic_ms()+5000;
+                        while (monotonic_ms() < deadline) {
+                            int ret=RDT_Read(rdt_id,buf,sizeof(buf)-1,500); response_last=ret; response_last_set=1;
+                            if (ret>0) {
+                                int copy_len=ret > (int)sizeof(status_response)-1 ? (int)sizeof(status_response)-1 : ret;
+                                response_read_count++; response_read_bytes += ret;
+                                memcpy(status_response,buf,copy_len);
+                                xor_with_pin(status_response,copy_len,pin);
+                                redact_response(status_response,copy_len,uid,pin);
+                                if (strstr(status_response,"ACK STATUS") || strstr(status_response,"READ STATUS")) status_response_received=1;
+                                break;
+                            }
+                            if (ret<0 && ret!=-10007) break;
+                        }
+                    }
+                    memset(pin,0,sizeof(pin));
                 }
             }
         }
@@ -178,8 +239,8 @@ int main(int argc, char **argv) {
     printf("\"library_loaded\":%s,\"iotc_library_loaded\":%s,\"rdt_library_loaded\":%s,\"library_error\":",(iotc_library_loaded&&rdt_library_loaded)?"true":"false",iotc_library_loaded?"true":"false",rdt_library_loaded?"true":"false"); if(library_error[0])json_str(library_error);else printf("null");
     printf(",\"iotc_version\":"); if(iotc_version_set)printf("\"0x%08x\"",iotc_version);else printf("null");
     printf(",\"rdt_version\":"); if(rdt_version_set)printf("\"0x%08x\"",(unsigned int)rdt_version);else printf("null");
-    printf(",\"symbols\":{\"IOTC_Initialize2\":%s,\"IOTC_Get_Version\":%s,\"IOTC_Get_SessionID\":%s,\"IOTC_Connect_ByUID_Parallel\":%s,\"IOTC_Session_Close\":%s,\"IOTC_DeInitialize\":%s,\"IOTC_Connect_Stop_BySID\":%s,\"RDT_GetRDTApiVer\":%s,\"RDT_Initialize\":%s,\"RDT_Create\":%s,\"RDT_Read\":%s,\"RDT_Destroy\":%s,\"RDT_DeInitialize\":%s,\"TUTK_SDK_Set_License_Key\":%s}",
-      IOTC_Initialize2?"true":"false",IOTC_Get_Version?"true":"false",IOTC_Get_SessionID?"true":"false",IOTC_Connect_ByUID_Parallel?"true":"false",IOTC_Session_Close?"true":"false",IOTC_DeInitialize?"true":"false",IOTC_Connect_Stop_BySID?"true":"false",RDT_GetRDTApiVer?"true":"false",RDT_Initialize?"true":"false",RDT_Create?"true":"false",RDT_Read?"true":"false",RDT_Destroy?"true":"false",RDT_DeInitialize?"true":"false",TUTK_SDK_Set_License_Key?"true":"false");
+    printf(",\"symbols\":{\"IOTC_Initialize2\":%s,\"IOTC_Get_Version\":%s,\"IOTC_Get_SessionID\":%s,\"IOTC_Connect_ByUID_Parallel\":%s,\"IOTC_Session_Close\":%s,\"IOTC_DeInitialize\":%s,\"IOTC_Connect_Stop_BySID\":%s,\"RDT_GetRDTApiVer\":%s,\"RDT_Initialize\":%s,\"RDT_Create\":%s,\"RDT_Write\":%s,\"RDT_Read\":%s,\"RDT_Destroy\":%s,\"RDT_DeInitialize\":%s,\"TUTK_SDK_Set_License_Key\":%s}",
+      IOTC_Initialize2?"true":"false",IOTC_Get_Version?"true":"false",IOTC_Get_SessionID?"true":"false",IOTC_Connect_ByUID_Parallel?"true":"false",IOTC_Session_Close?"true":"false",IOTC_DeInitialize?"true":"false",IOTC_Connect_Stop_BySID?"true":"false",RDT_GetRDTApiVer?"true":"false",RDT_Initialize?"true":"false",RDT_Create?"true":"false",RDT_Write?"true":"false",RDT_Read?"true":"false",RDT_Destroy?"true":"false",RDT_DeInitialize?"true":"false",TUTK_SDK_Set_License_Key?"true":"false");
 #define NULINT(key,set,val) do{printf(",\"%s\":",key); if(set) printf("%d",val); else printf("null");}while(0)
     NULINT("iotc_initialize_code",iotc_init_set,iotc_init_code); printf(",\"iotc_initialize_name\":"); if(iotc_init_set)json_str(iotc_name(iotc_init_code));else printf("null");
     printf(",\"session_id_allocated\":%s,\"iotc_connect_attempted\":%s",sid>=0?"true":"false",connect_attempted?"true":"false");
@@ -188,10 +249,13 @@ int main(int argc, char **argv) {
     NULINT("rdt_initialize_code",rdt_init_set,rdt_init_code); printf(",\"rdt_initialize_name\":"); if(rdt_init_set)json_str(rdt_name(rdt_init_code));else printf("null");
     printf(",\"rdt_create_attempted\":%s",rdt_create_attempted?"true":"false"); NULINT("rdt_create_code",rdt_create_attempted,rdt_id); printf(",\"rdt_create_name\":"); if(rdt_create_attempted)json_str(rdt_name(rdt_id));else printf("null");
     printf(",\"rdt_connected\":%s,\"passive_read_attempted\":%s,\"passive_read_count\":%d,\"passive_read_bytes\":%d",rdt_connected?"true":"false",passive_attempted?"true":"false",passive_count,passive_bytes); NULINT("passive_read_last_code",passive_last_set,passive_last);
+    printf(",\"status_write_attempted\":%s",status_write_attempted?"true":"false"); NULINT("status_write_code",status_write_set,status_write_code);
+    printf(",\"status_request_sent\":%s,\"response_read_count\":%d,\"response_read_bytes\":%d",status_request_sent?"true":"false",response_read_count,response_read_bytes); NULINT("response_read_last_code",response_last_set,response_last);
+    printf(",\"status_response_received\":%s,\"status_response\":",status_response_received?"true":"false"); if(status_response[0])json_str(status_response);else printf("null");
     printf(",\"cleanup\":{"); int first=1;
 #define CLEAN(key,set,val) do{if(set){if(!first)putchar(',');json_str(key);printf(":%d",val);first=0;}}while(0)
     CLEAN("rdt_destroy_code",rdt_destroy_set,rdt_destroy_code); if(close_called){if(!first)putchar(',');json_str("iotc_session_close_called");printf(":true");first=0;} CLEAN("rdt_deinitialize_code",rdt_deinit_set,rdt_deinit_code); CLEAN("iotc_deinitialize_code",iotc_deinit_set,iotc_deinit_code);
-    printf("},\"safety\":{\"rdt_write_bound\":false,\"rdt_write_called\":false,\"application_payload_written\":false,\"gate_command_sent\":false}}");
+    printf("},\"safety\":{\"rdt_write_bound\":%s,\"rdt_write_called\":%s,\"application_payload_written\":%s,\"status_read_command_sent\":%s,\"gate_command_sent\":false,\"parameter_read_command_sent\":false,\"parameter_write_command_sent\":false}}",RDT_Write?"true":"false",status_write_attempted?"true":"false",status_request_sent?"true":"false",status_request_sent?"true":"false");
     putchar('\n');
     fflush(stdout);
     if (worker_stuck) _Exit(0);

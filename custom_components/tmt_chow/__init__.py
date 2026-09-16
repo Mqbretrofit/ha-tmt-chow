@@ -118,6 +118,11 @@ def _register_services(hass: HomeAssistant) -> None:
     if not hass.services.has_service(DOMAIN, SERVICE_OURANOS_PROBE):
 
         async def _async_ouranos_probe(call: ServiceCall) -> dict:
+            pin_code = str(call.data.get("pin_code", "")).strip()
+            if len(pin_code) != 6 or any(
+                char < "0" or char > "9" for char in pin_code
+            ):
+                raise HomeAssistantError("Gate PIN must contain exactly 6 digits")
             requested_uuid = str(call.data.get("uuid", "")).strip()
             if requested_uuid:
                 hub = _find_hub(hass, requested_uuid)
@@ -140,7 +145,7 @@ def _register_services(hass: HomeAssistant) -> None:
                     )
                 hub = candidates[0]
 
-            return await async_probe_ouranos_on_ha(hass, hub.uuid)
+            return await async_probe_ouranos_on_ha(hass, hub.uuid, pin_code)
 
         hass.services.async_register(
             DOMAIN,
