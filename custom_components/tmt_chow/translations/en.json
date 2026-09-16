@@ -55,6 +55,9 @@
     "button": {
       "pedestrian_open": {
         "name": "Pedestrian opening"
+      },
+      "ouranos_status_refresh": {
+        "name": "Refresh native gate status"
       }
     },
     "select": {

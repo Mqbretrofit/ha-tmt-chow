@@ -24,6 +24,7 @@ from .const import (
     CONF_UUID,
     DEFAULT_SOURCE_TAG,
     DOMAIN,
+    OURANOS_POLLERS_DATA_KEY,
     PLATFORMS,
 )
 from .hub import TmtCommandError
@@ -34,7 +35,6 @@ from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
 from .ps21050d_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
-_OURANOS_POLLERS_DATA_KEY = f"{DOMAIN}_ouranos_pollers"
 _FRONTEND_URL_BASE = "/tmt_chow_frontend"
 _FRONTEND_MODULE_URL = (
     f"{_FRONTEND_URL_BASE}/pedestrian-more-info.js?v=1.0.4-beta.2"
@@ -186,7 +186,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _register_services(hass)
     await _async_setup_frontend(hass)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
@@ -196,7 +195,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             and all("0" <= char <= "9" for char in pin_code)
         ):
             poller = OuranosStatusPoller(hass, hub, pin_code)
-            hass.data.setdefault(_OURANOS_POLLERS_DATA_KEY, {})[
+            hass.data.setdefault(OURANOS_POLLERS_DATA_KEY, {})[
                 entry.entry_id
             ] = poller
             await poller.async_start()
@@ -205,13 +204,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Ignoring invalid native PS19001 status configuration for %s",
                 entry.title,
             )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
-    poller = hass.data.get(_OURANOS_POLLERS_DATA_KEY, {}).pop(entry.entry_id, None)
+    poller = hass.data.get(OURANOS_POLLERS_DATA_KEY, {}).pop(entry.entry_id, None)
     if poller is not None:
         await poller.async_stop()
     hub: TmtChowHub = hass.data[DOMAIN].pop(entry.entry_id)

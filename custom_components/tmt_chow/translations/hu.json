@@ -55,6 +55,9 @@
     "button": {
       "pedestrian_open": {
         "name": "Gyalogos nyitás"
+      },
+      "ouranos_status_refresh": {
+        "name": "Natív kapuállapot frissítése"
       }
     },
     "select": {

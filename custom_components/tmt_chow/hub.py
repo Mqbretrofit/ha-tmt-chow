@@ -172,6 +172,13 @@ class TmtChowHub:
         )
 
     @property
+    def ouranos_status_age_seconds(self) -> float | None:
+        """Return the age of the last valid native status response."""
+        if self._last_ouranos_status_monotonic is None:
+            return None
+        return max(0.0, time.monotonic() - self._last_ouranos_status_monotonic)
+
+    @property
     def mqtt_connected(self) -> bool:
         return self._mqtt.connected
 

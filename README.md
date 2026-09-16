@@ -137,7 +137,7 @@ The integration receives the device credentials required for the TMT Chow cloud 
 
 ### Experimental PS19001 native status
 
-`v1.0.4-beta.14` can automatically update the cover position and opening/closing state for the confirmed PS19001 / 20-character UID case through the APK-compatible native `READ STATUS` path. This remains opt-in and read-only: native open, close, stop and parameter commands are not implemented. Existing AWS/MQTT controllers continue to use the unchanged cloud-push and command paths.
+`v1.0.4-beta.15` can automatically update the cover position and opening/closing state for the confirmed PS19001 / 20-character UID case through the APK-compatible native `READ STATUS` path. This remains opt-in and read-only: native open, close, stop and parameter commands are not implemented. Existing AWS/MQTT controllers continue to use the unchanged cloud-push and command paths.
 
 The native reader currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
 
@@ -147,7 +147,7 @@ To enable automatic status:
 2. Open **Configure** for the PS19001 gate.
 3. Enter the gate's six-digit TMT Chow PIN and save.
 
-The PIN is stored locally in the Home Assistant config entry, displayed as a password field, passed to the isolated helper over standard input, and redacted from diagnostics. Clear the field and save to disable polling. The fixed helper sends only `READ STATUS`, validates and sanitizes the response, and exits after each attempt. Failed attempts back off to 30 seconds. The manual `tmt_chow.ouranos_probe` action remains available for troubleshooting.
+The PIN is stored locally in the Home Assistant config entry, displayed as a password field, passed to the isolated helper over standard input, and redacted from diagnostics. Clear the field and save to disable polling. The fixed helper sends only `READ STATUS`, validates and sanitizes the response, and exits after each attempt. Successful reads are scheduled 15 seconds apart and failed attempts back off to 60 seconds. A valid last-known native state keeps the cover available for up to 15 minutes, and the **Refresh native gate status** button can request an immediate read. The manual `tmt_chow.ouranos_probe` action remains available for troubleshooting.
 
 ## Home Assistant entities
 

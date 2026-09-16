@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
+import custom_components.tmt_chow.hub as hub_module
+from custom_components.tmt_chow.button import (
+    TmtOuranosRefreshButton,
+    async_setup_entry as async_setup_buttons,
+)
 from custom_components.tmt_chow.const import (
     ATTR_OURANOS_STATUS,
     ATTR_OURANOS_STATUS_RESPONSE,
+    DOMAIN,
+    OURANOS_POLLERS_DATA_KEY,
+    OURANOS_STATUS_AVAILABILITY_SECONDS,
 )
 from custom_components.tmt_chow.ouranos_status import OuranosStatusPoller
 from custom_components.tmt_chow.protocol import parse_ouranos_status_response
@@ -102,6 +111,9 @@ def test_poller_applies_only_a_complete_status_response(monkeypatch) -> None:
 
     assert asyncio.run(poller.async_refresh_once()) is True
     assert poller.last_result == "status_response_received"
+    assert poller.last_attempt_at is not None
+    assert poller.last_success_at is not None
+    assert poller.consecutive_failures == 0
     assert hub.position == 100
 
 
@@ -120,4 +132,73 @@ def test_poller_does_not_apply_partial_probe_result(monkeypatch) -> None:
 
     assert asyncio.run(poller.async_refresh_once()) is False
     assert poller.last_result == "rdt_connected"
+    assert poller.last_attempt_at is not None
+    assert poller.last_success_at is None
+    assert poller.consecutive_failures == 1
     assert hub.position is None
+
+
+def test_failed_refresh_keeps_last_valid_status_available(monkeypatch) -> None:
+    hub = _hub()
+    now = 1000.0
+    monkeypatch.setattr(hub_module.time, "monotonic", lambda: now)
+    assert hub.apply_ouranos_status_response(_response("CLOSED", 0)) is True
+
+    async def failed_probe(hass, uuid: str, pin_code: str):
+        del hass, uuid, pin_code
+        return {"result": "rdt_connected", "native": {}}
+
+    monkeypatch.setattr(
+        "custom_components.tmt_chow.ouranos_status.async_probe_ouranos_on_ha",
+        failed_probe,
+    )
+    poller = OuranosStatusPoller(object(), hub, "123456")
+    assert asyncio.run(poller.async_refresh_once()) is False
+
+    assert hub.position == 0
+    assert hub.ouranos_status_available is True
+    assert hub.available is True
+
+
+def test_native_availability_expires_only_after_extended_grace(monkeypatch) -> None:
+    hub = _hub()
+    now = 1000.0
+    monkeypatch.setattr(hub_module.time, "monotonic", lambda: now)
+    assert hub.apply_ouranos_status_response(_response("CLOSED", 0)) is True
+
+    now += OURANOS_STATUS_AVAILABILITY_SECONDS - 1
+    assert hub.ouranos_status_available is True
+    assert hub.available is True
+
+    now += 2
+    assert hub.ouranos_status_available is False
+    assert hub.available is False
+
+
+def test_native_refresh_button_is_added_for_enabled_poller() -> None:
+    hub = _hub()
+
+    class SuccessfulPoller:
+        last_result = "status_response_received"
+
+        async def async_refresh_once(self) -> bool:
+            return True
+
+    poller = SuccessfulPoller()
+    hass = SimpleNamespace(
+        data={
+            DOMAIN: {"entry": hub},
+            OURANOS_POLLERS_DATA_KEY: {"entry": poller},
+        }
+    )
+    entry = SimpleNamespace(entry_id="entry")
+    entities = []
+
+    asyncio.run(async_setup_buttons(hass, entry, entities.extend))
+
+    refresh_buttons = [
+        entity for entity in entities if isinstance(entity, TmtOuranosRefreshButton)
+    ]
+    assert len(refresh_buttons) == 1
+    assert refresh_buttons[0].available is True
+    asyncio.run(refresh_buttons[0].async_press())

@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4-beta.15
+
+- Reduced PS19001 native connection pressure by changing successful polling from 5 to 15 seconds and failed retries from 30 to 60 seconds
+- Extended native cover availability from 30 seconds to 15 minutes so a short-lived RDT failure does not immediately discard a valid last-known state
+- Added a **Refresh native gate status** button that remains available for manual recovery even while the cover is unavailable
+- Serialized automatic and manual native refreshes so multiple IOTC/RDT helper sessions cannot run concurrently for one gate
+- Added privacy-safe diagnostics for the last attempt, last success, last result, status age, consecutive failures and refresh activity
+- Preserved the fixed read-only `READ STATUS` safety boundary and all existing AWS/MQTT control paths
+
 ## v1.0.4-beta.14
 
 - Added opt-in automatic PS19001 native cover status for the confirmed 20-character UID case, using the real-hardware-verified `ACK STATUS:PED CLOSED,0` response

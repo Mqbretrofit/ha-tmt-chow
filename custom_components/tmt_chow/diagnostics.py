@@ -19,6 +19,10 @@ from .const import (
     CONF_THING_NAME,
     CONF_UUID,
     DOMAIN,
+    OURANOS_POLLERS_DATA_KEY,
+    OURANOS_STATUS_AVAILABILITY_SECONDS,
+    OURANOS_STATUS_FAILURE_RETRY_SECONDS,
+    OURANOS_STATUS_POLL_SECONDS,
 )
 from .hub import TmtChowHub, TmtCommandError
 from .model_parameter_schemas import parameter_name, parameter_options
@@ -119,6 +123,7 @@ async def async_get_config_entry_diagnostics(
     entry: ConfigEntry,
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+    ouranos_poller = hass.data.get(OURANOS_POLLERS_DATA_KEY, {}).get(entry.entry_id)
 
     # Probe the classic AWS IoT Shadow GET path using an isolated read-only MQTT
     # connection. This distinguishes accepted/rejected/no-response without
@@ -195,6 +200,37 @@ async def async_get_config_entry_diagnostics(
             "mqtt_connected": hub.mqtt_connected,
             "ouranos_status_enabled": bool(entry.options.get(CONF_OURANOS_PIN)),
             "ouranos_status_available": hub.ouranos_status_available,
+            "ouranos_status_age_seconds": (
+                round(hub.ouranos_status_age_seconds, 1)
+                if hub.ouranos_status_age_seconds is not None
+                else None
+            ),
+            "ouranos_status_poll_seconds": OURANOS_STATUS_POLL_SECONDS,
+            "ouranos_status_failure_retry_seconds": (
+                OURANOS_STATUS_FAILURE_RETRY_SECONDS
+            ),
+            "ouranos_status_availability_seconds": (
+                OURANOS_STATUS_AVAILABILITY_SECONDS
+            ),
+            "ouranos_status_last_result": (
+                ouranos_poller.last_result if ouranos_poller is not None else None
+            ),
+            "ouranos_status_last_attempt_at": (
+                ouranos_poller.last_attempt_at if ouranos_poller is not None else None
+            ),
+            "ouranos_status_last_success_at": (
+                ouranos_poller.last_success_at if ouranos_poller is not None else None
+            ),
+            "ouranos_status_consecutive_failures": (
+                ouranos_poller.consecutive_failures
+                if ouranos_poller is not None
+                else None
+            ),
+            "ouranos_status_refresh_in_progress": (
+                ouranos_poller.refresh_in_progress
+                if ouranos_poller is not None
+                else False
+            ),
             "shadow_get_probe_result": shadow_get_probe["result"],
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],
