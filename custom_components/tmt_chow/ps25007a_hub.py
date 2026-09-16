@@ -15,6 +15,7 @@ from .model_parameter_schemas import parameter_schema_for
 from .mqtt import MqttError
 from .parameter_codec import ParameterTransport, is_editable_parameter
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE, PEDESTRIAN_STRATEGY_PED_OPEN
+from .protocol import GateStatus
 from .ps21050d_hub import TmtChowHub as BaseAliasHub
 from .ps25007a_parameters import (
     APP_MODEL,
@@ -41,6 +42,11 @@ class TmtChowHub(BaseAliasHub):
     automatically closed again. The controller did not emit ``ACK PED OPEN``,
     so this exact path is deliberately publish-once/no-retry and lets normal
     status/position telemetry report the resulting state.
+
+    Live ``/position`` values are kept exact while the motor is travelling.
+    The historical 0-5/95-100 endpoint tolerance is applied only after a fresh
+    stopped status arrives. This keeps controllers that physically stop at 1-2%
+    compatible without declaring the gate closed/open several percent early.
     """
 
     def _is_ps25007a_profile(self) -> bool:
@@ -130,6 +136,55 @@ class TmtChowHub(BaseAliasHub):
         if self._is_ps25007a_profile():
             return parse_parameter_response(payload)
         return super()._decode_parameter_response(payload)
+
+    def _apply_status(self, status: GateStatus) -> None:
+        """Snap near-endpoint positions only when the controller reports stopped."""
+        if status.is_operating is False and status.position is not None:
+            stopped_position = (
+                0
+                if status.position <= 5
+                else 100
+                if status.position >= 95
+                else status.position
+            )
+            if stopped_position != status.position:
+                status = GateStatus(
+                    position=stopped_position,
+                    is_operating=status.is_operating,
+                    is_open_direction=status.is_open_direction,
+                    battery_percent=status.battery_percent,
+                )
+        super()._apply_status(status)
+
+    def _apply_position(self, position: int, *, derive_movement: bool = True) -> None:
+        """Keep live travel percentages exact; endpoints are exact while moving."""
+        old_position = self.position
+        prior_movement = self.movement
+        normalized = max(0, min(100, int(position)))
+        self.position = normalized
+
+        if derive_movement and self.is_operating is not False and old_position is not None:
+            if normalized > old_position:
+                self.movement = "opening"
+            elif normalized < old_position:
+                self.movement = "closing"
+
+        reached_closed = normalized == 0 and self.movement != "opening"
+        reached_open = normalized == 100 and self.movement != "closing"
+        if reached_closed or reached_open:
+            self.is_operating = False
+            self.movement = None
+
+        # Preserve the stale stopped-DEV-STATUS guard implemented by the alias
+        # hub even though we intentionally bypass its endpoint-snapping method.
+        if not derive_movement or old_position is None or self.position is None:
+            return
+        if self.position > old_position:
+            self._remember_motion_direction("opening")
+        elif self.position < old_position:
+            self._remember_motion_direction("closing")
+        elif prior_movement in ("opening", "closing") and self.position in (0, 100):
+            self._remember_motion_direction(prior_movement)
 
     async def async_pedestrian_open(self) -> None:
         """Run the verified PS25007A pedestrian cycle without requiring an ACK.
