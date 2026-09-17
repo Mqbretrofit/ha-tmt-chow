@@ -62,8 +62,9 @@ class TmtChowHub(BaseTmtChowHub):
     PS21050C is another observed live identity for an account configured as
     PS21050. Real-hardware diagnostics prove that it returns the same exact
     20-slot RP,1 frame as the PS21050D profile, including an enabled pedestrian
-    field. Reuse the read codec and APK family/capabilities for this exact pair,
-    but keep parameter writes disabled until they are verified on PS21050C.
+    field. Reuse the codec and APK family/capabilities for this exact pair.
+    Writes use a fresh full read, one WP,1 with no retry, and an exact full-frame
+    readback before Home Assistant accepts the new value.
 
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
     matrix contains two inherited P190 current helper entries before the real
@@ -143,7 +144,7 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = (
                 "apk_ps21050_alias"
                 if normalized == CONTROLLER_TYPE
-                else "apk_ps21050c_alias_read_only"
+                else "apk_ps21050c_alias"
             )
             self.model_parameter_schema = APP_PARAMETERS
             return
@@ -219,9 +220,11 @@ class TmtChowHub(BaseTmtChowHub):
         """Allow writes only for parameter layouts proven safe on live hardware."""
         if self._is_ps22027_verified_profile():
             return True
-        if self._is_ps21050c_alias():
-            return False
-        if self._is_ps21050d_alias() or self._is_ps20040d_alias():
+        if (
+            self._is_ps21050c_alias()
+            or self._is_ps21050d_alias()
+            or self._is_ps20040d_alias()
+        ):
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
@@ -319,7 +322,7 @@ class TmtChowHub(BaseTmtChowHub):
             await self._async_set_ps22027_parameter(index, value)
             return
 
-        if not self._is_ps21050d_alias():
+        if not (self._is_ps21050c_alias() or self._is_ps21050d_alias()):
             await super().async_set_parameter(index, value)
             return
 
@@ -344,7 +347,7 @@ class TmtChowHub(BaseTmtChowHub):
             current = self._decode_parameter_response(current_response)
             if current is None:
                 raise TmtCommandError(
-                    "Cannot write parameters before a valid PS21050D read",
+                    "Cannot write parameters before a valid PS21050 read",
                     translation_key="parameters_not_ready",
                 )
 
@@ -365,16 +368,22 @@ class TmtChowHub(BaseTmtChowHub):
                 transport.write_ack,
             )
 
-            # Read back the whole vendor frame and require the requested raw
-            # field to match before accepting the setting in Home Assistant.
+            # PS21050C write behavior has not previously been exercised through
+            # Home Assistant, so require the complete 20-slot frame to match.
+            # Keep the established PS21050D single-field readback rule unchanged.
             verify_response = await self._async_exchange(
                 f"c={transport.read_command}",
                 transport.read_ack,
             )
             verified = self._decode_parameter_response(verify_response)
-            if verified is None or verified[index] != int(value):
+            verification_failed = verified is None or (
+                verified != values
+                if self._is_ps21050c_alias()
+                else verified[index] != int(value)
+            )
+            if verification_failed:
                 raise TmtCommandError(
-                    "PS21050D parameter verification failed after write",
+                    "PS21050 parameter verification failed after write",
                     translation_key="parameter_verification_failed",
                 )
 

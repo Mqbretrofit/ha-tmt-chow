@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4-beta.19
+
+- Enabled the APK-derived 20-slot parameter controls for the exact `PS21050` account / `PS21050C` live-controller pair
+- Added a guarded `RP,1` → single `WP,1` → `RP,1` transaction with no automatic write retry
+- Requires the complete 20-slot readback to match on `PS21050C`, rejecting any unexpected collateral field change
+- Preserved the existing `PS21050D` write behavior and every unrelated controller path
+
 ## v1.0.4-beta.18
 
 - Added an exact `PS21050` account / `PS21050C` live-controller alias based on issue #11 real-hardware diagnostics
