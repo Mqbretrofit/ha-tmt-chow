@@ -21,6 +21,13 @@ from .ps21050d_parameters import (
     PS21050DParameterError,
     encode_parameter_write,
 )
+from .ps19001_parameters import (
+    APP_PARAMETERS as PS19001_PARAMETERS,
+    CONTROLLER_TYPE as PS19001,
+    PS19001ParameterError,
+    encode_parameter_write as encode_ps19001_parameter_write,
+    parse_parameter_response as parse_ps19001_parameter_response,
+)
 from .ps22027_parameters import (
     APP_PARAMETERS as PS22027_PARAMETERS,
     CONTROLLER_TYPE as PS22027,
@@ -151,6 +158,10 @@ class TmtChowHub(BaseTmtChowHub):
 
         super()._set_controller_type(controller_type)
 
+        if self.controller_type == PS19001 and self.parameter_model_type == PS19001:
+            self.model_parameter_schema = PS19001_PARAMETERS
+            self.parameter_model_source = "ps19001_wire19_verified"
+
         if normalized == _PS20005A_CONTROLLER_TYPE:
             # Exact capability alias only. Do not borrow a PS20005 parameter
             # schema and do not strip arbitrary model suffixes globally.
@@ -163,6 +174,8 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = "ps22027_wire20_verified"
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self.parameter_model_type == PS19001:
+            return parse_ps19001_parameter_response(payload)
         if self._is_ps22027_verified_profile():
             return parse_ps22027_parameter_response(payload)
         return super()._decode_parameter_response(payload)
@@ -316,8 +329,70 @@ class TmtChowHub(BaseTmtChowHub):
             self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
             self._notify()
 
+    async def _async_set_ps19001_parameter(self, index: int, value: int) -> None:
+        """Write one PS19001 field and verify the complete 19-slot frame."""
+        schema = self.model_parameter_schema
+        if schema is None or not 0 <= index < len(schema):
+            raise TmtCommandError(
+                "Unknown gate parameter",
+                translation_key="unknown_parameter",
+            )
+        if not is_editable_parameter(schema[index]):
+            raise TmtCommandError(
+                "This vendor parameter is not directly writable",
+                translation_key="unknown_parameter",
+            )
+
+        transport = self._parameter_transport()
+        async with self._transaction_lock:
+            current_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            current = self._decode_parameter_response(current_response)
+            if current is None:
+                raise TmtCommandError(
+                    "Cannot write parameters before a valid PS19001 read",
+                    translation_key="parameters_not_ready",
+                )
+
+            updated = list(current)
+            updated[index] = int(value)
+            values = tuple(updated)
+            try:
+                command = encode_ps19001_parameter_write(values)
+            except PS19001ParameterError as err:
+                raise TmtCommandError(
+                    str(err),
+                    translation_key="unsupported_parameter_value",
+                ) from err
+
+            # Never retry a parameter mutation automatically.
+            await self._async_exchange(
+                f"c={command};src={self._source_tag}",
+                transport.write_ack,
+            )
+
+            verify_response = await self._async_exchange(
+                f"c={transport.read_command}",
+                transport.read_ack,
+            )
+            verified = self._decode_parameter_response(verify_response)
+            if verified != values:
+                raise TmtCommandError(
+                    "PS19001 parameter verification failed after write",
+                    translation_key="parameter_verification_failed",
+                )
+
+            self.parameters = verified
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
+            self._notify()
+
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one parameter using the model-specific verified codec."""
+        if self.parameter_model_type == PS19001:
+            await self._async_set_ps19001_parameter(index, value)
+            return
         if self._is_ps22027_verified_profile():
             await self._async_set_ps22027_parameter(index, value)
             return

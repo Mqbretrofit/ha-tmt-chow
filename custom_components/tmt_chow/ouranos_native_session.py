@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -20,11 +21,15 @@ from .ouranos_ha_probe import (
 )
 
 _SESSION_HELPER_SHA256: Final = (
-    "a756b23eb93df41419da8d37bfd8c5119da551919eed1538e68496db005eee35"
+    "6724b72287c686be20e89d9548bfe8e20dcd1eca13557c954e9f2cd08a4be07f"
 )
 _SESSION_START_TIMEOUT: Final = 40
 _RESPONSE_TIMEOUT: Final = 8
 _SESSION_STOP_TIMEOUT: Final = 6
+_PS19001_PARAMETER_FRAGMENT_RE: Final = re.compile(
+    "".join(rf",{field_id}:[0-9A-Z]+" for field_id in "123456789ABCDEFGHIJ")
+    + r"\Z"
+)
 
 
 def _verify_bundled_session_helper() -> Path:
@@ -85,14 +90,13 @@ class OuranosNativeSession:
         if not command.startswith(prefix):
             return {"result": "unsupported_command", "native": None}
         fragment = command[len(prefix) :]
-        if not fragment.startswith(",0:") or any(
-            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ,:"
-            for character in fragment
-        ):
+        if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is None:
             return {"result": "invalid_parameter_command", "native": None}
         return await self._async_exchange(f"PARAM_WRITE {fragment}", "parameter_write")
 
-    async def _async_exchange(self, protocol_command: str, event: str) -> dict[str, Any]:
+    async def _async_exchange(
+        self, protocol_command: str, event: str
+    ) -> dict[str, Any]:
         """Run exactly one allowlisted exchange over the persistent session."""
         async with self._lock:
             start_error = await self._async_ensure_started_unlocked()

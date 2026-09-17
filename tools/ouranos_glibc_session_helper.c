@@ -109,7 +109,7 @@ static void print_ready(int connected, const char *stage, int code) {
 }
 
 static int valid_parameter_fragment(const char *fragment) {
-    static const char field_ids[] = "0123456789ABCDEFGHIJKLM";
+    static const char field_ids[] = "123456789ABCDEFGHIJ";
     size_t field, index = 0, length = strlen(fragment);
     if (length < 4 || length > 768 || fragment[0] != ',') return 0;
     for (field = 0; field < sizeof(field_ids) - 1; ++field) {

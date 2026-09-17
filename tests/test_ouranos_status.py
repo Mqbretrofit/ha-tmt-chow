@@ -21,11 +21,12 @@ from custom_components.tmt_chow.const import (
     OURANOS_STATUS_AVAILABILITY_SECONDS,
 )
 from custom_components.tmt_chow.ouranos_status import OuranosStatusPoller
-from custom_components.tmt_chow.parameter_codec import (
-    encode_model_parameter_write,
-    parameter_defaults,
-)
 from custom_components.tmt_chow.protocol import parse_ouranos_status_response
+from custom_components.tmt_chow.ps19001_parameters import (
+    APP_PARAMETERS as PS19001_PARAMETERS,
+    encode_parameter_write as encode_ps19001_parameter_write,
+    parse_parameter_response as parse_ps19001_parameter_response,
+)
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
 
@@ -148,13 +149,18 @@ def test_ps19001_cover_commands_use_native_session_exactly_once() -> None:
 
 def test_ps19001_parameter_write_reads_writes_once_and_verifies() -> None:
     hub = _hub()
-    defaults = parameter_defaults("PS19001")
-    assert defaults is not None and len(defaults) == 23
+    live_response = (
+        "ACK READ FUNCTION,1:1,2:02,3:02,4:3,5:3,6:2,7:1,8:1,9:0,"
+        "A:1,B:1,C:0,D:0,E:0,F:0,G:1,H:1,I:2,J:0"
+    )
+    defaults = parse_ps19001_parameter_response(live_response)
+    assert defaults is not None and len(defaults) == 19
+    assert hub.model_parameter_schema == PS19001_PARAMETERS
     updated = list(defaults)
-    updated[0] = 0
+    updated[10] = 0
 
     def response(values: tuple[int, ...]) -> str:
-        command = encode_model_parameter_write("PS19001", values)
+        command = encode_ps19001_parameter_write(values)
         return "ACK READ FUNCTION" + command.removeprefix("WRITE FUNCTION")
 
     session = FakeControlSession(
@@ -162,12 +168,42 @@ def test_ps19001_parameter_write_reads_writes_once_and_verifies() -> None:
     )
     hub.set_ouranos_native_session(session)
 
-    asyncio.run(hub.async_set_parameter(0, 0))
+    asyncio.run(hub.async_set_parameter(10, 0))
 
     assert session.parameter_writes == [
-        encode_model_parameter_write("PS19001", tuple(updated))
+        encode_ps19001_parameter_write(tuple(updated))
     ]
     assert hub.parameters == tuple(updated)
+
+
+def test_ps19001_live_json_parameter_response_round_trips_exact_1_to_j_frame() -> None:
+    payload = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "DATA": (
+                "ACK READ FUNCTION,1:1,2:02,3:02,4:3,5:3,6:2,7:1,8:1,"
+                "9:0,A:1,B:1,C:0,D:0,E:0,F:0,G:1,H:1,I:2,J:0;"
+                "src=PXXXXXXX\r\n"
+            ),
+            "RESULT": 0,
+            "ACT": "POST",
+        }
+    )
+    values = parse_ps19001_parameter_response(payload)
+
+    assert values is not None and len(values) == 19
+    assert encode_ps19001_parameter_write(values) == (
+        "WRITE FUNCTION,1:1,2:02,3:02,4:3,5:3,6:2,7:1,8:1,9:0,"
+        "A:1,B:1,C:0,D:0,E:0,F:0,G:1,H:1,I:2,J:0"
+    )
+
+
+def test_ps19001_parameter_parser_rejects_old_23_slot_zero_based_frame() -> None:
+    old_frame = "ACK READ FUNCTION" + "".join(
+        f",{field}:0" for field in "0123456789ABCDEFGHIJKLM"
+    )
+    assert parse_ps19001_parameter_response(old_frame) is None
 
 
 def test_native_status_parser_rejects_unsafe_or_malformed_envelopes() -> None:

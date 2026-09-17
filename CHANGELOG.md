@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4-beta.20
+
+- Corrected PS19001 parameters to the live-hardware-confirmed 19-slot UART0 frame labelled `1` through `J`
+- Removed the four inherited P190 current lookup helpers from the wire/entity list; they now only select the normal or Hall Sensor current mapping
+- Added strict parsing of the real JSON-wrapped `ACK READ FUNCTION` response and exact full-frame `WRITE FUNCTION,1...J` encoding
+- Kept parameter mutation guarded by a fresh read, exactly one write with no retry, and an exact complete 19-slot readback
+- Rebuilt and integrity-pinned the native helper so the obsolete zero-based 23-slot frame is rejected before transmission
+- Preserved all proven PS19001 movement/status behavior and every non-PS19001 controller path
+
 ## v1.0.4-beta.19
 
 - Enabled the APK-derived 20-slot parameter controls for the exact `PS21050` account / `PS21050C` live-controller pair

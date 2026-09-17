@@ -135,6 +135,8 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
+`v1.0.4-beta.20` corrects PS19001 parameter support to the real-hardware-confirmed 19-value UART0 frame (`1` through `J`). The four extra APK entries are current-mapping helpers, not wire parameters. Parameter changes use a fresh full read, one write with no automatic retry, and a mandatory exact full-frame readback. The already proven PS19001 movement and status paths are unchanged.
+
 `v1.0.4-beta.19` adds explicit `PS21050C` support for accounts configured as `PS21050`, including the APK-derived pedestrian control and the real-hardware-confirmed 20-value parameter frame. Parameter changes use a fresh full read, one write with no automatic retry, and a mandatory exact full-frame readback.
 
 ### Experimental PS19001 native control
