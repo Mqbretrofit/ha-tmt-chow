@@ -40,7 +40,7 @@ from .const import (
     DEFAULT_SOURCE_TAG,
     DOMAIN,
 )
-from .proposal import proposal_id_for
+from .proposal import proposal_id_for, redact_proposal_payload
 
 
 class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -181,7 +181,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
                         if proposal_id is not None:
                             data[CONF_PROPOSAL_ID] = proposal_id
                         if proposal is not None:
-                            data[CONF_PROPOSAL] = proposal
+                            data[CONF_PROPOSAL] = redact_proposal_payload(proposal)
 
                         # The integration already has an update listener that
                         # reloads the entry.  Update directly and abort instead
@@ -248,7 +248,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         if proposal_id is not None:
             data[CONF_PROPOSAL_ID] = proposal_id
         if proposal is not None:
-            data[CONF_PROPOSAL] = proposal
+            data[CONF_PROPOSAL] = redact_proposal_payload(proposal)
 
         return self.async_create_entry(title=device.name, data=data)
 
