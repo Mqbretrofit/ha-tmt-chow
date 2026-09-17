@@ -21,6 +21,7 @@ from .const import (
     CONF_PROPOSAL_ID,
     CONF_THING_NAME,
     CONF_UUID,
+    CONF_UUID_TYPE,
     DOMAIN,
     OURANOS_POLLERS_DATA_KEY,
     OURANOS_STATUS_AVAILABILITY_SECONDS,
@@ -53,7 +54,7 @@ from .ps22027_parameters import (
     parameter_options_for as ps22027_parameter_options,
 )
 from .shadow_diagnostics import async_probe_shadow_get
-from .status_diagnostics import async_probe_status_read
+from .status_diagnostics import async_probe_parameter_read, async_probe_status_read
 
 _REDACT = {
     CONF_CERTIFICATE_PEM,
@@ -160,16 +161,29 @@ async def async_get_config_entry_diagnostics(
         private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
     )
 
-    # Independently test the legacy WBT status-read path. This sends exactly one
-    # read-only c=RS request and waits for ACK RS without touching movement or
-    # parameter-write commands. It is especially useful for devices without a
-    # classic AWS IoT Shadow.
+    # Independently test the WBT status-read path. The probe records every
+    # wbt01Tx payload it sees, not only the integration's historic strict
+    # `startswith("ACK RS:")` response shape. It still sends exactly one c=RS
+    # read and never sends movement or write commands.
     status_read_probe = await async_probe_status_read(
         endpoint=str(entry.data.get(CONF_ENDPOINT) or ""),
         uuid=str(entry.data.get(CONF_UUID) or ""),
         certificate_pem=str(entry.data.get(CONF_CERTIFICATE_PEM) or ""),
         private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
     )
+
+    # TMT Chow 3.2.0 maps cloud uartVer V3.0 to its UART1 AutoProduct path.
+    # The vendor read command on that path is RP,1.  Probe it only when the
+    # downloaded Proposal itself declares V3.0.  This is an isolated parameter
+    # read: no WP,1, movement, relay, learning, or parameter-write command is sent.
+    autoproduct_parameter_read_probe: dict[str, Any] | None = None
+    if str(proposal_info.get("uart_version") or "").strip().upper() == "V3.0":
+        autoproduct_parameter_read_probe = await async_probe_parameter_read(
+            endpoint=str(entry.data.get(CONF_ENDPOINT) or ""),
+            uuid=str(entry.data.get(CONF_UUID) or ""),
+            certificate_pem=str(entry.data.get(CONF_CERTIFICATE_PEM) or ""),
+            private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
+        )
 
     # If the normal bootstrap failed, perform one additional read-only probe while
     # diagnostics are being generated. This captures the parameter ACK immediately
@@ -222,6 +236,7 @@ async def async_get_config_entry_diagnostics(
         "runtime": {
             "available": hub.available,
             "mqtt_connected": hub.mqtt_connected,
+            "uuid_type": entry.data.get(CONF_UUID_TYPE),
             "ouranos_status_enabled": bool(entry.options.get(CONF_OURANOS_PIN)),
             "ouranos_status_available": hub.ouranos_status_available,
             "ouranos_status_age_seconds": (
@@ -271,7 +286,14 @@ async def async_get_config_entry_diagnostics(
             "status_read_probe_is_operating": status_read_probe["is_operating"],
             "status_read_probe_open_direction": status_read_probe["open_direction"],
             "status_read_probe_battery_percent": status_read_probe["battery_percent"],
+            "status_read_probe_observed_payload_count": status_read_probe[
+                "observed_payload_count"
+            ],
+            "status_read_probe_observed_payloads": status_read_probe[
+                "observed_payloads"
+            ],
             "status_read_probe_error": status_read_probe["probe_error"],
+            "autoproduct_parameter_read_probe": autoproduct_parameter_read_probe,
             "device_online": hub.device_online,
             "position": hub.position,
             "movement": hub.movement,
