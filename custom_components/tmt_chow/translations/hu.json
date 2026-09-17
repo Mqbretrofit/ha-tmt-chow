@@ -15,6 +15,14 @@
         "data": {
           "device": "Kapu"
         }
+      },
+      "reconfigure": {
+        "title": "TMT felhőprofil frissítése",
+        "description": "A TMT Chow belépési adatokat egyszer használjuk a kapu AutoProduct/Proposal profiljának frissítéséhez. A felhasználónév, a jelszó és a Bearer token nem kerül mentésre.",
+        "data": {
+          "username": "Felhasználónév / becenév",
+          "password": "Jelszó"
+        }
       }
     },
     "error": {
@@ -26,7 +34,8 @@
     "abort": {
       "already_configured": "Ez a kapu már be van állítva",
       "cannot_connect": "Nem lehet kapcsolódni a TMT Chow szolgáltatáshoz",
-      "invalid_auth": "Sikertelen hitelesítés"
+      "invalid_auth": "Sikertelen hitelesítés",
+      "reconfigure_successful": "A TMT felhőprofil frissítése sikerült"
     }
   },
   "options": {
