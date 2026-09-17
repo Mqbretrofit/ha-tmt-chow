@@ -36,6 +36,11 @@ from .ps22027_parameters import (
     parameter_options_for as ps22027_parameter_options,
     wire_value_to_option as ps22027_wire_value_to_option,
 )
+from .ps22087b_parameters import (
+    CONTROLLER_TYPE as PS22087B,
+    PARAMETERS as PS22087B_PARAMETERS,
+    P710UParameterDefinition,
+)
 from .ps25007a_parameters import CONTROLLER_TYPE as PS25007A
 
 _LEGACY_PS21053 = {"PS21053", "PS21053C"}
@@ -67,6 +72,13 @@ async def async_setup_entry(
         async_add_entities(
             TmtParameterSelect(hub, index, definition)
             for index, definition in enumerate(PARAMETERS)
+        )
+        return
+
+    if hub.parameter_model_type == PS22087B:
+        async_add_entities(
+            TmtP710UParameterSelect(hub, index, definition)
+            for index, definition in enumerate(PS22087B_PARAMETERS)
         )
         return
 
@@ -349,6 +361,69 @@ class TmtModelParameterSelect(TmtChowEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         try:
             value = self._options.index(option)
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_parameter_value",
+            ) from err
+        await _async_set(self.hub, self._index, value)
+
+
+class TmtP710UParameterSelect(TmtChowEntity, SelectEntity):
+    """One field from the verified P710U / PS22087B 15-value frame."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self, hub: TmtChowHub, index: int, definition: P710UParameterDefinition
+    ) -> None:
+        super().__init__(hub)
+        self._index = index
+        self._definition = definition
+        # Preserve the unique IDs used by the earlier hardware-test beta so
+        # existing P710U entities are adopted instead of duplicated.
+        self._attr_unique_id = f"{hub.uuid}_p710u_parameter_{definition.code.lower()}"
+        self._attr_name = f"{definition.code} – {definition.name}"
+
+    @property
+    def available(self) -> bool:
+        values = self.hub.parameters
+        return (
+            self.hub.available
+            and self.hub.supports_parameters
+            and values is not None
+            and len(values) == len(PS22087B_PARAMETERS)
+        )
+
+    @property
+    def options(self) -> list[str]:
+        values = self.hub.parameters
+        current = values[self._index] if values is not None else None
+        if not self._definition.writable:
+            return [f"Raw value {current}"] if current is not None else []
+        options = list(self._definition.options)
+        if current is not None and not 0 <= current < len(options):
+            options.append(f"Raw value {current}")
+        return options
+
+    @property
+    def current_option(self) -> str | None:
+        values = self.hub.parameters
+        if values is None or self._index >= len(values):
+            return None
+        value = values[self._index]
+        if 0 <= value < len(self._definition.options):
+            return self._definition.options[value]
+        return f"Raw value {value}"
+
+    async def async_select_option(self, option: str) -> None:
+        if not self._definition.writable:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_parameter_value",
+            )
+        try:
+            value = self._definition.options.index(option)
         except ValueError as err:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,

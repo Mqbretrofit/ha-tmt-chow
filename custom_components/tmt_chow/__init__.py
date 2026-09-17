@@ -34,7 +34,7 @@ from .hub import TmtCommandError
 from .mqtt import MqttError
 from .ouranos_ha_probe import async_probe_ouranos_on_ha
 from .ouranos_status import OuranosStatusPoller
-from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE
 from .proposal import proposal_summary
 from .ps21050d_hub import TmtChowHub
 
@@ -159,12 +159,7 @@ def _register_services(hass: HomeAssistant) -> None:
             hub = _find_hub(hass, uuid)
             if hub is None:
                 raise HomeAssistantError("TMT Chow gate not found")
-            if (
-                pedestrian_strategy_for(
-                    hub.controller_type, hub.controller_capabilities
-                )
-                == PEDESTRIAN_STRATEGY_NONE
-            ):
+            if hub.pedestrian_strategy == PEDESTRIAN_STRATEGY_NONE:
                 raise HomeAssistantError(
                     "Pedestrian opening is not safely supported by this controller"
                 )

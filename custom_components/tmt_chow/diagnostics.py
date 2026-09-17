@@ -31,6 +31,7 @@ from .const import (
 from .hub import TmtChowHub, TmtCommandError
 from .model_parameter_schemas import parameter_name, parameter_options
 from .model_protocol_profiles import protocol_profile_for
+from .ouranos_ha_probe import async_probe_ouranos_on_ha
 from .pedestrian import (
     PEDESTRIAN_STRATEGY_RELAY4,
     direct_ped_open_blocked,
@@ -53,8 +54,16 @@ from .ps22027_parameters import (
     decoded_parameter_values as ps22027_decoded_parameter_values,
     parameter_options_for as ps22027_parameter_options,
 )
+from .ps22087b_parameters import (
+    CONTROLLER_TYPE as PS22087B,
+    PARAMETERS as PS22087B_PARAMETERS,
+)
 from .shadow_diagnostics import async_probe_shadow_get
-from .status_diagnostics import async_probe_parameter_read, async_probe_status_read
+from .status_diagnostics import (
+    async_probe_parameter_read,
+    async_probe_status_read,
+    async_probe_wbt_read_matrix,
+)
 
 _REDACT = {
     CONF_CERTIFICATE_PEM,
@@ -131,6 +140,323 @@ def _expected_wire_token_count(schema: tuple | None, profile: tuple | None) -> i
     return wire
 
 
+def _needs_controller_discovery(hub: TmtChowHub) -> bool:
+    """Return whether one broad read-only route matrix adds useful evidence."""
+    return (
+        hub.controller_type is None
+        or hub.controller_family is None
+        or hub.model_parameter_schema is None
+        or not hub.parameter_schema_verified
+        or hub.parameter_model_source in {None, "controller", "configured_fallback"}
+    )
+
+
+async def _async_probe_ouranos_read_matrix(
+    hass: HomeAssistant,
+    *,
+    uuid: str,
+    uuid_type: Any,
+    pin_code: str,
+) -> dict[str, Any] | None:
+    """Probe both known read-only native status dialects for OURANOS candidates."""
+    if str(uuid_type or "").strip() != "1" or len(uuid) != 20:
+        return None
+    if len(pin_code) != 6 or not pin_code.isascii() or not pin_code.isdigit():
+        return {
+            "result": "not_run",
+            "blocker": "save the six-digit gate PIN in integration options",
+            "safety": {"read_only": True, "commands": ["READ STATUS", "RS"]},
+            "results": {},
+            "working_commands": [],
+        }
+
+    results = {
+        "READ STATUS": await async_probe_ouranos_on_ha(
+            hass, uuid, pin_code, "READ_STATUS"
+        ),
+        "RS": await async_probe_ouranos_on_ha(hass, uuid, pin_code, "RS"),
+    }
+    return {
+        "result": "completed",
+        "blocker": None,
+        "safety": {
+            "read_only": True,
+            "commands_sent_once": True,
+            "movement_commands_sent": False,
+            "parameter_writes_sent": False,
+        },
+        "results": results,
+        "working_commands": [
+            command
+            for command, result in results.items()
+            if result.get("result") == "status_response_received"
+        ],
+    }
+
+
+def _controller_route_analysis(
+    *,
+    hub: TmtChowHub,
+    uuid_type: Any,
+    proposal_info: dict[str, Any],
+    shadow_probe: dict[str, Any],
+    status_probe: dict[str, Any],
+    parameter_probe: dict[str, Any] | None,
+    wbt_matrix: dict[str, Any] | None = None,
+    ouranos_matrix: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Synthesize one safe controller-discovery report from all evidence."""
+    evidence: list[str] = []
+    blockers: list[str] = []
+    data_sources: list[dict[str, Any]] = []
+
+    uuid_type_text = str(uuid_type or "").strip()
+    if uuid_type_text:
+        evidence.append(f"vendor uuid_type={uuid_type_text}")
+
+    shadow_result = shadow_probe.get("result")
+    data_sources.append(
+        {
+            "source": "aws_iot_classic_shadow",
+            "result": shadow_result,
+            "role": "initial state and reported metadata",
+        }
+    )
+    if shadow_result == "accepted":
+        evidence.append("classic AWS IoT Shadow GET accepted")
+
+    status_result = status_probe.get("result")
+    data_sources.append(
+        {
+            "source": "wbt_mqtt_rs",
+            "result": status_result,
+            "role": "live status/position probe",
+            "observed_payload_count": status_probe.get("observed_payload_count"),
+        }
+    )
+    if status_result in {"acknowledged", "traffic_observed"}:
+        evidence.append(f"WBT/MQTT RS probe={status_result}")
+
+    if parameter_probe is not None:
+        data_sources.append(
+            {
+                "source": "wbt_mqtt_rp1",
+                "result": parameter_probe.get("result"),
+                "role": "UART V3 parameter read probe",
+                "observed_payload_count": parameter_probe.get(
+                    "observed_payload_count"
+                ),
+            }
+        )
+        if parameter_probe.get("result") in {"acknowledged", "traffic_observed"}:
+            evidence.append(
+                f"WBT/MQTT RP,1 probe={parameter_probe.get('result')}"
+            )
+
+    if wbt_matrix is not None:
+        working = list(wbt_matrix.get("working_commands") or [])
+        data_sources.append(
+            {
+                "source": "wbt_read_dialect_matrix",
+                "result": "completed",
+                "role": "discover status and parameter request dialects",
+                "working_commands": working,
+            }
+        )
+        if working:
+            evidence.append("WBT read matrix responses=" + ", ".join(working))
+
+    if ouranos_matrix is not None:
+        working = list(ouranos_matrix.get("working_commands") or [])
+        data_sources.append(
+            {
+                "source": "ouranos_read_dialect_matrix",
+                "result": ouranos_matrix.get("result"),
+                "role": "discover native status request dialect",
+                "working_commands": working,
+                "blocker": ouranos_matrix.get("blocker"),
+            }
+        )
+        if working:
+            evidence.append("OURANOS read matrix responses=" + ", ".join(working))
+        if ouranos_matrix.get("blocker"):
+            blockers.append(str(ouranos_matrix["blocker"]))
+
+    if proposal_info.get("available"):
+        data_sources.append(
+            {
+                "source": "vendor_cloud_proposal",
+                "result": "available",
+                "role": "controller family, UART, FunctionSet and ParameterSet",
+            }
+        )
+        evidence.append(
+            "cloud Proposal available"
+            f" (uart={proposal_info.get('uart_version')},"
+            f" tested={proposal_info.get('is_tested')})"
+        )
+    else:
+        blockers.append("vendor cloud Proposal is unavailable")
+
+    if hub.ouranos_status_available:
+        data_sources.append(
+            {
+                "source": "ouranos_iotc_rdt",
+                "result": "verified_live_status",
+                "role": "native status/control transport",
+            }
+        )
+        evidence.append("native OURANOS status response verified")
+
+    if uuid_type_text == "1" or hub.ouranos_status_available:
+        transport = "ouranos_iotc_rdt"
+        transport_confidence = "verified" if hub.ouranos_status_available else "vendor_metadata"
+    elif shadow_result == "accepted" or status_result in {
+        "acknowledged",
+        "traffic_observed",
+    }:
+        transport = "aws_wbt_mqtt"
+        transport_confidence = "probe_confirmed"
+    elif hub.mqtt_connected:
+        transport = "aws_mqtt_connected_route_unconfirmed"
+        transport_confidence = "partial"
+        blockers.append("MQTT connects but no state/status response source is confirmed")
+    else:
+        transport = "unresolved"
+        transport_confidence = "none"
+        blockers.append("no working runtime transport was observed")
+
+    uart_version = str(proposal_info.get("uart_version") or "").strip().upper()
+    expected_status_command = (
+        "READ STATUS"
+        if hub.configured_controller_type == "PS19001"
+        else "RS"
+        if uart_version in {"V3.0", "3.0"}
+        else "unknown"
+    )
+    expected_parameter_read = (
+        "RP,1" if uart_version in {"V3.0", "3.0"} else "model/APK profile required"
+    )
+
+    if hub.controller_type is None:
+        blockers.append("live DEV INFO controller identity was not received")
+    if not proposal_info.get("function_set_available"):
+        blockers.append("FunctionSet evidence is unavailable")
+    if hub.model_parameter_schema is None:
+        blockers.append("no mapped parameter schema is selected")
+    if transport == "ouranos_iotc_rdt" and not hub.ouranos_status_available:
+        blockers.append("one read-only native status response is still required")
+
+    return {
+        "report_version": 1,
+        "purpose": "single-diagnostic controller routing discovery",
+        "safety": {
+            "movement_commands_sent": False,
+            "parameter_writes_sent": False,
+            "relay_or_learning_commands_sent": False,
+            "read_only_probes_only": True,
+        },
+        "identity_chain": {
+            "configured_controller": hub.configured_controller_type,
+            "live_controller": hub.controller_type,
+            "product_type": hub.product_type,
+            "uuid_type": uuid_type,
+            "proposal_type": proposal_info.get("proposal_type"),
+            "proposal_version": proposal_info.get("proposal_version"),
+            "gate_family": hub.controller_family
+            or proposal_info.get("gate_family_hint"),
+            "uart_version": proposal_info.get("uart_version"),
+        },
+        "selected_route": {
+            "transport": transport,
+            "confidence": transport_confidence,
+            "expected_status_command": expected_status_command,
+            "expected_parameter_read": expected_parameter_read,
+            "runtime_state_source": (
+                "classic_shadow"
+                if shadow_result == "accepted"
+                else "wbt_rs"
+                if status_result in {"acknowledged", "traffic_observed"}
+                else "ouranos_native"
+                if hub.ouranos_status_available or uuid_type_text == "1"
+                else "unresolved"
+            ),
+        },
+        "vendor_capabilities": {
+            "function_labels": proposal_info.get("function_labels", []),
+            "parameter_count": proposal_info.get("parameter_set_count"),
+            "pedestrian": proposal_info.get("pedestrian_function_present"),
+            "relay4": proposal_info.get("relay4_present"),
+            "is_tested": proposal_info.get("is_tested"),
+        },
+        "data_sources": data_sources,
+        "evidence": evidence,
+        "remaining_blockers": list(dict.fromkeys(blockers)),
+        "implementation_readiness": (
+            "mapped_and_write_verified"
+            if hub.parameter_write_schema_verified
+            else "mapped_read_only"
+            if hub.parameter_schema_verified
+            else "routing_evidence_collected"
+            if transport != "unresolved"
+            else "needs_transport_evidence"
+        ),
+    }
+
+
+def _diagnostic_schema(
+    hub: TmtChowHub,
+    schema: tuple | None,
+    *,
+    is_ps21050d_alias: bool,
+    is_ps22027_profile: bool,
+) -> list[dict[str, Any]]:
+    """Serialize standard generated schemas and the verified P710U wire schema."""
+    if hub.parameter_model_type == PS22087B:
+        return [
+            {
+                "index": index,
+                "key": definition.code,
+                "name": definition.name,
+                "kind": "option" if definition.writable else "reserved_read_only",
+                "options": list(definition.options),
+                "writable": definition.writable,
+            }
+            for index, definition in enumerate(PS22087B_PARAMETERS, start=1)
+        ]
+    return [
+        {
+            "index": index,
+            "key": spec[1],
+            "name": parameter_name(spec),
+            "kind": spec[0],
+            "option_key": spec[2],
+            "options": list(
+                ps21050d_parameter_options(index - 1, hub.parameters)
+                if is_ps21050d_alias
+                else ps22027_parameter_options(index - 1, hub.parameters)
+                if is_ps22027_profile
+                else parameter_options(spec)
+            ),
+            "parameter_type": spec[3],
+            "level": spec[4],
+            "default": spec[5],
+            "offset": spec[6],
+            "max_value_hint": spec[7],
+            "bit_index": spec[8],
+            "big_endian": spec[9],
+            "bit_count": spec[10],
+            "minimum": spec[11],
+            "maximum": spec[12],
+            "increment": spec[13],
+            "multiple": spec[14],
+            "unit_key": spec[15],
+            "off_value": spec[16],
+        }
+        for index, spec in enumerate(schema or (), start=1)
+    ]
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -185,6 +511,33 @@ async def async_get_config_entry_diagnostics(
             private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
         )
 
+    # Unknown/unmapped controllers get one exhaustive read-only discovery
+    # matrix. This replaces repeated bespoke test builds: the resulting single
+    # diagnostics JSON records which legacy, UART V3, WBT status and parameter
+    # request dialects respond and captures the sanitized payload shapes.
+    discovery_required = _needs_controller_discovery(hub)
+    unknown_controller_read_matrix: dict[str, Any] | None = None
+    if discovery_required:
+        existing_wbt_results = {"RS": status_read_probe}
+        if autoproduct_parameter_read_probe is not None:
+            existing_wbt_results["RP,1"] = autoproduct_parameter_read_probe
+        unknown_controller_read_matrix = await async_probe_wbt_read_matrix(
+            endpoint=str(entry.data.get(CONF_ENDPOINT) or ""),
+            uuid=str(entry.data.get(CONF_UUID) or ""),
+            certificate_pem=str(entry.data.get(CONF_CERTIFICATE_PEM) or ""),
+            private_key=str(entry.data.get(CONF_PRIVATE_KEY) or ""),
+            existing_results=existing_wbt_results,
+        )
+
+    ouranos_read_matrix: dict[str, Any] | None = None
+    if discovery_required:
+        ouranos_read_matrix = await _async_probe_ouranos_read_matrix(
+            hass,
+            uuid=str(entry.data.get(CONF_UUID) or ""),
+            uuid_type=entry.data.get(CONF_UUID_TYPE),
+            pin_code=str(entry.options.get(CONF_OURANOS_PIN) or "").strip(),
+        )
+
     # If the normal bootstrap failed, perform one additional read-only probe while
     # diagnostics are being generated. This captures the parameter ACK immediately
     # in ATTR_LAST_RESPONSE, instead of letting later status traffic overwrite it.
@@ -209,9 +562,12 @@ async def async_get_config_entry_diagnostics(
         and hub.parameter_model_source
         in {"ps22027_wire20_read_only", "ps22027_wire20_verified"}
     )
+    is_ps22087b_profile = hub.parameter_model_type == PS22087B
     profile = (
         (PS21050D_UART_VERSION, (), "ps21050_app_wire20", "")
         if hub.parameter_model_type == PS21050D
+        else (1, (), "ps22087b_p710u_wire15", "")
+        if is_ps22087b_profile
         else protocol_profile_for(hub.parameter_model_type)
     )
     schema = hub.model_parameter_schema
@@ -221,14 +577,26 @@ async def async_get_config_entry_diagnostics(
     shadow_parameter_debug = _inspect_parameter_payload(
         hub.attributes.get(ATTR_DEV_PARAM)
     )
-    expected_wire_tokens = _expected_wire_token_count(schema, profile)
-    pedestrian_strategy = pedestrian_strategy_for(
-        hub.controller_type,
-        hub.controller_capabilities,
+    expected_wire_tokens = (
+        len(PS22087B_PARAMETERS)
+        if is_ps22087b_profile
+        else _expected_wire_token_count(schema, profile)
     )
+    pedestrian_strategy = hub.pedestrian_strategy
     direct_blocked = direct_ped_open_blocked(
         hub.controller_type
     ) or direct_ped_open_blocked(hub.configured_controller_type)
+
+    controller_route_analysis = _controller_route_analysis(
+        hub=hub,
+        uuid_type=entry.data.get(CONF_UUID_TYPE),
+        proposal_info=proposal_info,
+        shadow_probe=shadow_get_probe,
+        status_probe=status_read_probe,
+        parameter_probe=autoproduct_parameter_read_probe,
+        wbt_matrix=unknown_controller_read_matrix,
+        ouranos_matrix=ouranos_read_matrix,
+    )
 
     return {
         "entry": async_redact_data(dict(entry.data), _REDACT),
@@ -294,6 +662,8 @@ async def async_get_config_entry_diagnostics(
             ],
             "status_read_probe_error": status_read_probe["probe_error"],
             "autoproduct_parameter_read_probe": autoproduct_parameter_read_probe,
+            "unknown_controller_read_matrix": unknown_controller_read_matrix,
+            "ouranos_read_matrix": ouranos_read_matrix,
             "device_online": hub.device_online,
             "position": hub.position,
             "movement": hub.movement,
@@ -304,9 +674,16 @@ async def async_get_config_entry_diagnostics(
             "controller_family": hub.controller_family,
             "controller_capabilities": sorted(hub.controller_capabilities),
             "pedestrian_strategy": pedestrian_strategy,
-            "pedestrian_strategy_reason": pedestrian_strategy_reason(
-                hub.controller_type,
-                hub.controller_capabilities,
+            "pedestrian_strategy_reason": (
+                "authenticated_ps25007a_live_alias"
+                if pedestrian_strategy
+                != pedestrian_strategy_for(
+                    hub.controller_type, hub.controller_capabilities
+                )
+                else pedestrian_strategy_reason(
+                    hub.controller_type,
+                    hub.controller_capabilities,
+                )
             ),
             "pedestrian_direct_command_blocked": direct_blocked,
             "pedestrian_relay4_enabled": pedestrian_strategy == PEDESTRIAN_STRATEGY_RELAY4,
@@ -316,6 +693,7 @@ async def async_get_config_entry_diagnostics(
             "proposal_payload": (
                 redact_proposal_payload(proposal) if proposal is not None else None
             ),
+            "controller_route_analysis": controller_route_analysis,
             # FunctionSet is authoritative evidence from the vendor AutoProduct
             # profile.  Do not turn it into live commands yet; this beta only
             # captures and exposes the profile so hardware behavior can be
@@ -360,37 +738,12 @@ async def async_get_config_entry_diagnostics(
                 if is_ps22027_profile
                 else None
             ),
-            "model_parameter_schema": [
-                {
-                    "index": index,
-                    "key": spec[1],
-                    "name": parameter_name(spec),
-                    "kind": spec[0],
-                    "option_key": spec[2],
-                    "options": list(
-                        ps21050d_parameter_options(index - 1, hub.parameters)
-                        if is_ps21050d_alias
-                        else ps22027_parameter_options(index - 1, hub.parameters)
-                        if is_ps22027_profile
-                        else parameter_options(spec)
-                    ),
-                    "parameter_type": spec[3],
-                    "level": spec[4],
-                    "default": spec[5],
-                    "offset": spec[6],
-                    "max_value_hint": spec[7],
-                    "bit_index": spec[8],
-                    "big_endian": spec[9],
-                    "bit_count": spec[10],
-                    "minimum": spec[11],
-                    "maximum": spec[12],
-                    "increment": spec[13],
-                    "multiple": spec[14],
-                    "unit_key": spec[15],
-                    "off_value": spec[16],
-                }
-                for index, spec in enumerate(schema or (), start=1)
-            ],
+            "model_parameter_schema": _diagnostic_schema(
+                hub,
+                schema,
+                is_ps21050d_alias=is_ps21050d_alias,
+                is_ps22027_profile=is_ps22027_profile,
+            ),
             "parameters": hub.parameters,
             "attributes": hub.attributes,
         },
