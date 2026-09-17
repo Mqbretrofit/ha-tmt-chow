@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from custom_components.tmt_chow.hub import TmtChowHub
 from custom_components.tmt_chow.parameters import PARAMETERS
 from custom_components.tmt_chow.pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
+from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 from custom_components.tmt_chow.ps25007a_parameters import (
     PARAMETER_COUNT,
     PROPOSAL_OPTION_COUNTS,
