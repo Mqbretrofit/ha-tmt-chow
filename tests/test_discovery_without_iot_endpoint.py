@@ -19,6 +19,7 @@ def test_discovery_keeps_device_without_iot_endpoint() -> None:
             "admin_devices": [
                 {
                     "uuid": "ps19001-device",
+                    "uuid_type": "5",
                     "devies_type": "PS19001",
                     "product_type": "108",
                     "iot_endpoint": None,
@@ -27,6 +28,7 @@ def test_discovery_keeps_device_without_iot_endpoint() -> None:
             "user_devices": [
                 {
                     "uuid": "existing-endpoint-device",
+                    "uuid_type": "1",
                     "devies_type": "PS22027",
                     "product_type": "200",
                     "iot_endpoint": "example-ats.iot.eu-central-1.amazonaws.com",
@@ -55,6 +57,7 @@ def test_discovery_keeps_device_without_iot_endpoint() -> None:
 
     discovered = devices[0]
     assert discovered.uuid == "ps19001-device"
+    assert discovered.uuid_type == "5"
     assert discovered.name == "Driveway gate"
     assert discovered.role == "admin"
     assert discovered.device_type == "PS19001"
@@ -63,5 +66,6 @@ def test_discovery_keeps_device_without_iot_endpoint() -> None:
 
     existing = devices[1]
     assert existing.uuid == "existing-endpoint-device"
+    assert existing.uuid_type == "1"
     assert existing.role == "user"
     assert existing.iot_endpoint == "example-ats.iot.eu-central-1.amazonaws.com"
