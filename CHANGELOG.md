@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.18
+
+- Added an exact `PS21050` account / `PS21050C` live-controller alias based on issue #11 real-hardware diagnostics
+- Reused the proven 20-slot `PS21050D` RP,1 read codec for `PS21050C`, while preserving the concrete live model identity
+- Restored the APK-derived swing family and pedestrian capability so the pedestrian control is exposed with the existing guarded `PED OPEN` strategy
+- Kept all `PS21050C` parameter writes disabled until separately verified on real hardware
+- Added regression coverage for the reported 20-slot frame, enabled pedestrian field, read-only parameter safety, and unchanged `PS21050D` behavior
+
 ## v1.0.4-beta.17
 
 - Added native PS19001 full-open, full-close, stop and pedestrian-open control over the already proven persistent IOTC/RDT session
