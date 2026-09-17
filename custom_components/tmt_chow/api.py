@@ -39,6 +39,7 @@ class TmtDevice:
     device_type: str
     product_type: str
     iot_endpoint: str
+    uuid_type: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -168,6 +169,7 @@ class TmtChowApi:
                         device_type=device_type,
                         product_type=str(raw.get("product_type") or ""),
                         iot_endpoint=endpoint,
+                        uuid_type=str(raw.get("uuid_type") or ""),
                     )
                 )
         return devices
