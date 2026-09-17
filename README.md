@@ -1,6 +1,6 @@
 # TMT Chow for Home Assistant
 
-[![Release](https://img.shields.io/badge/release-v1.0.3-blue)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.3)
+[![Release](https://img.shields.io/badge/release-v1.0.4--beta.29-orange)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-41BDF5)](https://www.hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-tmt-chow&category=integration)
@@ -16,21 +16,17 @@ TMT Chow for Home Assistant is an independent open-source community project. Con
 
 If this integration is useful to you, you can support continued development through **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)**. For sponsored feature requests, priority development and additional support options, see **[SUPPORT.md](SUPPORT.md)**.
 
-> **Current stable release:** `v1.0.3`
+> **Current release:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29) (pre-release)
 >
-> **Latest test release:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)
+> Last non-beta release: `v1.0.3`
 
-## What's new in v1.0.3
+## What's new in v1.0.4-beta.29
 
-- Added a dedicated **Pedestrian opening** button for supported controller models using the vendor `PED OPEN` command.
-- Added safe ACK-loss handling for `FULL OPEN`, `FULL CLOSE` and `PED OPEN`: fresh matching telemetry can confirm execution, but movement commands are never automatically resent.
-- Fixed stale stopped `DEV STATUS` updates that could make a physically closed gate appear open in Home Assistant.
-- Hardened endpoint state tracking so a late stale status packet cannot flip a just-closed gate back to open, or a just-opened gate back to closed.
-- Added direct APK-derived support for the verified TMT account `PS21050` / live `PS21050D` controller pair.
-- Added exact 20-value `RP,1` / `WP,1` PS21050D parameter handling derived from TMT Chow 3.1.4, including the vendor normal/Hall overcurrent option tables.
-- PS21050D parameter writes use a fresh read → single-field change → one write → full read-back verification sequence. Parameter writes are never automatically retried.
-- Extended diagnostics with configured/live controller identity, parameter profile, codec and write-verification information.
-- Added GitHub Actions regression testing.
+- Added one read-only discovery diagnostic for unknown or unverified controllers, covering AWS IoT Shadow, Proposal/FunctionSet, WBT and OURANOS routes.
+- Tests the known safe read dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`) and records sanitized response shapes in one downloadable JSON.
+- Restored the real-hardware-tested `PS22087` account / `PS22087B` live / `P710U` 15-slot parameter profile with full-frame readback verification.
+- Preserved the beta.28 PS25007A pedestrian-button and translated-parameter fixes.
+- Preserved all existing verified controller-specific routes; diagnostics never send movement, relay, learning, reset or parameter-write commands.
 
 ## Features
 
@@ -234,9 +230,9 @@ Stable releases are published on the GitHub Releases page:
 
 https://github.com/Mqbretrofit/ha-tmt-chow/releases
 
-Current stable release: **v1.0.3**
+Current release: **[v1.0.4-beta.29](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)** (pre-release)
 
-Latest test release: **[v1.0.4-beta.29](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)**
+Last non-beta release: **v1.0.3**
 
 ## Disclaimer
 
@@ -256,20 +252,17 @@ A TMT Chow for Home Assistant egy független, nyílt forráskódú közösségi 
 
 Ha hasznos számodra az integráció, a fejlesztést a **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)** oldalon támogathatod. Támogatott funkciókéréshez, kiemelt fejlesztéshez és további lehetőségekhez lásd a **[SUPPORT.md](SUPPORT.md)** fájlt.
 
-> **Jelenlegi stabil verzió:** `v1.0.3`
+> **Jelenlegi kiadás:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29) (előzetes kiadás)
 >
-> **Legújabb tesztverzió:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)
+> Utolsó nem beta kiadás: `v1.0.3`
 
-## Újdonságok a v1.0.3-ban
+## Újdonságok a v1.0.4-beta.29-ben
 
-- Új **Pedestrian opening / gyalogos nyitás** gomb a támogatott vezérlőkhöz a gyári `PED OPEN` paranccsal.
-- Biztonságos ACK-hiány kezelés `FULL OPEN`, `FULL CLOSE` és `PED OPEN` parancsoknál: friss, megfelelő telemetria igazolhatja a végrehajtást, de a mozgási parancsot az integráció soha nem küldi újra automatikusan.
-- Javítva az a hiba, amikor egy későn érkező, elavult `DEV STATUS` miatt a fizikailag bezárt kapu Home Assistantban ismét nyitottnak látszhatott.
-- A teljesen nyitott/zárt végállapot után érkező elavult státuszcsomag már nem fordíthatja vissza tévesen az `Open` / `Closed` állapotot.
-- Közvetlen, APK-ból visszafejtett támogatás a `PS21050` fiókmodell / `PS21050D` élő vezérlő pároshoz.
-- Pontos, 20 értékes `RP,1` / `WP,1` PS21050D paraméterkezelés a TMT Chow 3.1.4 alapján, beleértve a normál/Hall túláram opciókat.
-- PS21050D paraméterírásnál friss olvasás → egy mező módosítása → egyetlen írás → teljes visszaolvasás és ellenőrzés történik; automatikus írásismétlés nincs.
-- Bővített diagnosztika és GitHub Actions regression tesztek.
+- Egyetlen, csak olvasási felderítő diagnosztika az ismeretlen vagy még nem igazolt vezérlőkhöz, AWS IoT Shadow, Proposal/FunctionSet, WBT és OURANOS útvonalakkal.
+- Az ismert biztonságos olvasási kérések (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`) vizsgálata és a maszkolt válaszformák rögzítése egy letölthető JSON-ban.
+- Visszakerült a valós hardveren tesztelt `PS22087` fiókmodell / `PS22087B` élő vezérlő / `P710U` 15 mezős paraméterprofil teljes visszaellenőrzéssel.
+- Megmaradtak a beta.28 PS25007A gyalogosgomb- és paraméterfordítás-javításai.
+- Minden korábban igazolt vezérlőspecifikus útvonal megmaradt; a diagnosztika nem küld mozgási, relé-, tanítási, reset- vagy paraméterírási parancsot.
 
 ## Fő funkciók
 
@@ -294,7 +287,7 @@ Ha hasznos számodra az integráció, a fejlesztést a **[GitHub Sponsors](https
 
 ## Vezérlő- és paramétertámogatás
 
-A v1.0.3 a TMT Chow 3.1.4 és a gatePRO Smart! 1.0.0 APK/XAPK vezérlődefiníciói alapján modellenként kezeli a kapuvezérlők képességeit, paraméterlistáját és UART paraméterprotokollját. A támogatási katalógus 217 konkrét kapuvezérlő-modellhez tartalmaz paramétersémát és protokollprofilt.
+Az integráció a TMT Chow 3.1.4/3.2.0 és a gatePRO Smart! 1.0.0 APK/XAPK vezérlődefiníciói alapján modellenként kezeli a kapuvezérlők képességeit, paraméterlistáját és UART paraméterprotokollját. A támogatási katalógus 217 konkrét kapuvezérlő-modellhez tartalmaz paramétersémát és protokollprofilt.
 
 A `PS21053` / `PS21053C` paraméterkezelése valódi hardveren validálva lett. A `PED OPEN` parancs `PS21053C` vezérlőn szintén valódi hardveren ellenőrzött: `ACK PED OPEN` válasszal és részleges pozíció-visszajelzéssel.
 
