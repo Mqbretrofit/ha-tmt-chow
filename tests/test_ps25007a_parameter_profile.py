@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from custom_components.tmt_chow.parameters import PARAMETERS
 from custom_components.tmt_chow.pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
@@ -17,6 +18,7 @@ from custom_components.tmt_chow.ps25007a_parameters import (
 
 _VALUES = (1, 3, 0, 3, 3, 3, 11, 1, 0, 1, 0, 2, 3, 0, 0, 0, 0)
 _BODY = ",".join(map(str, _VALUES))
+_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _hub(device_type: str = "PS25007") -> TmtChowHub:
@@ -92,3 +94,18 @@ def test_unrelated_controller_does_not_gain_ps25007a_profile() -> None:
     hub._set_controller_type("PS25007A")
     assert hub.parameter_model_type != "PS25007A"
     assert hub.parameter_write_schema_verified is False
+
+
+def test_ps25007a_ui_uses_runtime_pedestrian_strategy_and_translated_parameters() -> None:
+    button_source = (_ROOT / "custom_components/tmt_chow/button.py").read_text(
+        encoding="utf-8"
+    )
+    select_source = (_ROOT / "custom_components/tmt_chow/select.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE" in button_source
+    assert "self.hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE" in button_source
+    assert "pedestrian_strategy_for(" not in button_source
+    assert "if hub.parameter_model_type == PS25007A:" in select_source
+    assert "TmtParameterSelect(hub, index, definition)" in select_source

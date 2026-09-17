@@ -36,6 +36,7 @@ from .ps22027_parameters import (
     parameter_options_for as ps22027_parameter_options,
     wire_value_to_option as ps22027_wire_value_to_option,
 )
+from .ps25007a_parameters import CONTROLLER_TYPE as PS25007A
 
 _LEGACY_PS21053 = {"PS21053", "PS21053C"}
 
@@ -53,6 +54,16 @@ async def async_setup_entry(
     # Keep the existing PS21053 entity IDs, translation keys and stable option
     # keys exactly as they were before multi-model support was added.
     if hub.controller_type in _LEGACY_PS21053:
+        async_add_entities(
+            TmtParameterSelect(hub, index, definition)
+            for index, definition in enumerate(PARAMETERS)
+        )
+        return
+
+    # PS25007A uses the same verified 17 stable parameter/option keys as the
+    # P500BU PS21053 profile. Reuse the translated legacy entities so existing
+    # Hungarian (and other locale) names and values remain unchanged.
+    if hub.parameter_model_type == PS25007A:
         async_add_entities(
             TmtParameterSelect(hub, index, definition)
             for index, definition in enumerate(PARAMETERS)
