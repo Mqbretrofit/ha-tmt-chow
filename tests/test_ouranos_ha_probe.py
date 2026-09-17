@@ -6,13 +6,12 @@ import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tarfile
 import textwrap
 import types
-
+from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 PROBE_PATH = ROOT / "custom_components" / "tmt_chow" / "ouranos_ha_probe.py"
@@ -22,6 +21,12 @@ GLIBC_HELPER_PATH = (
 )
 GLIBC_HELPER_SHA_PATH = GLIBC_HELPER_PATH.with_suffix(".amd64.sha256")
 GLIBC_HELPER_SOURCE = ROOT / "tools" / "ouranos_glibc_helper.c"
+SESSION_HELPER_PATH = (
+    ROOT / "custom_components" / "tmt_chow" / "native"
+    / "ouranos_glibc_session_helper.amd64"
+)
+SESSION_HELPER_SHA_PATH = SESSION_HELPER_PATH.with_suffix(".amd64.sha256")
+SESSION_HELPER_SOURCE = ROOT / "tools" / "ouranos_glibc_session_helper.c"
 INIT_PATH = ROOT / "custom_components" / "tmt_chow" / "__init__.py"
 
 
@@ -194,6 +199,111 @@ def test_native_helper_has_only_allowlisted_status_write_path() -> None:
     assert '"parameter_read_command_sent\\\":false' in c_source
     assert '"parameter_write_command_sent\\\":false' in c_source
     assert "passive_attempted=1" not in c_source
+
+
+def test_persistent_helper_has_fixed_status_only_protocol() -> None:
+    source = SESSION_HELPER_SOURCE.read_text(encoding="utf-8")
+    digest = hashlib.sha256(SESSION_HELPER_PATH.read_bytes()).hexdigest()
+    session_module = (
+        ROOT / "custom_components/tmt_chow/ouranos_native_session.py"
+    ).read_text(encoding="utf-8")
+
+    assert SESSION_HELPER_SHA_PATH.read_text(encoding="ascii").strip() == digest
+    assert digest in session_module
+    assert source.count("rdt_write(rdt_id, request, request_length)") == 1
+    assert 'strcmp(command, "STATUS")' in source
+    assert 'strcmp(command, "QUIT")' in source
+    assert "READ STATUS;src=P9999999\\\\r\\\\n" in source
+    for command in ("FULL OPEN", "FULL CLOSE", "PED OPEN", "READ FUNCTION", "c=RS"):
+        assert command not in source
+
+
+def test_persistent_helper_reuses_connection_for_status_reads(tmp_path: Path) -> None:
+    iotc_source = tmp_path / "session_iotc.c"
+    rdt_source = tmp_path / "session_rdt.c"
+    iotc_library = tmp_path / "libIOTCAPIs.so"
+    rdt_library = tmp_path / "libRDTAPIs.so"
+    iotc_source.write_text(
+        textwrap.dedent(
+            """
+            int IOTC_Initialize2(unsigned short port) { (void)port; return 0; }
+            int IOTC_Get_SessionID(void) { return 7; }
+            int IOTC_Connect_ByUID_Parallel(const char *uid, int sid) {
+                (void)uid; (void)sid; return 0;
+            }
+            void IOTC_Session_Close(int sid) { (void)sid; }
+            int IOTC_DeInitialize(void) { return 0; }
+            int IOTC_Connect_Stop_BySID(int sid) { (void)sid; return 0; }
+            """
+        ),
+        encoding="utf-8",
+    )
+    rdt_source.write_text(
+        textwrap.dedent(
+            r'''
+            #include <string.h>
+            static int wrote = 0;
+            static const char pin[] = "123456";
+            static const char request[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
+            static const char response[] = "{\"VER\":1,\"CMD\":\"UART\",\"RESULT\":0,\"DATA\":\"ACK STATUS:CLOSED,0;src=P1234567\"}";
+            int RDT_Initialize(void) { return 128; }
+            int RDT_Create(int sid, int timeout, unsigned char channel) {
+                (void)sid; (void)timeout; (void)channel; return 0;
+            }
+            int RDT_Write(int id, const char *data, int length) {
+                int i; (void)id;
+                if (length != (int)strlen(request)) return -10014;
+                for (i = 0; i < length; ++i)
+                    if ((data[i] ^ pin[i % 6]) != request[i]) return -10014;
+                wrote = 1; return length;
+            }
+            int RDT_Read(int id, char *data, int length, int timeout) {
+                int i, size = (int)strlen(response); (void)id; (void)timeout;
+                if (!wrote) return -10007;
+                if (length < size) return -10014;
+                for (i = 0; i < size; ++i) data[i] = response[i] ^ pin[i % 6];
+                wrote = 0; return size;
+            }
+            int RDT_Destroy(int id) { (void)id; return 0; }
+            int RDT_DeInitialize(void) { return 0; }
+            '''
+        ),
+        encoding="utf-8",
+    )
+    for source, output in ((iotc_source, iotc_library), (rdt_source, rdt_library)):
+        subprocess.run(
+            ["gcc", "-shared", "-fPIC", str(source), "-o", str(output)],
+            check=True,
+        )
+
+    process = subprocess.Popen(
+        [str(SESSION_HELPER_PATH), str(iotc_library), str(rdt_library)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    process.stdin.write("ABCDEFGHIJKLMNOPQRST\n123456\n")
+    process.stdin.flush()
+    assert json.loads(process.stdout.readline())["connected"] is True
+
+    process.stdin.write("OPEN\n")
+    process.stdin.flush()
+    assert json.loads(process.stdout.readline())["error"] == "unsupported_command"
+    responses = []
+    for _ in range(2):
+        process.stdin.write("STATUS\n")
+        process.stdin.flush()
+        responses.append(json.loads(process.stdout.readline()))
+    process.stdin.write("QUIT\n")
+    process.stdin.flush()
+    assert process.wait(timeout=10) == 0
+
+    assert all(item["status_response_received"] is True for item in responses)
+    assert all("PXXXXXXX" in item["status_response"] for item in responses)
+    assert "123456" not in json.dumps(responses)
 
 
 def test_status_probe_requires_six_digit_pin_and_keeps_options_local() -> None:

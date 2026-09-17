@@ -231,6 +231,11 @@ async def async_get_config_entry_diagnostics(
                 if ouranos_poller is not None
                 else False
             ),
+            "ouranos_status_session_connected": (
+                ouranos_poller.session_connected
+                if ouranos_poller is not None
+                else False
+            ),
             "shadow_get_probe_result": shadow_get_probe["result"],
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],

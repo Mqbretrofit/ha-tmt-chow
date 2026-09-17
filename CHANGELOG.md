@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.16
+
+- Replaced repeated PS19001 status reconnects with one persistent, isolated IOTC/RDT session for both automatic and manual status refreshes
+- Added a separate integrity-pinned native session helper that accepts only `STATUS` and `QUIT` and can transmit only the fixed `READ STATUS` request
+- Automatically discards a timed-out, malformed or dead native session so a later poll can establish a clean replacement
+- Closes the persistent helper during integration unload and reports its connection state in privacy-safe diagnostics
+- Kept the original one-shot diagnostic action, AWS/MQTT gate controls and all controller parameter behavior unchanged
+
 ## v1.0.4-beta.15
 
 - Reduced PS19001 native connection pressure by changing successful polling from 5 to 15 seconds and failed retries from 30 to 60 seconds

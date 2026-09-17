@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import custom_components.tmt_chow.hub as hub_module
 from custom_components.tmt_chow.button import (
     TmtOuranosRefreshButton,
+)
+from custom_components.tmt_chow.button import (
     async_setup_entry as async_setup_buttons,
 )
 from custom_components.tmt_chow.const import (
@@ -47,6 +49,22 @@ def _hub() -> TmtChowHub:
         product_type="",
         device_type="PS19001",
     )
+
+
+class FakeSession:
+    def __init__(self, result: dict) -> None:
+        self.result = result
+        self.connected = True
+        self.read_count = 0
+        self.stopped = False
+
+    async def async_read_status(self) -> dict:
+        self.read_count += 1
+        return self.result
+
+    async def async_stop(self) -> None:
+        self.stopped = True
+        self.connected = False
 
 
 def test_confirmed_ped_closed_response_maps_to_closed_cover() -> None:
@@ -90,24 +108,17 @@ def test_native_status_parser_rejects_unsafe_or_malformed_envelopes() -> None:
     assert parse_ouranos_status_response("not json") is None
 
 
-def test_poller_applies_only_a_complete_status_response(monkeypatch) -> None:
+def test_poller_applies_only_a_complete_status_response() -> None:
     hub = _hub()
     payload = _response("OPENED", 100)
 
-    async def fake_probe(hass, uuid: str, pin_code: str):
-        del hass
-        assert uuid == hub.uuid
-        assert pin_code == "123456"
-        return {
+    session = FakeSession(
+        {
             "result": "status_response_received",
             "native": {"status_response": payload},
         }
-
-    monkeypatch.setattr(
-        "custom_components.tmt_chow.ouranos_status.async_probe_ouranos_on_ha",
-        fake_probe,
     )
-    poller = OuranosStatusPoller(object(), hub, "123456")
+    poller = OuranosStatusPoller(object(), hub, "123456", session=session)
 
     assert asyncio.run(poller.async_refresh_once()) is True
     assert poller.last_result == "status_response_received"
@@ -115,20 +126,15 @@ def test_poller_applies_only_a_complete_status_response(monkeypatch) -> None:
     assert poller.last_success_at is not None
     assert poller.consecutive_failures == 0
     assert hub.position == 100
+    assert poller.session_connected is True
+    assert session.read_count == 1
 
 
-def test_poller_does_not_apply_partial_probe_result(monkeypatch) -> None:
+def test_poller_does_not_apply_partial_probe_result() -> None:
     hub = _hub()
 
-    async def fake_probe(hass, uuid: str, pin_code: str):
-        del hass, uuid, pin_code
-        return {"result": "rdt_connected", "native": {}}
-
-    monkeypatch.setattr(
-        "custom_components.tmt_chow.ouranos_status.async_probe_ouranos_on_ha",
-        fake_probe,
-    )
-    poller = OuranosStatusPoller(object(), hub, "123456")
+    session = FakeSession({"result": "rdt_connected", "native": {}})
+    poller = OuranosStatusPoller(object(), hub, "123456", session=session)
 
     assert asyncio.run(poller.async_refresh_once()) is False
     assert poller.last_result == "rdt_connected"
@@ -144,20 +150,24 @@ def test_failed_refresh_keeps_last_valid_status_available(monkeypatch) -> None:
     monkeypatch.setattr(hub_module.time, "monotonic", lambda: now)
     assert hub.apply_ouranos_status_response(_response("CLOSED", 0)) is True
 
-    async def failed_probe(hass, uuid: str, pin_code: str):
-        del hass, uuid, pin_code
-        return {"result": "rdt_connected", "native": {}}
-
-    monkeypatch.setattr(
-        "custom_components.tmt_chow.ouranos_status.async_probe_ouranos_on_ha",
-        failed_probe,
-    )
-    poller = OuranosStatusPoller(object(), hub, "123456")
+    session = FakeSession({"result": "rdt_connected", "native": {}})
+    poller = OuranosStatusPoller(object(), hub, "123456", session=session)
     assert asyncio.run(poller.async_refresh_once()) is False
 
     assert hub.position == 0
     assert hub.ouranos_status_available is True
     assert hub.available is True
+
+
+def test_poller_stop_always_closes_persistent_session() -> None:
+    hub = _hub()
+    session = FakeSession({"result": "rdt_connected", "native": {}})
+    poller = OuranosStatusPoller(object(), hub, "123456", session=session)
+
+    asyncio.run(poller.async_stop())
+
+    assert session.stopped is True
+    assert poller.session_connected is False
 
 
 def test_native_availability_expires_only_after_extended_grace(monkeypatch) -> None:

@@ -6,6 +6,7 @@ on:
       - ouranos-self-contained-glibc-helper
     paths:
       - tools/ouranos_glibc_helper.c
+      - tools/ouranos_glibc_session_helper.c
       - .github/workflows/build-ouranos-helper.yml
   workflow_dispatch:
 
@@ -34,7 +35,16 @@ jobs:
           sha256sum custom_components/tmt_chow/native/ouranos_glibc_helper.amd64 \
             | awk '{print $1}' \
             > custom_components/tmt_chow/native/ouranos_glibc_helper.amd64.sha256
+          gcc -O2 -Wall -Wextra \
+            tools/ouranos_glibc_session_helper.c \
+            -ldl -lpthread \
+            -o custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64
+          strip custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64
+          sha256sum custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64 \
+            | awk '{print $1}' \
+            > custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64.sha256
           file custom_components/tmt_chow/native/ouranos_glibc_helper.amd64
+          file custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64
 
       - name: Commit generated helper
         run: |
@@ -43,7 +53,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             custom_components/tmt_chow/native/ouranos_glibc_helper.amd64 \
-            custom_components/tmt_chow/native/ouranos_glibc_helper.amd64.sha256
+            custom_components/tmt_chow/native/ouranos_glibc_helper.amd64.sha256 \
+            custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64 \
+            custom_components/tmt_chow/native/ouranos_glibc_session_helper.amd64.sha256
           if git diff --cached --quiet; then
             echo "Generated helper is already up to date."
             exit 0

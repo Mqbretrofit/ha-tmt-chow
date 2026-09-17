@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import UTC, datetime
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -15,7 +15,7 @@ from .const import (
     OURANOS_STATUS_POLL_SECONDS,
 )
 from .hub import TmtChowHub
-from .ouranos_ha_probe import async_probe_ouranos_on_ha
+from .ouranos_native_session import OuranosNativeSession
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +30,13 @@ class OuranosStatusPoller:
         pin_code: str,
         *,
         interval: float = OURANOS_STATUS_POLL_SECONDS,
+        session: OuranosNativeSession | None = None,
     ) -> None:
         self._hass = hass
         self._hub = hub
         self._pin_code = pin_code
         self._interval = interval
+        self._session = session or OuranosNativeSession(hass, hub.uuid, pin_code)
         self._refresh_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last_result: str | None = None
@@ -49,20 +51,18 @@ class OuranosStatusPoller:
 
     async def async_stop(self) -> None:
         """Stop polling and the currently running isolated helper, if any."""
-        if self._task is None:
-            return
-        self._task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._task
-        self._task = None
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        await self._session.async_stop()
 
     async def async_refresh_once(self) -> bool:
         """Read and apply one native gate status."""
         async with self._refresh_lock:
             self.last_attempt_at = datetime.now(UTC).isoformat()
-            result: dict[str, Any] = await async_probe_ouranos_on_ha(
-                self._hass, self._hub.uuid, self._pin_code
-            )
+            result: dict[str, Any] = await self._session.async_read_status()
             self.last_result = str(result.get("result") or "unknown")
             if self.last_result != "status_response_received":
                 self.consecutive_failures += 1
@@ -97,13 +97,18 @@ class OuranosStatusPoller:
         """Return whether a native refresh is currently running."""
         return self._refresh_lock.locked()
 
+    @property
+    def session_connected(self) -> bool:
+        """Return whether the persistent native transport is alive."""
+        return self._session.connected
+
     async def _async_poll_loop(self) -> None:
         while True:
             try:
                 succeeded = await self.async_refresh_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001 - keep later read attempts alive
+            except Exception:
                 self.last_result = "unexpected_error"
                 self.consecutive_failures += 1
                 self._hub.notify_ouranos_status_failure()
