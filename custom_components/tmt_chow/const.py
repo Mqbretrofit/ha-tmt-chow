@@ -29,6 +29,7 @@ OAUTH_CLIENT: Final = (
 )
 
 CONF_UUID: Final = "uuid"
+CONF_UUID_TYPE: Final = "uuid_type"
 CONF_ENDPOINT: Final = "endpoint"
 CONF_THING_NAME: Final = "thing_name"
 CONF_CERTIFICATE_PEM: Final = "certificate_pem"
