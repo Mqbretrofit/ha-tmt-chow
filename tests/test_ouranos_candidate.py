@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from custom_components.tmt_chow import _is_ouranos_probe_candidate
+from custom_components.tmt_chow import (
+    _is_known_ouranos_candidate,
+    _is_ouranos_probe_candidate,
+)
 from custom_components.tmt_chow.const import CONF_UUID, CONF_UUID_TYPE, DOMAIN
 
 
@@ -37,7 +40,7 @@ def test_wbt_uuid_type_is_not_ouranos_for_unknown_controller() -> None:
 def test_legacy_ps19001_fallback_remains_available() -> None:
     uuid = "12345678901234567890"
     hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS19001")
-    assert _is_ouranos_probe_candidate(_hass_for(uuid, ""), hub) is True
+    assert _is_known_ouranos_candidate(hub) is True
 
 
 def test_identifier_length_alone_is_not_transport_evidence() -> None:
