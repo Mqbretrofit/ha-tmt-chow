@@ -47,6 +47,7 @@ _FUNCTION_VALUE_KEYS = frozenset(
         "code",
         "command",
         "cmd",
+        "dcmd",  # ResponseProposalInfo.FunctionSet uses dCmd in TMT Chow 3.2.0.
         "value",
     }
 )
@@ -171,7 +172,10 @@ def proposal_gate_family(proposal: Mapping[str, Any] | None) -> str | None:
     if not isinstance(value, str):
         return None
     folded = value.casefold()
-    if "slid" in folded:
+    # Vendor cloud proposals can use localized gate names.  PS25142 reports
+    # Traditional Chinese 橫拉門 (and some endpoints use simplified 横拉门), both
+    # meaning a horizontally sliding gate.
+    if "slid" in folded or "橫拉門" in value or "横拉门" in value:
         return "sliding"
     if "swing" in folded:
         return "swing"
