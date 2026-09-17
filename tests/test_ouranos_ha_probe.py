@@ -71,15 +71,27 @@ def test_home_assistant_probe_uses_pinned_tmt_generation_x64_sdk() -> None:
     assert probe._TMT_APK_IOTC_VERSION == "0x03010521"
     assert probe._PROBE_IOTC_VERSION == "0x03010526"
     assert probe._PROBE_RDT_VERSION == "0x03010526"
+    assert probe._STATUS_COMMAND_MODES == frozenset({"READ_STATUS", "RS"})
 
 
 def test_twenty_character_uid_is_accepted_by_transport_probe() -> None:
     probe = _load_probe()
     result = probe._base_result("ABCDEFGHIJKLMNOPQRST")
     assert result["applicable"] is True
+    assert result["status_command"] == "READ STATUS"
     assert result["safety"]["rdt_write_called"] is False
     assert result["safety"]["gate_command_sent"] is False
     assert result["safety"]["status_read_command_sent"] is False
+    assert result["safety"]["parameter_read_command_sent"] is False
+    assert result["safety"]["parameter_write_command_sent"] is False
+
+
+def test_rs_mode_is_exposed_as_read_only_status_command() -> None:
+    probe = _load_probe()
+    result = probe._base_result("ABCDEFGHIJKLMNOPQRST", "RS")
+    assert result["status_command_mode"] == "RS"
+    assert result["status_command"] == "RS"
+    assert result["safety"]["gate_command_sent"] is False
     assert result["safety"]["parameter_read_command_sent"] is False
     assert result["safety"]["parameter_write_command_sent"] is False
 
@@ -183,7 +195,11 @@ def test_native_helper_has_only_allowlisted_status_write_path() -> None:
     assert ".RDT_Write.restype" not in python_source
     assert "RDT_Write" in c_source
     assert c_source.count("RDT_Write(rdt_id,request,request_len)") == 1
-    assert "READ STATUS;src=P9999999\\\\r\\\\n" in c_source
+    assert 'strcmp(modebuf, "READ_STATUS")' in c_source
+    assert 'strcmp(modebuf, "RS")' in c_source
+    assert '"READ STATUS"' in c_source
+    assert '"RS"' in c_source
+    assert "%s;src=P9999999\\\\r\\\\n" in c_source
 
     for command in (
         "FULL OPEN",
@@ -319,7 +335,8 @@ def test_status_probe_requires_six_digit_pin_and_keeps_options_local() -> None:
 
     assert 'call.data.get("pin_code", "")' in init_source
     assert "Gate PIN must contain exactly 6 digits" in init_source
-    assert "async_probe_ouranos_on_ha(hass, hub.uuid, pin_code)" in init_source
+    assert "status_command = _ouranos_probe_status_command(hass, hub)" in init_source
+    assert "hass, hub.uuid, pin_code, status_command" in init_source
     assert "type: password" in service_source
 
     config_flow_source = (
@@ -412,6 +429,7 @@ def test_glibc_helper_sends_and_decodes_exact_status_request(tmp_path: Path) -> 
     )
     payload = json.loads(completed.stdout)
 
+    assert payload["status_command"] == "READ STATUS"
     assert payload["status_write_code"] > 0
     assert payload["status_request_sent"] is True
     assert payload["status_response_received"] is True
@@ -426,3 +444,93 @@ def test_glibc_helper_sends_and_decodes_exact_status_request(tmp_path: Path) -> 
         "parameter_read_command_sent": False,
         "parameter_write_command_sent": False,
     }
+
+
+def test_glibc_helper_sends_and_decodes_exact_rs_request(tmp_path: Path) -> None:
+    iotc_source = tmp_path / "iotc_rs.c"
+    rdt_source = tmp_path / "rdt_rs.c"
+    iotc_library = tmp_path / "libIOTCAPIs_rs.so"
+    rdt_library = tmp_path / "libRDTAPIs_rs.so"
+
+    iotc_source.write_text(
+        textwrap.dedent(
+            """
+            void IOTC_Get_Version(unsigned int *version) { *version = 0x03010526; }
+            int IOTC_Initialize2(unsigned short port) { (void)port; return 0; }
+            int IOTC_Get_SessionID(void) { return 7; }
+            int IOTC_Connect_ByUID_Parallel(const char *uid, int sid) {
+                (void)uid; (void)sid; return 0;
+            }
+            void IOTC_Session_Close(int sid) { (void)sid; }
+            int IOTC_DeInitialize(void) { return 0; }
+            int IOTC_Connect_Stop_BySID(int sid) { (void)sid; return 0; }
+            """
+        ),
+        encoding="utf-8",
+    )
+    rdt_source.write_text(
+        textwrap.dedent(
+            r'''
+            #include <string.h>
+            static int wrote = 0;
+            static const char pin[] = "123456";
+            static const char request[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"RS;src=P9999999\\r\\n\"}}";
+            static const char response[] = "{\"VER\":1,\"CMD\":\"UART\",\"RESULT\":0,\"DATA\":\"ACK RS:CLOSE;src=P1234567\"}";
+            int RDT_GetRDTApiVer(void) { return 0x03010526; }
+            int RDT_Initialize(void) { return 128; }
+            int RDT_Create(int sid, int timeout, unsigned char channel) {
+                (void)sid; (void)timeout; (void)channel; return 0;
+            }
+            int RDT_Write(int id, const char *data, int length) {
+                int i;
+                (void)id;
+                if (length != (int)strlen(request)) return -10014;
+                for (i = 0; i < length; ++i) {
+                    if ((data[i] ^ pin[i % 6]) != request[i]) return -10014;
+                }
+                wrote = 1;
+                return length;
+            }
+            int RDT_Read(int id, char *data, int length, int timeout) {
+                int i, size = (int)strlen(response);
+                (void)id; (void)timeout;
+                if (!wrote) return -10007;
+                if (length < size) return -10014;
+                for (i = 0; i < size; ++i) data[i] = response[i] ^ pin[i % 6];
+                wrote = 0;
+                return size;
+            }
+            int RDT_Destroy(int id) { (void)id; return 0; }
+            int RDT_DeInitialize(void) { return 0; }
+            '''
+        ),
+        encoding="utf-8",
+    )
+    for source, output in (
+        (iotc_source, iotc_library),
+        (rdt_source, rdt_library),
+    ):
+        subprocess.run(
+            ["gcc", "-shared", "-fPIC", str(source), "-o", str(output)],
+            check=True,
+        )
+
+    completed = subprocess.run(
+        [str(GLIBC_HELPER_PATH), str(iotc_library), str(rdt_library)],
+        input="ABCDEFGHIJKLMNOPQRST\n123456\nRS\n",
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=15,
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["status_command"] == "RS"
+    assert payload["status_write_code"] > 0
+    assert payload["status_request_sent"] is True
+    assert payload["status_response_received"] is True
+    assert "ACK RS:CLOSE;src=PXXXXXXX" in payload["status_response"]
+    assert "123456" not in completed.stdout
+    assert payload["safety"]["gate_command_sent"] is False
+    assert payload["safety"]["parameter_read_command_sent"] is False
+    assert payload["safety"]["parameter_write_command_sent"] is False
