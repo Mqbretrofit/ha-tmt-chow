@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 import contextlib
 import json
 import logging
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from .const import (
     ATTR_DEV_INFO,
@@ -56,6 +56,9 @@ from .ps21050d_parameters import (
     PARAMETERS as PS21050D_PARAMETERS,
     parse_parameter_response as parse_ps21050d_parameter_response,
 )
+
+if TYPE_CHECKING:
+    from .ouranos_native_session import OuranosNativeSession
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,6 +128,7 @@ class TmtChowHub:
         self._last_ouranos_status_monotonic: float | None = None
         self._state_synchronized = False
         self._stopping = False
+        self._ouranos_native_session: OuranosNativeSession | None = None
 
         # TMT uses the device UUID as the topic/Shadow thing identifier.
         self.rx_topic = f"{uuid}/wbt01Rx"
@@ -181,6 +185,12 @@ class TmtChowHub:
     @property
     def mqtt_connected(self) -> bool:
         return self._mqtt.connected
+
+    def set_ouranos_native_session(
+        self, session: OuranosNativeSession | None
+    ) -> None:
+        """Attach the verified PS19001 native transport used by this hub."""
+        self._ouranos_native_session = session
 
     @property
     def parameter_schema_verified(self) -> bool:
@@ -511,6 +521,8 @@ class TmtChowHub:
         return False
 
     async def _async_exchange(self, payload: str, expected: str) -> str:
+        if self._ouranos_native_session is not None:
+            return await self._async_ouranos_exchange(payload, expected)
         if not self._mqtt.connected or self.device_online is False:
             raise TmtCommandError(
                 "The gate is offline",
@@ -533,6 +545,35 @@ class TmtChowHub:
         finally:
             with contextlib.suppress(ValueError):
                 self._waiters.remove(waiter)
+
+    async def _async_ouranos_exchange(self, payload: str, expected: str) -> str:
+        """Route a verified PS19001 command through its native IOTC/RDT session."""
+        command = payload.removeprefix("c=").split(";src=", 1)[0]
+        session = self._ouranos_native_session
+        assert session is not None
+        if command == "READ FUNCTION":
+            result = await session.async_read_parameters()
+        elif command.startswith("WRITE FUNCTION"):
+            result = await session.async_write_parameters(command)
+        else:
+            result = await session.async_gate_command(command)
+
+        native = result.get("native")
+        response = native.get("response") if isinstance(native, dict) else None
+        if isinstance(response, str) and "NAK " in response:
+            raise TmtCommandError(
+                response,
+                translation_key="command_rejected",
+                translation_placeholders={"response": response},
+            )
+        if not isinstance(response, str) or expected not in response:
+            raise TmtCommandError(
+                f"No {expected} acknowledgement",
+                translation_key="no_acknowledgement",
+                translation_placeholders={"acknowledgement": expected},
+            ) from TimeoutError(str(result.get("result") or "native_exchange_failed"))
+        self.attributes[ATTR_LAST_RESPONSE] = response
+        return response
 
     async def _async_refresh_parameters_safely(self) -> None:
         try:

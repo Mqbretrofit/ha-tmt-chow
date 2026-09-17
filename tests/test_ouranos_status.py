@@ -21,6 +21,10 @@ from custom_components.tmt_chow.const import (
     OURANOS_STATUS_AVAILABILITY_SECONDS,
 )
 from custom_components.tmt_chow.ouranos_status import OuranosStatusPoller
+from custom_components.tmt_chow.parameter_codec import (
+    encode_model_parameter_write,
+    parameter_defaults,
+)
 from custom_components.tmt_chow.protocol import parse_ouranos_status_response
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
@@ -67,6 +71,34 @@ class FakeSession:
         self.connected = False
 
 
+class FakeControlSession(FakeSession):
+    def __init__(self, parameter_reads: list[str] | None = None) -> None:
+        super().__init__({})
+        self.commands: list[str] = []
+        self.parameter_writes: list[str] = []
+        self.parameter_reads = list(parameter_reads or [])
+
+    async def async_gate_command(self, command: str) -> dict:
+        self.commands.append(command)
+        return {
+            "result": "command_response_received",
+            "native": {"response": f"ACK {command}"},
+        }
+
+    async def async_read_parameters(self) -> dict:
+        return {
+            "result": "parameter_read_response_received",
+            "native": {"response": self.parameter_reads.pop(0)},
+        }
+
+    async def async_write_parameters(self, command: str) -> dict:
+        self.parameter_writes.append(command)
+        return {
+            "result": "parameter_write_response_received",
+            "native": {"response": "ACK FUNCTION"},
+        }
+
+
 def test_confirmed_ped_closed_response_maps_to_closed_cover() -> None:
     payload = _response("PED CLOSED", 0)
     parsed = parse_ouranos_status_response(payload)
@@ -101,6 +133,43 @@ def test_native_opening_and_closing_responses_map_movement() -> None:
     assert (hub.position, hub.movement, hub.is_operating) == (31, "closing", True)
 
 
+def test_ps19001_cover_commands_use_native_session_exactly_once() -> None:
+    hub = _hub()
+    session = FakeControlSession()
+    hub.set_ouranos_native_session(session)
+
+    asyncio.run(hub.async_open())
+    asyncio.run(hub.async_close())
+    asyncio.run(hub.async_pedestrian_open())
+    asyncio.run(hub.async_stop_gate())
+
+    assert session.commands == ["FULL OPEN", "FULL CLOSE", "PED OPEN", "STOP"]
+
+
+def test_ps19001_parameter_write_reads_writes_once_and_verifies() -> None:
+    hub = _hub()
+    defaults = parameter_defaults("PS19001")
+    assert defaults is not None and len(defaults) == 23
+    updated = list(defaults)
+    updated[0] = 0
+
+    def response(values: tuple[int, ...]) -> str:
+        command = encode_model_parameter_write("PS19001", values)
+        return "ACK READ FUNCTION" + command.removeprefix("WRITE FUNCTION")
+
+    session = FakeControlSession(
+        [response(defaults), response(tuple(updated))]
+    )
+    hub.set_ouranos_native_session(session)
+
+    asyncio.run(hub.async_set_parameter(0, 0))
+
+    assert session.parameter_writes == [
+        encode_model_parameter_write("PS19001", tuple(updated))
+    ]
+    assert hub.parameters == tuple(updated)
+
+
 def test_native_status_parser_rejects_unsafe_or_malformed_envelopes() -> None:
     assert parse_ouranos_status_response(_response("CLOSED", 0, result=1)) is None
     assert parse_ouranos_status_response(_response("UNKNOWN", 50)) is None
@@ -115,7 +184,7 @@ def test_poller_applies_only_a_complete_status_response() -> None:
     session = FakeSession(
         {
             "result": "status_response_received",
-            "native": {"status_response": payload},
+            "native": {"response": payload},
         }
     )
     poller = OuranosStatusPoller(object(), hub, "123456", session=session)

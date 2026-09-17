@@ -177,16 +177,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
-    try:
-        await hub.async_start()
-    except MqttError as err:
-        raise ConfigEntryNotReady(str(err)) from err
-
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = hub
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
-    _register_services(hass)
-    await _async_setup_frontend(hass)
-
+    poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
         if (
@@ -194,16 +185,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             and len(pin_code) == 6
             and all("0" <= char <= "9" for char in pin_code)
         ):
+            # Attach before hub startup so the first parameter bootstrap already
+            # uses the proven OURANOS route instead of the unavailable WBT path.
             poller = OuranosStatusPoller(hass, hub, pin_code)
-            hass.data.setdefault(OURANOS_POLLERS_DATA_KEY, {})[
-                entry.entry_id
-            ] = poller
-            await poller.async_start()
         else:
             _LOGGER.warning(
-                "Ignoring invalid native PS19001 status configuration for %s",
+                "Ignoring invalid native PS19001 configuration for %s",
                 entry.title,
             )
+    try:
+        await hub.async_start()
+    except MqttError as err:
+        if poller is not None:
+            await poller.async_stop()
+        raise ConfigEntryNotReady(str(err)) from err
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = hub
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    _register_services(hass)
+    await _async_setup_frontend(hass)
+
+    if poller is not None:
+        hass.data.setdefault(OURANOS_POLLERS_DATA_KEY, {})[entry.entry_id] = poller
+        await poller.async_start()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

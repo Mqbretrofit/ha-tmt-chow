@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.17
+
+- Added native PS19001 full-open, full-close, stop and pedestrian-open control over the already proven persistent IOTC/RDT session
+- Added native `READ FUNCTION` and full-frame `WRITE FUNCTION` support for all 23 APK-derived PS19001 parameters
+- Kept parameter writes transactional: fresh full read, exactly one write with no automatic retry, then mandatory readback verification
+- Restricted the native helper to fixed movement/read operations and a validated UART0 parameter-frame grammar; arbitrary wire commands remain rejected
+- Left every non-PS19001 AWS/MQTT control and parameter path unchanged
+
 ## v1.0.4-beta.16
 
 - Replaced repeated PS19001 status reconnects with one persistent, isolated IOTC/RDT session for both automatic and manual status refreshes

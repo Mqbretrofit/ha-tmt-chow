@@ -135,9 +135,9 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
-### Experimental PS19001 native status
+### Experimental PS19001 native control
 
-`v1.0.4-beta.16` can automatically update the cover position and opening/closing state for the confirmed PS19001 / 20-character UID case through the APK-compatible native `READ STATUS` path. This remains opt-in and read-only: native open, close, stop and parameter commands are not implemented. Existing AWS/MQTT controllers continue to use the unchanged cloud-push and command paths.
+`v1.0.4-beta.17` adds complete native control for the confirmed PS19001 / 20-character UID case: full open, full close, stop, pedestrian opening, live status, and all 23 APK-derived model parameters. Existing AWS/MQTT controllers continue to use their unchanged cloud-push and command paths.
 
 The native reader currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
 
@@ -147,7 +147,7 @@ To enable automatic status:
 2. Open **Configure** for the PS19001 gate.
 3. Enter the gate's six-digit TMT Chow PIN and save.
 
-The PIN is stored locally in the Home Assistant config entry, displayed as a password field, passed to the isolated helper over standard input, and redacted from diagnostics. Clear the field and save to disable polling. A dedicated isolated helper keeps one IOTC/RDT connection alive and accepts only `STATUS` and `QUIT`; every status request is still the same fixed `READ STATUS` payload. Successful reads are scheduled 15 seconds apart and failed attempts back off to 60 seconds. A valid last-known native state keeps the cover available for up to 15 minutes, and the **Refresh native gate status** button reuses the persistent connection for an immediate read. The original one-shot `tmt_chow.ouranos_probe` diagnostic action remains unchanged.
+The PIN is stored locally in the Home Assistant config entry, displayed as a password field, passed to the isolated helper over standard input, and redacted from diagnostics. Clear the field and save to disable native operation. The helper keeps one IOTC/RDT connection alive and accepts only a fixed allowlist of PS19001 operations; arbitrary wire commands are rejected. Parameter changes use a fresh full read, one complete write with no automatic retry, and a mandatory readback verification. Successful status reads are scheduled 15 seconds apart and failed attempts back off to 60 seconds. A valid last-known native state keeps the cover available for up to 15 minutes, and the **Refresh native gate status** button reuses the persistent connection for an immediate read. The original one-shot `tmt_chow.ouranos_probe` diagnostic action remains unchanged.
 
 ## Home Assistant entities
 

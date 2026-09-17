@@ -201,7 +201,7 @@ def test_native_helper_has_only_allowlisted_status_write_path() -> None:
     assert "passive_attempted=1" not in c_source
 
 
-def test_persistent_helper_has_fixed_status_only_protocol() -> None:
+def test_persistent_helper_has_strict_allowlisted_control_protocol() -> None:
     source = SESSION_HELPER_SOURCE.read_text(encoding="utf-8")
     digest = hashlib.sha256(SESSION_HELPER_PATH.read_bytes()).hexdigest()
     session_module = (
@@ -213,9 +213,14 @@ def test_persistent_helper_has_fixed_status_only_protocol() -> None:
     assert source.count("rdt_write(rdt_id, request, request_length)") == 1
     assert 'strcmp(command, "STATUS")' in source
     assert 'strcmp(command, "QUIT")' in source
-    assert "READ STATUS;src=P9999999\\\\r\\\\n" in source
-    for command in ("FULL OPEN", "FULL CLOSE", "PED OPEN", "READ FUNCTION", "c=RS"):
-        assert command not in source
+    for command in ("FULL OPEN", "FULL CLOSE", "PED OPEN", "READ FUNCTION"):
+        assert command in source
+    assert "WRITE FUNCTION%s" in source
+    assert "valid_parameter_fragment" in source
+    assert 'strcmp(command, "OPEN")' in source
+    assert 'strcmp(command, "CLOSE")' in source
+    assert 'strcmp(command, "PED")' in source
+    assert 'strcmp(command, "PARAM_READ")' in source
 
 
 def test_persistent_helper_reuses_connection_for_status_reads(tmp_path: Path) -> None:
@@ -289,7 +294,7 @@ def test_persistent_helper_reuses_connection_for_status_reads(tmp_path: Path) ->
     process.stdin.flush()
     assert json.loads(process.stdout.readline())["connected"] is True
 
-    process.stdin.write("OPEN\n")
+    process.stdin.write("ARBITRARY\n")
     process.stdin.flush()
     assert json.loads(process.stdout.readline())["error"] == "unsupported_command"
     responses = []
@@ -301,8 +306,8 @@ def test_persistent_helper_reuses_connection_for_status_reads(tmp_path: Path) ->
     process.stdin.flush()
     assert process.wait(timeout=10) == 0
 
-    assert all(item["status_response_received"] is True for item in responses)
-    assert all("PXXXXXXX" in item["status_response"] for item in responses)
+    assert all(item["response_received"] is True for item in responses)
+    assert all("PXXXXXXX" in item["response"] for item in responses)
     assert "123456" not in json.dumps(responses)
 
 

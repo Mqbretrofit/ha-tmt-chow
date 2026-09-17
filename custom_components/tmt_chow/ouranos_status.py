@@ -1,4 +1,4 @@
-"""Opt-in read-only native status polling for confirmed PS19001 gates."""
+"""Native status polling for confirmed PS19001 gates."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class OuranosStatusPoller:
-    """Periodically run the isolated PS19001 status-only helper."""
+    """Periodically read status through the shared native PS19001 session."""
 
     def __init__(
         self,
@@ -37,6 +37,7 @@ class OuranosStatusPoller:
         self._pin_code = pin_code
         self._interval = interval
         self._session = session or OuranosNativeSession(hass, hub.uuid, pin_code)
+        self._hub.set_ouranos_native_session(self._session)
         self._refresh_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last_result: str | None = None
@@ -57,6 +58,7 @@ class OuranosStatusPoller:
                 await self._task
             self._task = None
         await self._session.async_stop()
+        self._hub.set_ouranos_native_session(None)
 
     async def async_refresh_once(self) -> bool:
         """Read and apply one native gate status."""
@@ -75,9 +77,7 @@ class OuranosStatusPoller:
                 return False
 
             native = result.get("native")
-            response = (
-                native.get("status_response") if isinstance(native, dict) else None
-            )
+            response = native.get("response") if isinstance(native, dict) else None
             if not isinstance(response, str):
                 self.last_result = "missing_status_response"
                 self.consecutive_failures += 1

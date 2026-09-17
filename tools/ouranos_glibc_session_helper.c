@@ -101,27 +101,54 @@ static void print_ready(int connected, const char *stage, int code) {
     printf("{\"event\":\"ready\",\"connected\":%s,\"stage\":",
            connected ? "true" : "false");
     json_str(stage);
-    printf(",\"code\":%d,\"safety\":{\"fixed_status_only\":true,"
+    printf(",\"code\":%d,\"safety\":{\"allowlisted_commands_only\":true,"
            "\"arbitrary_command_input\":false,\"gate_command_sent\":false,"
            "\"parameter_read_command_sent\":false,"
            "\"parameter_write_command_sent\":false}}\n", code);
     fflush(stdout);
 }
 
-static int send_status(
+static int valid_parameter_fragment(const char *fragment) {
+    static const char field_ids[] = "0123456789ABCDEFGHIJKLM";
+    size_t field, index = 0, length = strlen(fragment);
+    if (length < 4 || length > 768 || fragment[0] != ',') return 0;
+    for (field = 0; field < sizeof(field_ids) - 1; ++field) {
+        size_t value_start;
+        if (fragment[index++] != ',' ||
+            fragment[index++] != field_ids[field] ||
+            fragment[index++] != ':') return 0;
+        value_start = index;
+        while (fragment[index] != 0 && fragment[index] != ',') {
+            char c = fragment[index++];
+            if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')))
+                return 0;
+        }
+        if (index == value_start) return 0;
+    }
+    return fragment[index] == 0;
+}
+
+static int send_exchange(
     int rdt_id,
     fn_rdt_write rdt_write,
     fn_rdt_read rdt_read,
     const char *uid,
-    const char pin[6]
+    const char pin[6],
+    const char *event,
+    const char *pk_command,
+    const char *expected_ack,
+    int gate_command,
+    int parameter_read,
+    int parameter_write
 ) {
-    static const char request_json[] =
-        "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{"
-        "\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
-    char request[sizeof(request_json)];
+    char request[1200];
     char buffer[4096];
     char response[4097] = {0};
-    int request_length = (int)strlen(request_json);
+    int request_length = snprintf(
+        request, sizeof(request),
+        "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{"
+        "\"PKCMD\":\"%s;src=P9999999\\r\\n\"}}", pk_command
+    );
     int write_code;
     int last_read_code = -10007;
     int response_received = 0;
@@ -129,7 +156,7 @@ static int send_status(
     int transport_alive = 1;
     long deadline;
 
-    memcpy(request, request_json, sizeof(request_json));
+    if (request_length <= 0 || request_length >= (int)sizeof(request)) return 0;
     xor_with_pin(request, request_length, pin);
     write_code = rdt_write(rdt_id, request, request_length);
     memset(request, 0, sizeof(request));
@@ -146,7 +173,8 @@ static int send_status(
                 xor_with_pin(response, copy_length, pin);
                 redact_response(response, copy_length, uid, pin);
                 response_bytes += read_code;
-                if (strstr(response, "ACK STATUS") != NULL) {
+                if (strstr(response, expected_ack) != NULL ||
+                    strstr(response, "NAK ") != NULL) {
                     response_received = 1;
                     break;
                 }
@@ -160,10 +188,11 @@ static int send_status(
         transport_alive = 0;
     }
 
-    printf("{\"event\":\"status\",\"status_write_code\":%d,"
-           "\"status_request_sent\":%s,\"response_read_last_code\":%d,"
-           "\"response_read_bytes\":%d,\"status_response_received\":%s,"
-           "\"transport_alive\":%s,\"status_response\":",
+    printf("{\"event\":");
+    json_str(event);
+    printf(",\"write_code\":%d,\"request_sent\":%s,"
+           "\"response_read_last_code\":%d,\"response_read_bytes\":%d,"
+           "\"response_received\":%s,\"transport_alive\":%s,\"response\":",
            write_code, write_code >= 0 ? "true" : "false", last_read_code,
            response_bytes, response_received ? "true" : "false",
            transport_alive ? "true" : "false");
@@ -173,10 +202,13 @@ static int send_status(
         printf("null");
     }
     printf(",\"safety\":{\"rdt_write_called\":true,"
-           "\"status_read_command_sent\":%s,\"gate_command_sent\":false,"
-           "\"parameter_read_command_sent\":false,"
-           "\"parameter_write_command_sent\":false}}\n",
-           write_code >= 0 ? "true" : "false");
+           "\"status_read_command_sent\":%s,\"gate_command_sent\":%s,"
+           "\"parameter_read_command_sent\":%s,"
+           "\"parameter_write_command_sent\":%s}}\n",
+           strcmp(event, "status") == 0 && write_code >= 0 ? "true" : "false",
+           gate_command && write_code >= 0 ? "true" : "false",
+           parameter_read && write_code >= 0 ? "true" : "false",
+           parameter_write && write_code >= 0 ? "true" : "false");
     fflush(stdout);
     return transport_alive;
 }
@@ -186,7 +218,7 @@ int main(int argc, char **argv) {
     const char *rdt_library_path;
     char uid_buffer[64] = {0};
     char pin[16] = {0};
-    char command[32];
+    char command[1024];
     void *iotc_handle = NULL;
     void *rdt_handle = NULL;
     int sid = -1;
@@ -330,14 +362,37 @@ int main(int argc, char **argv) {
         if (strcmp(command, "QUIT") == 0) {
             break;
         }
-        if (strcmp(command, "STATUS") != 0) {
+        const char *event = NULL;
+        const char *pk_command = NULL;
+        const char *expected_ack = NULL;
+        int gate_command = 0, parameter_read = 0, parameter_write = 0;
+        if (strcmp(command, "STATUS") == 0) {
+            event = "status"; pk_command = "READ STATUS"; expected_ack = "ACK STATUS";
+        } else if (strcmp(command, "OPEN") == 0) {
+            event = "command"; pk_command = "FULL OPEN"; expected_ack = "ACK FULL OPEN"; gate_command = 1;
+        } else if (strcmp(command, "CLOSE") == 0) {
+            event = "command"; pk_command = "FULL CLOSE"; expected_ack = "ACK FULL CLOSE"; gate_command = 1;
+        } else if (strcmp(command, "STOP") == 0) {
+            event = "command"; pk_command = "STOP"; expected_ack = "ACK STOP"; gate_command = 1;
+        } else if (strcmp(command, "PED") == 0) {
+            event = "command"; pk_command = "PED OPEN"; expected_ack = "ACK PED OPEN"; gate_command = 1;
+        } else if (strcmp(command, "PARAM_READ") == 0) {
+            event = "parameter_read"; pk_command = "READ FUNCTION"; expected_ack = "ACK READ FUNCTION"; parameter_read = 1;
+        } else if (strncmp(command, "PARAM_WRITE ", 12) == 0 &&
+                   valid_parameter_fragment(command + 12)) {
+            static char write_command[800];
+            snprintf(write_command, sizeof(write_command), "WRITE FUNCTION%s", command + 12);
+            event = "parameter_write"; pk_command = write_command; expected_ack = "ACK FUNCTION"; parameter_write = 1;
+        } else {
             printf("{\"event\":\"error\",\"error\":"
                    "\"unsupported_command\",\"transport_alive\":true}\n");
             fflush(stdout);
             continue;
         }
-        if (!send_status(
-                rdt_id, RDT_Write, RDT_Read, uid_buffer, pin
+        if (!send_exchange(
+                rdt_id, RDT_Write, RDT_Read, uid_buffer, pin, event,
+                pk_command, expected_ack, gate_command, parameter_read,
+                parameter_write
             )) {
             exit_code = 1;
             break;

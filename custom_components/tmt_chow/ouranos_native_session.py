@@ -1,4 +1,4 @@
-"""Persistent, isolated, read-only native status session for PS19001."""
+"""Persistent, allowlisted native IOTC/RDT session for PS19001."""
 
 from __future__ import annotations
 
@@ -20,10 +20,10 @@ from .ouranos_ha_probe import (
 )
 
 _SESSION_HELPER_SHA256: Final = (
-    "453e3a04fc1ffdd611fab5f0cf15066d4c17f91b3403290b11aaf22fabf11846"
+    "a756b23eb93df41419da8d37bfd8c5119da551919eed1538e68496db005eee35"
 )
 _SESSION_START_TIMEOUT: Final = 40
-_STATUS_RESPONSE_TIMEOUT: Final = 8
+_RESPONSE_TIMEOUT: Final = 8
 _SESSION_STOP_TIMEOUT: Final = 6
 
 
@@ -43,7 +43,7 @@ def _verify_bundled_session_helper() -> Path:
 
 
 class OuranosNativeSession:
-    """Own one long-lived IOTC/RDT helper process for status reads only."""
+    """Own one long-lived IOTC/RDT helper with a strict command allowlist."""
 
     def __init__(self, hass: HomeAssistant, uuid: str, pin_code: str) -> None:
         self._hass = hass
@@ -61,6 +61,39 @@ class OuranosNativeSession:
 
     async def async_read_status(self) -> dict[str, Any]:
         """Request one status response over the existing native connection."""
+        return await self._async_exchange("STATUS", "status")
+
+    async def async_gate_command(self, command: str) -> dict[str, Any]:
+        """Send one fixed movement command; arbitrary wire commands are rejected."""
+        protocol = {
+            "FULL OPEN": "OPEN",
+            "FULL CLOSE": "CLOSE",
+            "STOP": "STOP",
+            "PED OPEN": "PED",
+        }.get(command)
+        if protocol is None:
+            return {"result": "unsupported_command", "native": None}
+        return await self._async_exchange(protocol, "command")
+
+    async def async_read_parameters(self) -> dict[str, Any]:
+        """Read the complete PS19001 UART0 parameter frame."""
+        return await self._async_exchange("PARAM_READ", "parameter_read")
+
+    async def async_write_parameters(self, command: str) -> dict[str, Any]:
+        """Write one codec-validated complete PS19001 parameter frame."""
+        prefix = "WRITE FUNCTION"
+        if not command.startswith(prefix):
+            return {"result": "unsupported_command", "native": None}
+        fragment = command[len(prefix) :]
+        if not fragment.startswith(",0:") or any(
+            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ,:"
+            for character in fragment
+        ):
+            return {"result": "invalid_parameter_command", "native": None}
+        return await self._async_exchange(f"PARAM_WRITE {fragment}", "parameter_write")
+
+    async def _async_exchange(self, protocol_command: str, event: str) -> dict[str, Any]:
+        """Run exactly one allowlisted exchange over the persistent session."""
         async with self._lock:
             start_error = await self._async_ensure_started_unlocked()
             if start_error is not None:
@@ -71,29 +104,29 @@ class OuranosNativeSession:
             assert process.stdin is not None
             assert process.stdout is not None
             try:
-                process.stdin.write(b"STATUS\n")
+                process.stdin.write((protocol_command + "\n").encode("ascii"))
                 await process.stdin.drain()
                 line = await asyncio.wait_for(
-                    process.stdout.readline(), timeout=_STATUS_RESPONSE_TIMEOUT
+                    process.stdout.readline(), timeout=_RESPONSE_TIMEOUT
                 )
             except asyncio.CancelledError:
                 await self._async_stop_unlocked()
                 raise
             except (TimeoutError, BrokenPipeError, ConnectionError):
                 await self._async_stop_unlocked()
-                return {"result": "session_status_timeout", "native": None}
+                return {"result": "session_exchange_timeout", "native": None}
 
             payload = self._parse_line(line)
-            if payload is None or payload.get("event") != "status":
+            if payload is None or payload.get("event") != event:
                 await self._async_stop_unlocked()
                 return {"result": "session_invalid_output", "native": None}
             if payload.get("transport_alive") is not True:
                 await self._async_stop_unlocked()
 
-            if payload.get("status_response_received") is True:
-                result = "status_response_received"
-            elif payload.get("status_request_sent") is True:
-                result = "status_request_sent"
+            if payload.get("response_received") is True:
+                result = f"{event}_response_received"
+            elif payload.get("request_sent") is True:
+                result = f"{event}_request_sent"
             else:
                 result = "session_transport_failed"
             return {"result": result, "native": payload}
