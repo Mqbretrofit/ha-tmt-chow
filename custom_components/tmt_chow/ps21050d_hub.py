@@ -33,6 +33,7 @@ _PS20005_APP_MODEL = "PS20005"
 _PS20005A_CONTROLLER_TYPE = "PS20005A"
 _PS20040_APP_MODEL = "PS20040"
 _PS20040D_CONTROLLER_TYPE = "PS20040D"
+_PS21050C_CONTROLLER_TYPE = "PS21050C"
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -58,6 +59,12 @@ class TmtChowHub(BaseTmtChowHub):
     suffix-stripping rule. This exposes the verified pedestrian capability
     while preserving the concrete PS20005A device identity.
 
+    PS21050C is another observed live identity for an account configured as
+    PS21050. Real-hardware diagnostics prove that it returns the same exact
+    20-slot RP,1 frame as the PS21050D profile, including an enabled pedestrian
+    field. Reuse the read codec and APK family/capabilities for this exact pair,
+    but keep parameter writes disabled until they are verified on PS21050C.
+
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
     matrix contains two inherited P190 current helper entries before the real
     20 wire slots, but live hardware proved those helpers are not separate
@@ -79,6 +86,12 @@ class TmtChowHub(BaseTmtChowHub):
     def _is_ps21050d_alias(self) -> bool:
         return (
             self.controller_type == CONTROLLER_TYPE
+            and self.configured_controller_type == APP_MODEL
+        )
+
+    def _is_ps21050c_alias(self) -> bool:
+        return (
+            self.controller_type == _PS21050C_CONTROLLER_TYPE
             and self.configured_controller_type == APP_MODEL
         )
 
@@ -119,12 +132,19 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = "apk_ps20040_alias"
             return
 
-        if normalized == CONTROLLER_TYPE and self.configured_controller_type == APP_MODEL:
-            self.controller_type = CONTROLLER_TYPE
+        if (
+            normalized in {CONTROLLER_TYPE, _PS21050C_CONTROLLER_TYPE}
+            and self.configured_controller_type == APP_MODEL
+        ):
+            self.controller_type = normalized
             self.controller_family = controller_family(APP_MODEL)
             self.controller_capabilities = controller_capabilities(APP_MODEL)
             self.parameter_model_type = CONTROLLER_TYPE
-            self.parameter_model_source = "apk_ps21050_alias"
+            self.parameter_model_source = (
+                "apk_ps21050_alias"
+                if normalized == CONTROLLER_TYPE
+                else "apk_ps21050c_alias_read_only"
+            )
             self.model_parameter_schema = APP_PARAMETERS
             return
 
@@ -199,6 +219,8 @@ class TmtChowHub(BaseTmtChowHub):
         """Allow writes only for parameter layouts proven safe on live hardware."""
         if self._is_ps22027_verified_profile():
             return True
+        if self._is_ps21050c_alias():
+            return False
         if self._is_ps21050d_alias() or self._is_ps20040d_alias():
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
