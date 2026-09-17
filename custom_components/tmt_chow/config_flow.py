@@ -37,6 +37,7 @@ from .const import (
     CONF_SOURCE_TAG,
     CONF_THING_NAME,
     CONF_UUID,
+    CONF_UUID_TYPE,
     DEFAULT_SOURCE_TAG,
     DOMAIN,
 )
@@ -175,6 +176,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
                         data[CONF_DEVICE_TYPE] = controller_type
                         data[CONF_PRODUCT_TYPE] = device.product_type
                         data[CONF_ROLE] = device.role
+                        data[CONF_UUID_TYPE] = device.uuid_type
                         data[CONF_PROPOSAL_FETCH_STATUS] = proposal_status
                         data.pop(CONF_PROPOSAL_ID, None)
                         data.pop(CONF_PROPOSAL, None)
@@ -234,6 +236,7 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
         data: dict[str, Any] = {
             CONF_NAME: device.name,
             CONF_UUID: device.uuid,
+            CONF_UUID_TYPE: device.uuid_type,
             CONF_ENDPOINT: credentials.endpoint,
             CONF_THING_NAME: credentials.thing_name,
             CONF_CERTIFICATE_PEM: credentials.certificate_pem,
