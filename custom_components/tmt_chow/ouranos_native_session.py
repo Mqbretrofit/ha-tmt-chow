@@ -21,7 +21,7 @@ from .ouranos_ha_probe import (
 )
 
 _SESSION_HELPER_SHA256: Final = (
-    "6724b72287c686be20e89d9548bfe8e20dcd1eca13557c954e9f2cd08a4be07f"
+    "dd825d6a5a96e78c6dee95e75788e638cc74f7c175fe0b2d10095acb27e572d7"
 )
 _SESSION_START_TIMEOUT: Final = 40
 _RESPONSE_TIMEOUT: Final = 8
