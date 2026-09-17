@@ -12,7 +12,7 @@ from .const import DOMAIN, OURANOS_POLLERS_DATA_KEY
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
 from .ouranos_status import OuranosStatusPoller
-from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE
 
 
 async def async_setup_entry(
@@ -22,10 +22,7 @@ async def async_setup_entry(
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
     entities: list[ButtonEntity] = []
-    if (
-        pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
-        != PEDESTRIAN_STRATEGY_NONE
-    ):
+    if hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE:
         entities.append(TmtPedestrianOpenButton(hub))
     poller: OuranosStatusPoller | None = hass.data.get(
         OURANOS_POLLERS_DATA_KEY, {}
@@ -50,11 +47,7 @@ class TmtPedestrianOpenButton(TmtChowEntity, ButtonEntity):
     def available(self) -> bool:
         return (
             self.hub.available
-            and pedestrian_strategy_for(
-                self.hub.controller_type,
-                self.hub.controller_capabilities,
-            )
-            != PEDESTRIAN_STRATEGY_NONE
+            and self.hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE
         )
 
     async def async_press(self) -> None:
