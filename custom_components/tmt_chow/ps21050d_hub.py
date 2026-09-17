@@ -119,6 +119,8 @@ class TmtChowHub(BaseTmtChowHub):
     @property
     def pedestrian_strategy(self) -> str:
         """Return the currently permitted pedestrian command strategy."""
+        if self._is_ps25007a_live_alias() and self._identified_source_tag() is not None:
+            return PEDESTRIAN_STRATEGY_PED_OPEN
         return pedestrian_strategy_for(
             self.controller_type,
             self.controller_capabilities,
