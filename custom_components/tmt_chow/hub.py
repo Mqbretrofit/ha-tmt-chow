@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,7 @@ from .const import (
     ATTR_WBT_VERSION,
     ATTR_WIFI_SSID,
     COMMAND_TIMEOUT,
+    DEFAULT_SOURCE_TAG,
     MQTT_AVAILABILITY_GRACE_SECONDS,
     OURANOS_STATUS_AVAILABILITY_SECONDS,
     PARAMETER_BOOTSTRAP_RETRY_SECONDS,
@@ -29,6 +31,9 @@ from .const import (
     SHADOW_REFRESH_SECONDS,
 )
 from .controller_types import (
+    CAPABILITY_EXTERNAL,
+    CAPABILITY_PEDESTRIAN,
+    FAMILY_SLIDING,
     controller_capabilities,
     controller_family,
     normalize_controller_type,
@@ -55,6 +60,15 @@ from .ps21050d_parameters import (
     CONTROLLER_TYPE as PS21050D,
     PARAMETERS as PS21050D_PARAMETERS,
     parse_parameter_response as parse_ps21050d_parameter_response,
+)
+from .ps25007a_parameters import (
+    APP_MODEL as PS25007,
+    CONTROLLER_TYPE as PS25007A,
+    PARAMETER_COUNT as PS25007A_PARAMETER_COUNT,
+    REFERENCE_SCHEMA_MODEL as PS25007A_REFERENCE_SCHEMA,
+    PS25007AParameterError,
+    encode_parameter_write as encode_ps25007a_parameter_write,
+    parse_parameter_response as parse_ps25007a_parameter_response,
 )
 
 if TYPE_CHECKING:
@@ -195,6 +209,11 @@ class TmtChowHub:
     @property
     def parameter_schema_verified(self) -> bool:
         """Return whether a safe read schema and wire codec are available."""
+        if self._is_ps25007a_profile():
+            return (
+                self.model_parameter_schema is not None
+                and len(self.model_parameter_schema) == PS25007A_PARAMETER_COUNT
+            )
         if self.model_parameter_schema is None:
             return False
         if self.parameter_model_type == PS21050D:
@@ -204,6 +223,10 @@ class TmtChowHub:
     @property
     def parameter_write_schema_verified(self) -> bool:
         """Return whether parameter writes are verified for the live controller."""
+        if self._is_ps25007a_live_alias():
+            return self.parameter_schema_verified
+        if self._is_ps25007a_profile():
+            return False
         return (
             self.parameter_schema_verified
             and self.parameter_model_type is not None
@@ -262,6 +285,28 @@ class TmtChowHub:
     def _set_controller_type(self, controller_type: str | None) -> None:
         """Apply identity metadata and select the safest parameter read profile."""
         normalized = normalize_controller_type(controller_type)
+
+        if (
+            self.configured_controller_type == PS25007
+            and normalized in {PS25007, PS25007A}
+        ):
+            self.controller_type = normalized
+            self.controller_family = FAMILY_SLIDING
+            capabilities = {CAPABILITY_EXTERNAL}
+            if normalized == PS25007A:
+                capabilities.add(CAPABILITY_PEDESTRIAN)
+            self.controller_capabilities = frozenset(capabilities)
+            self.parameter_model_type = PS25007A
+            self.parameter_model_source = (
+                "ps25007a_proposal_wire17_verified"
+                if normalized == PS25007A
+                else "ps25007_proposal_wire17_pending_live"
+            )
+            self.model_parameter_schema = parameter_schema_for(
+                PS25007A_REFERENCE_SCHEMA
+            )
+            return
+
         self.controller_type = normalized or None
         self.controller_family = controller_family(self.controller_type)
         self.controller_capabilities = controller_capabilities(self.controller_type)
@@ -296,6 +341,8 @@ class TmtChowHub:
         self.model_parameter_schema = parameter_schema_for(self.parameter_model_type)
 
     def _parameter_transport(self) -> ParameterTransport:
+        if self._is_ps25007a_profile():
+            return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         if self.parameter_model_type == PS21050D:
             return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         transport = parameter_transport_for(self.parameter_model_type)
@@ -307,9 +354,30 @@ class TmtChowHub:
         return transport
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self._is_ps25007a_profile():
+            return parse_ps25007a_parameter_response(payload)
         if self.parameter_model_type == PS21050D:
             return parse_ps21050d_parameter_response(payload)
         return decode_model_parameter_response(self.parameter_model_type, payload)
+
+    def _is_ps25007a_profile(self) -> bool:
+        """Return whether the exact PS25007 account/live alias is active."""
+        return (
+            self.configured_controller_type == PS25007
+            and self.parameter_model_type == PS25007A
+            and self.controller_type in {PS25007, PS25007A}
+        )
+
+    def _is_ps25007a_live_alias(self) -> bool:
+        """Return whether real DEV INFO confirmed the PS25007A controller."""
+        return self._is_ps25007a_profile() and self.controller_type == PS25007A
+
+    def _identified_source_tag(self) -> str | None:
+        """Return the authenticated UART-v1 source tag when available."""
+        tag = str(self._source_tag or "").strip().upper()
+        if tag == DEFAULT_SOURCE_TAG or re.fullmatch(r"P[0-9A-F]{7,}", tag) is None:
+            return None
+        return tag
 
     async def async_open(self) -> None:
         acknowledged = await self._async_command(
@@ -335,6 +403,37 @@ class TmtChowHub:
 
     async def async_pedestrian_open(self) -> None:
         """Open to the controller's configured pedestrian/partial position."""
+        if self._is_ps25007a_live_alias():
+            source_tag = self._identified_source_tag()
+            if source_tag is None:
+                raise TmtCommandError(
+                    "PS25007A pedestrian opening requires an authenticated source tag",
+                    translation_key="unsupported_controller",
+                )
+            if self.position != 0 or self.is_operating is not False:
+                raise TmtCommandError(
+                    "PS25007A pedestrian opening requires a fully closed, stopped gate",
+                    translation_key="command_failed",
+                )
+            if not self._mqtt.connected or self.device_online is False:
+                raise TmtCommandError(
+                    "The gate is offline",
+                    translation_key="gate_offline",
+                )
+            async with self._transaction_lock:
+                try:
+                    # Exactly one publish, no retry. Status/position telemetry
+                    # reports the result because this path emits no command ACK.
+                    await self._mqtt.async_publish(
+                        self.rx_topic,
+                        f"c=PED OPEN;src={source_tag}",
+                    )
+                except MqttError as err:
+                    raise TmtCommandError(
+                        "Failed to publish PS25007A pedestrian command",
+                        translation_key="command_failed",
+                    ) from err
+            return
         acknowledged = await self._async_command(
             "PED OPEN",
             "ACK PED OPEN",
@@ -403,11 +502,12 @@ class TmtChowHub:
             updated[index] = int(value)
             values = tuple(updated)
             try:
-                command = encode_model_parameter_write(
-                    self.parameter_model_type,
-                    values,
+                command = (
+                    encode_ps25007a_parameter_write(values)
+                    if self._is_ps25007a_live_alias()
+                    else encode_model_parameter_write(self.parameter_model_type, values)
                 )
-            except ParameterCodecError as err:
+            except (ParameterCodecError, PS25007AParameterError) as err:
                 raise TmtCommandError(
                     str(err),
                     translation_key="unsupported_parameter_value",
@@ -426,7 +526,11 @@ class TmtChowHub:
                 transport.read_ack,
             )
             verified = self._decode_parameter_response(verify_response)
-            if verified is None or verified[index] != int(value):
+            if verified is None or (
+                verified != values
+                if self._is_ps25007a_live_alias()
+                else verified[index] != int(value)
+            ):
                 raise TmtCommandError(
                     "Parameter verification failed after write",
                     translation_key="parameter_verification_failed",
