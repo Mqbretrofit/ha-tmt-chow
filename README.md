@@ -17,6 +17,8 @@ TMT Chow for Home Assistant is an independent open-source community project. Con
 If this integration is useful to you, you can support continued development through **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)**. For sponsored feature requests, priority development and additional support options, see **[SUPPORT.md](SUPPORT.md)**.
 
 > **Current stable release:** `v1.0.3`
+>
+> **Latest test release:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)
 
 ## What's new in v1.0.3
 
@@ -83,6 +85,36 @@ The remaining mapped controller models are implemented from the vendor TMT Chow 
 
 For the complete PS21050D vendor mapping and protocol notes, see [`PS21050D_APK_MAPPING.md`](PS21050D_APK_MAPPING.md).
 
+## Hardware-tested controllers
+
+The table deliberately separates real-hardware evidence from APK/proposal-derived support. “Verified” applies only to the functions listed in that row; it does not mean that every optional command or every possible parameter value has been exercised.
+
+| Account model | Live controller / hardware | Real-hardware evidence | Current status |
+| --- | --- | --- | --- |
+| `PS21053` | `PS21053` / `PS21053C` | Gate control and status, 17-slot parameter read/write with app-visible persistence, guarded full-frame readback, and `PED OPEN` with ACK and partial-position feedback | Verified for the listed functions |
+| `PS21050` | `PS21050D` | Exact account/live identity, 20-slot parameter frame and entities, live state handling; write codec and option tables are APK-derived and protected by read-before-write/full readback | Hardware-tested, with APK-derived parameter mapping |
+| `PS21050` | `PS21050C` | Exact account/live identity, 20-slot live frame, parameter entities and pedestrian capability observed in real diagnostics; writes use the guarded PS21050 full-frame transaction | Hardware-observed; not every write/value independently exercised |
+| `PS22027` | `PS22027` | 20-slot frame, Hall-current decoding and a full read → one write → readback transaction; Alarm Buzzer persisted and matched the official app | Verified for the tested write; risky mode/current transitions remain guarded |
+| `PS22087` | `PS22087B` / `P710U` | 15-slot `F1..F9,A..F` frame and an `F8` value change with the other 14 fields preserved; undocumented `B` and `D` stay read-only | Verified for the tested write and full-frame preservation |
+| `PS19001` | `PS19001`, 20-character UID | Native IOTC/RDT status/control path and the corrected 19-slot `1..J` UART0 parameter frame used by the current profile | Verified on the documented native profile; x86-64 and local six-digit PIN required |
+| `PS25007` | `PS25007A` / `P500BU` | Exact identity and 17-slot parameter profile; pedestrian behavior has controller-specific safety history | Parameters supported; `PED OPEN` remains an explicitly guarded test path, not a generally verified safe capability |
+
+The other mapped controller classes remain APK/proposal-derived until matching hardware confirms their exact runtime identity, status route, optional controls and parameter layout. `PS25142` is currently a discovery target, not a fully supported controller.
+
+## Unknown or unsupported controller: what to do
+
+Starting with `v1.0.4-beta.29`, one Home Assistant diagnostics download performs the safe discovery work needed for an unknown or unverified controller. It checks the classic AWS IoT Shadow, cloud Proposal/FunctionSet data and the known read-only WBT request dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`). For vendor `uuid_type=1` devices it can also test the native OURANOS `READ STATUS` and `RS` routes when the local six-digit gate PIN is configured.
+
+1. Install the latest test release and restart Home Assistant.
+2. Add the gate normally with the TMT Chow integration. Do not assign another controller's parameter profile manually.
+3. If the diagnostics identify `uuid_type=1`, open **Settings → Devices & services → TMT Chow → Configure**, save the gate's six-digit PIN, then restart/reload the integration. The PIN is stored locally and redacted from diagnostics.
+4. Open the TMT Chow integration entry, choose **Download diagnostics**, and wait for the read-only probes to finish. One download is enough; do not install a chain of controller-specific probe builds.
+5. Open a [new GitHub issue](https://github.com/Mqbretrofit/ha-tmt-chow/issues/new) and attach the diagnostics JSON. Also include the exact account model, the model printed on the controller/board, the live model shown by the official app if available, the TMT Chow app version, and which functions work in the official app.
+6. Do not post passwords, the six-digit PIN, certificates, private keys or unredacted cloud credentials. Review the file before uploading even though the integration redacts known secrets.
+7. Do not test raw movement, relay, learning, reset or parameter-write commands unless a maintainer provides a controller-specific, safety-reviewed procedure. The automatic diagnostic never sends those commands.
+
+The useful sections in the downloaded JSON are `controller_route_analysis`, `unknown_controller_read_matrix`, `ouranos_read_matrix`, `proposal_summary`, the configured/live controller identity and the sanitized observed payloads. They show which transport answered, which read command worked, where the data came from and what evidence is still missing.
+
 ## Supported languages
 
 The integration currently includes **23 translations**:
@@ -141,9 +173,9 @@ The integration receives the device credentials required for the TMT Chow cloud 
 
 `v1.0.4-beta.19` adds explicit `PS21050C` support for accounts configured as `PS21050`, including the APK-derived pedestrian control and the real-hardware-confirmed 20-value parameter frame. Parameter changes use a fresh full read, one write with no automatic retry, and a mandatory exact full-frame readback.
 
-### Experimental PS19001 native control
+### PS19001 native control
 
-`v1.0.4-beta.17` adds complete native control for the confirmed PS19001 / 20-character UID case: full open, full close, stop, pedestrian opening, live status, and all 23 APK-derived model parameters. Existing AWS/MQTT controllers continue to use their unchanged cloud-push and command paths.
+`v1.0.4-beta.17` added native control for the confirmed PS19001 / 20-character UID case: full open, full close, stop, pedestrian opening and live status. Beta.20 corrected the parameter profile to the real 19-slot `1..J` UART0 frame. Existing AWS/MQTT controllers continue to use their unchanged cloud-push and command paths.
 
 The native reader currently supports x86-64 Home Assistant installations. On its first run it downloads pinned TUTK IOTC/RDT 3.1.5.38 libraries and a private glibc runtime, verifies their cryptographic hashes, then caches the required files under Home Assistant's `.storage` directory. The TUTK pair is from the same 3.1.5 API generation as the 3.1.5.33 libraries embedded in the TMT Chow Android application.
 
@@ -204,6 +236,8 @@ https://github.com/Mqbretrofit/ha-tmt-chow/releases
 
 Current stable release: **v1.0.3**
 
+Latest test release: **[v1.0.4-beta.29](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)**
+
 ## Disclaimer
 
 This is an **independent community project** and is not an official TMT Automation product.
@@ -223,6 +257,8 @@ A TMT Chow for Home Assistant egy független, nyílt forráskódú közösségi 
 Ha hasznos számodra az integráció, a fejlesztést a **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)** oldalon támogathatod. Támogatott funkciókéréshez, kiemelt fejlesztéshez és további lehetőségekhez lásd a **[SUPPORT.md](SUPPORT.md)** fájlt.
 
 > **Jelenlegi stabil verzió:** `v1.0.3`
+>
+> **Legújabb tesztverzió:** [`v1.0.4-beta.29`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.29)
 
 ## Újdonságok a v1.0.3-ban
 
@@ -267,6 +303,36 @@ A `PS21050D` esetén valódi telepítésen igazolt a `PS21050` fiókmodell / `PS
 A többi leképezett modell támogatása az APK/XAPK gyári definícióiból származik, ezért az adott hardveren történő külön validálásig APK-alapú támogatásnak tekintendő. Ismeretlen vagy csak API-ból látott vezérlőhöz az integráció nem rendel találgatással paramétersémát vagy opcionális vezérlési képességet.
 
 A teljes PS21050D paraméter- és protokolltérkép: [`PS21050D_APK_MAPPING.md`](PS21050D_APK_MAPPING.md).
+
+## Valós hardveren tesztelt vezérlők
+
+A táblázat szándékosan különválasztja a valódi hardveres bizonyítékot az APK-/proposal-alapú támogatástól. Az „igazolt” csak az adott sorban felsorolt funkciókra vonatkozik; nem jelenti azt, hogy minden opcionális parancsot és minden lehetséges paraméterértéket kipróbáltunk.
+
+| Fiókmodell | Élő vezérlő / hardver | Valós hardveres bizonyíték | Jelenlegi állapot |
+| --- | --- | --- | --- |
+| `PS21053` | `PS21053` / `PS21053C` | Kapuvezérlés és állapot, 17 mezős paraméterolvasás/-írás az appban is megmaradó módosítással, teljes visszaellenőrzés, valamint `PED OPEN` ACK-kal és részleges pozíció-visszajelzéssel | A felsorolt funkciók igazoltak |
+| `PS21050` | `PS21050D` | Pontos fiók-/élőmodell-pár, 20 mezős paraméterkeret és entitások, élő állapotkezelés; az írási codec és az opciótáblák APK-ból származnak, előolvasás és teljes visszaellenőrzés védi őket | Hardveren tesztelt, APK-alapú paramétertérképpel |
+| `PS21050` | `PS21050C` | Pontos fiók-/élőmodell-pár, 20 mezős élő keret, paraméter-entitások és gyalogos képesség valós diagnosztikában; az írás a védett PS21050 teljeskeretes tranzakciót használja | Hardveren megfigyelt; nem minden írás/érték lett külön kipróbálva |
+| `PS22027` | `PS22027` | 20 mezős keret, Hall-áram dekódolása és teljes olvasás → egyetlen írás → visszaolvasás; az Alarm Buzzer módosítása megmaradt és a hivatalos appban is egyezett | A tesztelt írás igazolt; a kockázatos mód-/áramváltások továbbra is védettek |
+| `PS22087` | `PS22087B` / `P710U` | 15 mezős `F1..F9,A..F` keret és egy `F8` módosítás a másik 14 mező változatlan megőrzésével; a dokumentálatlan `B` és `D` csak olvasható | A tesztelt írás és a teljes keret megőrzése igazolt |
+| `PS19001` | `PS19001`, 20 karakteres UID | Natív IOTC/RDT állapot-/vezérlési útvonal és a jelenlegi profil javított, 19 mezős `1..J` UART0 paraméterkerete | A dokumentált natív profil igazolt; x86-64 rendszer és helyben tárolt hatjegyű PIN szükséges |
+| `PS25007` | `PS25007A` / `P500BU` | Pontos azonosítás és 17 mezős paraméterprofil; a gyalogos működéshez vezérlőspecifikus biztonsági előzmény tartozik | Paraméterek támogatva; a `PED OPEN` külön védett tesztútvonal, nem általánosan igazolt biztonságos képesség |
+
+A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig APK-/proposal-alapú. A `PS25142` jelenleg diagnosztikai felderítési cél, nem teljesen támogatott vezérlő.
+
+## Ismeretlen vagy nem támogatott vezérlő: mit tegyen a felhasználó?
+
+A `v1.0.4-beta.29` verziótól egyetlen Home Assistant-diagnosztika elvégzi az ismeretlen vagy még nem igazolt vezérlő biztonságos felderítését. Ellenőrzi a klasszikus AWS IoT Shadow útvonalat, a felhős Proposal/FunctionSet adatokat és az ismert, csak olvasási WBT-kéréseket (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`). A gyártó által `uuid_type=1` értékkel jelölt eszközöknél a natív OURANOS `READ STATUS` és `RS` útvonalat is megpróbálja, ha a helyi hatjegyű kapu-PIN be van állítva.
+
+1. Telepítsd a legújabb tesztverziót, majd indítsd újra a Home Assistantot.
+2. Add hozzá a kaput normál módon a TMT Chow integrációval. Ne rendeld hozzá kézzel egy másik vezérlő paraméterprofilját.
+3. Ha a diagnosztika `uuid_type=1` értéket jelez, nyisd meg a **Beállítások → Eszközök és szolgáltatások → TMT Chow → Beállítás** menüt, add meg a kapu hatjegyű PIN-kódját, majd töltsd újra az integrációt. A PIN helyben marad, és a diagnosztikában maszkolva van.
+4. A TMT Chow integráció bejegyzésénél válaszd a **Diagnosztika letöltése** lehetőséget, és várd meg a csak olvasási próbák végét. Egyetlen letöltés elegendő; nem kell egymás után több vezérlőspecifikus próbaverziót telepíteni.
+5. Nyiss egy [új GitHub issue-t](https://github.com/Mqbretrofit/ha-tmt-chow/issues/new), és csatold a diagnosztikai JSON-t. Írd mellé a pontos fiókmodellt, a vezérlőn/panelen olvasható típust, a hivatalos appban látható élő modellt, a TMT Chow app verzióját és azt, hogy mely funkciók működnek a hivatalos appban.
+6. Ne tölts fel jelszót, hatjegyű PIN-t, tanúsítványt, privát kulcsot vagy maszkolatlan felhős hitelesítő adatot. Feltöltés előtt nézd át a fájlt akkor is, ha az integráció az ismert titkokat automatikusan kitakarja.
+7. Nyers mozgási, relé-, tanítási, reset- vagy paraméterírási parancsot csak vezérlőspecifikus, biztonságilag átnézett karbantartói eljárással tesztelj. Az automatikus diagnosztika ilyen parancsot soha nem küld.
+
+A letöltött JSON legfontosabb részei: `controller_route_analysis`, `unknown_controller_read_matrix`, `ouranos_read_matrix`, `proposal_summary`, a beállított/élő vezérlőazonosító és a maszkolt megfigyelt payloadok. Ezekből látszik, melyik transport válaszolt, melyik olvasási kérés működött, honnan érkezett az adat, és milyen bizonyíték hiányzik még.
 
 ## Telepítés HACS-ból
 
