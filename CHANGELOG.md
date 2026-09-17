@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.4-beta.21
+
+- Added a targeted PS19001 entity-registry cleanup for the four unavailable parameter entities left by the obsolete 23-slot profile
+- Removes only `parameter_20` through `parameter_23` for the same config entry and only when the live-verified 19-slot PS19001 profile is active
+- Preserved all 19 working PS19001 parameters, their entity IDs, native control/status behavior, and every other controller path
+
 ## v1.0.4-beta.20
 
 - Corrected PS19001 parameters to the live-hardware-confirmed 19-slot UART0 frame labelled `1` through `J`

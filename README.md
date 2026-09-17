@@ -135,6 +135,8 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
+`v1.0.4-beta.21` automatically removes the four unavailable PS19001 parameter entities left in Home Assistant's entity registry by the obsolete 23-slot beta profile. The cleanup is restricted to `parameter_20` through `parameter_23` of the same PS19001 config entry; the 19 working parameters and all other controllers remain unchanged.
+
 `v1.0.4-beta.20` corrects PS19001 parameter support to the real-hardware-confirmed 19-value UART0 frame (`1` through `J`). The four extra APK entries are current-mapping helpers, not wire parameters. Parameter changes use a fresh full read, one write with no automatic retry, and a mandatory exact full-frame readback. The already proven PS19001 movement and status paths are unchanged.
 
 `v1.0.4-beta.19` adds explicit `PS21050C` support for accounts configured as `PS21050`, including the APK-derived pedestrian control and the real-hardware-confirmed 20-value parameter frame. Parameter changes use a fresh full read, one write with no automatic retry, and a mandatory exact full-frame readback.

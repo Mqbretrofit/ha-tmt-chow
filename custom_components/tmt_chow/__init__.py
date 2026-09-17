@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_CERTIFICATE_PEM,
@@ -41,6 +42,8 @@ _FRONTEND_MODULE_URL = (
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 SERVICE_OURANOS_PROBE = "ouranos_probe"
+_PS19001_LIVE_PARAMETER_COUNT = 19
+_PS19001_LEGACY_PARAMETER_RANGE = range(20, 24)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +108,9 @@ def _register_services(hass: HomeAssistant) -> None:
             if hub is None:
                 raise HomeAssistantError("TMT Chow gate not found")
             if (
-                pedestrian_strategy_for(hub.controller_type, hub.controller_capabilities)
+                pedestrian_strategy_for(
+                    hub.controller_type, hub.controller_capabilities
+                )
                 == PEDESTRIAN_STRATEGY_NONE
             ):
                 raise HomeAssistantError(
@@ -146,7 +151,8 @@ def _register_services(hass: HomeAssistant) -> None:
                 ]
                 if len(candidates) != 1:
                     raise HomeAssistantError(
-                        "Specify uuid unless exactly one confirmed PS19001 OURANOS candidate is configured"
+                        "Specify uuid unless exactly one confirmed PS19001 "
+                        "OURANOS candidate is configured"
                     )
                 hub = candidates[0]
 
@@ -163,6 +169,33 @@ def _register_services(hass: HomeAssistant) -> None:
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload an entry after its native status option changes."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _remove_legacy_ps19001_parameter_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    hub: TmtChowHub,
+) -> None:
+    """Remove only the four stale entities from the obsolete 23-slot profile."""
+    schema = hub.model_parameter_schema
+    if (
+        hub.controller_type != "PS19001"
+        or hub.parameter_model_source != "ps19001_wire19_verified"
+        or schema is None
+        or len(schema) != _PS19001_LIVE_PARAMETER_COUNT
+    ):
+        return
+
+    registry = er.async_get(hass)
+    for parameter_number in _PS19001_LEGACY_PARAMETER_RANGE:
+        unique_id = f"{hub.uuid}_parameter_{parameter_number}"
+        entity_id = registry.async_get_entity_id("select", DOMAIN, unique_id)
+        if entity_id is None:
+            continue
+        registry_entry = registry.async_get(entity_id)
+        if registry_entry is None or registry_entry.config_entry_id != entry.entry_id:
+            continue
+        registry.async_remove(entity_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -208,6 +241,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if poller is not None:
         hass.data.setdefault(OURANOS_POLLERS_DATA_KEY, {})[entry.entry_id] = poller
         await poller.async_start()
+    _remove_legacy_ps19001_parameter_entities(hass, entry, hub)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
