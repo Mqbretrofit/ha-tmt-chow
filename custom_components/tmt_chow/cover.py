@@ -14,7 +14,7 @@ from .const import DOMAIN
 from .controller_types import is_known_non_gate_controller
 from .entity import TmtChowEntity
 from .hub import TmtChowHub, TmtCommandError
-from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .pedestrian import PEDESTRIAN_STRATEGY_NONE
 
 
 async def async_setup_entry(
@@ -58,10 +58,7 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attributes = dict(self.hub.attributes)
-        pedestrian_strategy = pedestrian_strategy_for(
-            self.hub.controller_type,
-            self.hub.controller_capabilities,
-        )
+        pedestrian_strategy = self.hub.pedestrian_strategy
         if pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE:
             attributes["tmt_chow_pedestrian_supported"] = True
             attributes["tmt_chow_pedestrian_uuid"] = self.hub.uuid

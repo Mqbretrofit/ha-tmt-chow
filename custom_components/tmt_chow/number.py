@@ -20,6 +20,7 @@ from .parameter_codec import (
     parameter_native_to_raw,
     parameter_raw_to_native,
 )
+from .ps22087b_parameters import CONTROLLER_TYPE as PS22087B
 
 _MINIMUM = 11
 _MAXIMUM = 12
@@ -49,6 +50,8 @@ async def async_setup_entry(
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
     schema = hub.model_parameter_schema
     if not hub.supports_parameters or schema is None:
+        return
+    if hub.parameter_model_type == PS22087B:
         return
 
     entities = []

@@ -1,6 +1,6 @@
 # TMT Chow controller compatibility map
 
-Sources compared: TMT Chow Android 3.1.4 APK and gatePRO Smart! Android 1.0.0 XAPK. Both contain the same TMT product-controller model families.
+Sources compared include TMT Chow Android 3.1.4 and 3.2.0 APKs and gatePRO Smart! Android 1.0.0 XAPK. The static product-controller families and the newer AutoProduct/OURANOS routing evidence are kept separate in diagnostics.
 
 The integration identifies hardware primarily by `device_type` / the DEV INFO
 controller string. It does **not** use `product_type` as a unique hardware
@@ -35,6 +35,14 @@ An unknown `device_type` is kept usable for the common runtime path and is
 reported in diagnostics. It is not automatically assigned to an APK family
 and is not allowed to use the PS21053 parameter schema merely because its
 `product_type` matches another controller.
+
+Starting with beta.29, downloading diagnostics for an unknown or unverified
+controller runs a strictly read-only discovery matrix. It tests the known WBT
+status and parameter-read dialects and, for vendor `uuid_type=1` devices with a
+locally configured PIN, both known OURANOS status reads. The resulting single
+JSON contains routing evidence and sanitized wire shapes. APK-visible movement,
+relay, learning and write commands are listed for research but are never sent by
+the diagnostic.
 
 
 ## Product types

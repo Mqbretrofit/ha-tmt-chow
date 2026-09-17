@@ -7,7 +7,7 @@ import time
 from .const import ATTR_DEV_PARAM
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
-from .parameter_codec import is_editable_parameter
+from .parameter_codec import ParameterTransport, is_editable_parameter
 from .pedestrian import (
     PEDESTRIAN_STRATEGY_NONE,
     PEDESTRIAN_STRATEGY_PED_OPEN,
@@ -34,6 +34,15 @@ from .ps22027_parameters import (
     PS22027ParameterError,
     encode_parameter_write as encode_ps22027_parameter_write,
     parse_parameter_response as parse_ps22027_parameter_response,
+)
+from .ps22087b_parameters import (
+    APP_MODEL as PS22087,
+    CONTROLLER_TYPE as PS22087B,
+    PARAMETERS as PS22087B_PARAMETERS,
+    PS22087BParameterError,
+    encode_parameter_write as encode_ps22087b_parameter_write,
+    parse_parameter_response as parse_ps22087b_parameter_response,
+    validate_requested_value as validate_ps22087b_requested_value,
 )
 
 _PS20005_APP_MODEL = "PS20005"
@@ -116,6 +125,14 @@ class TmtChowHub(BaseTmtChowHub):
             and self.parameter_model_source == "ps22027_wire20_verified"
         )
 
+    def _is_ps22087b_alias(self) -> bool:
+        return (
+            self.configured_controller_type == PS22087
+            and self.controller_type == PS22087B
+            and self.parameter_model_type == PS22087B
+            and self.parameter_model_source == "ps22087b_p710u_wire15_verified"
+        )
+
     @property
     def pedestrian_strategy(self) -> str:
         """Return the currently permitted pedestrian command strategy."""
@@ -128,6 +145,26 @@ class TmtChowHub(BaseTmtChowHub):
 
     def _set_controller_type(self, controller_type: str | None) -> None:
         normalized = (controller_type or "").strip().upper()
+
+        if normalized == PS22087 and self.configured_controller_type == PS22087:
+            # The account model alone is not enough to select the P710U wire
+            # layout. Wait for exact PS22087B live DEV INFO confirmation.
+            self.controller_type = PS22087
+            self.controller_family = controller_family(PS22087)
+            self.controller_capabilities = controller_capabilities(PS22087)
+            self.parameter_model_type = None
+            self.parameter_model_source = "ps22087_waiting_for_ps22087b_live_identity"
+            self.model_parameter_schema = None
+            return
+
+        if normalized == PS22087B and self.configured_controller_type == PS22087:
+            self.controller_type = PS22087B
+            self.controller_family = controller_family(PS22087)
+            self.controller_capabilities = controller_capabilities(PS22087)
+            self.parameter_model_type = PS22087B
+            self.parameter_model_source = "ps22087b_p710u_wire15_verified"
+            self.model_parameter_schema = PS22087B_PARAMETERS
+            return
 
         if (
             normalized == _PS20040D_CONTROLLER_TYPE
@@ -176,11 +213,24 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_source = "ps22027_wire20_verified"
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self._is_ps22087b_alias():
+            return parse_ps22087b_parameter_response(payload)
         if self.parameter_model_type == PS19001:
             return parse_ps19001_parameter_response(payload)
         if self._is_ps22027_verified_profile():
             return parse_ps22027_parameter_response(payload)
         return super()._decode_parameter_response(payload)
+
+    def _parameter_transport(self) -> ParameterTransport:
+        if self._is_ps22087b_alias():
+            return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP,1")
+        return super()._parameter_transport()
+
+    @property
+    def parameter_schema_verified(self) -> bool:
+        if self._is_ps22087b_alias():
+            return True
+        return super().parameter_schema_verified
 
     def _remember_motion_direction(self, direction: str) -> None:
         if direction not in ("opening", "closing"):
@@ -234,6 +284,8 @@ class TmtChowHub(BaseTmtChowHub):
     def parameter_write_schema_verified(self) -> bool:
         """Allow writes only for parameter layouts proven safe on live hardware."""
         if self._is_ps22027_verified_profile():
+            return True
+        if self._is_ps22087b_alias():
             return True
         if (
             self._is_ps21050c_alias()
@@ -392,6 +444,9 @@ class TmtChowHub(BaseTmtChowHub):
 
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one parameter using the model-specific verified codec."""
+        if self._is_ps22087b_alias():
+            await self._async_set_ps22087b_parameter(index, value)
+            return
         if self.parameter_model_type == PS19001:
             await self._async_set_ps19001_parameter(index, value)
             return
@@ -464,6 +519,53 @@ class TmtChowHub(BaseTmtChowHub):
                     translation_key="parameter_verification_failed",
                 )
 
+            self.parameters = verified
+            self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
+            self._notify()
+
+    async def _async_set_ps22087b_parameter(self, index: int, value: int) -> None:
+        """Write one P710U field and verify the complete 15-slot frame."""
+        try:
+            validate_ps22087b_requested_value(index, value)
+        except PS22087BParameterError as err:
+            raise TmtCommandError(
+                str(err), translation_key="unsupported_parameter_value"
+            ) from err
+
+        transport = self._parameter_transport()
+        async with self._transaction_lock:
+            current_response = await self._async_exchange(
+                f"c={transport.read_command}", transport.read_ack
+            )
+            current = self._decode_parameter_response(current_response)
+            if current is None:
+                raise TmtCommandError(
+                    "Cannot write parameters before a valid PS22087B read",
+                    translation_key="parameters_not_ready",
+                )
+
+            updated = list(current)
+            updated[index] = int(value)
+            values = tuple(updated)
+            try:
+                command = encode_ps22087b_parameter_write(values)
+            except PS22087BParameterError as err:
+                raise TmtCommandError(
+                    str(err), translation_key="unsupported_parameter_value"
+                ) from err
+
+            await self._async_exchange(
+                f"c={command};src={self._source_tag}", transport.write_ack
+            )
+            verify_response = await self._async_exchange(
+                f"c={transport.read_command}", transport.read_ack
+            )
+            verified = self._decode_parameter_response(verify_response)
+            if verified != values:
+                raise TmtCommandError(
+                    "PS22087B parameter verification failed after write",
+                    translation_key="parameter_verification_failed",
+                )
             self.parameters = verified
             self.attributes[ATTR_DEV_PARAM] = ",".join(map(str, verified))
             self._notify()

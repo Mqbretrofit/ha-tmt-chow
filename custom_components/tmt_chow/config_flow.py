@@ -257,16 +257,16 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class TmtChowOptionsFlow(OptionsFlow):
-    """Configure the opt-in native PS19001 status reader."""
+    """Configure the opt-in native status reader or discovery probe."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Configure native status polling for confirmed PS19001 hardware."""
+        """Configure native status polling or read-only OURANOS discovery."""
         if (
             self.config_entry.data.get(CONF_DEVICE_TYPE) != "PS19001"
-            or len(str(self.config_entry.data.get(CONF_UUID, ""))) != 20
-        ):
+            and str(self.config_entry.data.get(CONF_UUID_TYPE) or "") != "1"
+        ) or len(str(self.config_entry.data.get(CONF_UUID, ""))) != 20:
             return self.async_abort(reason="not_ouranos_candidate")
 
         errors: dict[str, str] = {}

@@ -236,3 +236,90 @@ async def async_probe_parameter_read(
         response_timeout=response_timeout,
         mqtt_client_factory=mqtt_client_factory,
     )
+
+
+async def async_probe_wbt_read_matrix(
+    *,
+    endpoint: str,
+    uuid: str,
+    certificate_pem: str,
+    private_key: str,
+    response_timeout: float = 3.0,
+    mqtt_client_factory: Callable[..., AsyncMqttClient] = AsyncMqttClient,
+    existing_results: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Try every known non-mutating WBT read dialect for an unknown controller.
+
+    Each request uses an isolated connection and is sent exactly once. The
+    matrix never sends movement, relay, learning, reset, or write commands.
+    """
+    probes = (
+        ("RS", ("ACK RS", "NAK RS")),
+        (
+            "READ STATUS",
+            ("ACK READ STATUS", "ACK STATUS", "NAK READ STATUS", "NAK STATUS"),
+        ),
+        ("RP,1", ("ACK RP,1", "ACK RP", "NAK RP")),
+        (
+            "READ FUNCTION",
+            ("ACK READ FUNCTION", "NAK READ FUNCTION"),
+        ),
+    )
+    results: dict[str, Any] = dict(existing_results or {})
+    pending = [item for item in probes if item[0] not in results]
+    completed = await asyncio.gather(
+        *(
+            _async_probe_wbt_read(
+                endpoint=endpoint,
+                uuid=uuid,
+                certificate_pem=certificate_pem,
+                private_key=private_key,
+                command=command,
+                response_markers=markers,
+                response_timeout=response_timeout,
+                mqtt_client_factory=mqtt_client_factory,
+            )
+            for command, markers in pending
+        )
+    )
+    results.update(
+        (command, result)
+        for (command, _markers), result in zip(pending, completed, strict=True)
+    )
+    # Preserve APK command order even when probes completed out of order.
+    results = {command: results[command] for command, _markers in probes}
+    return {
+        "safety": {
+            "read_only": True,
+            "commands_sent_once": True,
+            "movement_commands_sent": False,
+            "parameter_writes_sent": False,
+            "relay_learning_or_reset_sent": False,
+        },
+        "apk_command_catalog": {
+            "probed_read_only": [command for command, _markers in probes],
+            "observed_but_not_automatically_probed": [
+                "FULL OPEN",
+                "FULL CLOSE",
+                "STOP",
+                "PED OPEN",
+                "EXTERNAL",
+                "LIGHT ON",
+                "LIGHT OFF",
+                "RELAY4",
+                "LEARN",
+                "WP,1:<model-specific full frame>",
+                "WRITE FUNCTION:<model-specific full frame>",
+            ],
+            "reason_not_probed": "commands may move hardware or change settings",
+            "mqtt_publish_topic": f"<uuid>/wbt01Rx",
+            "mqtt_observation_topic": f"<uuid>/wbt01Tx",
+            "wire_envelope": "c=<command>[;src=<authenticated source tag>]",
+        },
+        "results": results,
+        "working_commands": [
+            command
+            for command, result in results.items()
+            if result.get("result") == "acknowledged"
+        ],
+    }
