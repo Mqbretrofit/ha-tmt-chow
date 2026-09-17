@@ -14,13 +14,14 @@ ouranos_probe:
   name: OURANOS transport probe
   description: >-
     Run one APK-compatible read-only status request over ThroughTek IOTC/RDT
-    for the confirmed PS19001 OURANOS case. It sends no gate, parameter-read,
-    or parameter-write command. The PIN is used only for this action and is not saved.
+    for a controller identified by the vendor as uuid_type 1 (OURANOS), or the
+    legacy verified PS19001 fallback. It sends no gate, parameter-read, or
+    parameter-write command. The PIN is used only for this action and is not saved.
   fields:
     uuid:
       name: Gate UUID
       description: >-
-        Optional. Leave empty when exactly one configured PS19001 OURANOS candidate exists.
+        Optional. Leave empty when exactly one configured OURANOS candidate exists.
       required: false
       example: "ABCDEFGHIJKLMNOPQRST"
       selector:
