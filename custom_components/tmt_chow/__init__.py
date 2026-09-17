@@ -45,6 +45,9 @@ SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 SERVICE_OURANOS_PROBE = "ouranos_probe"
 _PS19001_LIVE_PARAMETER_COUNT = 19
 _PS19001_LEGACY_PARAMETER_RANGE = range(20, 24)
+_LEGACY_OURANOS_CANDIDATE_ERROR = (
+    "Selected gate is not a confirmed PS19001 OURANOS candidate"
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,24 +96,25 @@ def _entry_uuid_type(hass: HomeAssistant, uuid: str) -> str:
     return ""
 
 
+def _is_known_ouranos_candidate(hub: TmtChowHub) -> bool:
+    """Return the legacy verified PS19001 OURANOS candidate check."""
+    return hub.configured_controller_type == "PS19001" and len(hub.uuid) == 20
+
+
 def _is_ouranos_probe_candidate(hass: HomeAssistant, hub: TmtChowHub) -> bool:
-    """Return whether an isolated read-only OURANOS probe is appropriate.
+    """Return whether vendor metadata identifies the native OURANOS transport.
 
     TMT Chow 3.2.0 selects its native PkRdt/OURANOS connection for vendor
-    ``uuid_type == 1``.  Keep the historic PS19001 fallback for entries created
-    before uuid_type persistence was added.  Identifier length alone is never
-    treated as transport evidence.
+    ``uuid_type == 1``. Identifier length alone is never treated as transport
+    evidence. The separate legacy helper keeps PS19001 entries created before
+    uuid_type persistence usable.
     """
-    if len(hub.uuid) != 20:
-        return False
-    if _entry_uuid_type(hass, hub.uuid) == "1":
-        return True
-    return hub.configured_controller_type == "PS19001"
+    return len(hub.uuid) == 20 and _entry_uuid_type(hass, hub.uuid) == "1"
 
 
 def _is_verified_ouranos_poller_candidate(hub: TmtChowHub) -> bool:
     """Keep automatic native polling restricted to the verified PS19001 path."""
-    return hub.configured_controller_type == "PS19001" and len(hub.uuid) == 20
+    return _is_known_ouranos_candidate(hub)
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -156,7 +160,10 @@ def _register_services(hass: HomeAssistant) -> None:
                 hub = _find_hub(hass, requested_uuid)
                 if hub is None:
                     raise HomeAssistantError("TMT Chow gate not found")
-                if not _is_ouranos_probe_candidate(hass, hub):
+                if not (
+                    _is_ouranos_probe_candidate(hass, hub)
+                    or _is_known_ouranos_candidate(hub)
+                ):
                     raise HomeAssistantError(
                         "Selected gate is not identified as an OURANOS candidate"
                     )
@@ -165,7 +172,10 @@ def _register_services(hass: HomeAssistant) -> None:
                     candidate
                     for candidate in hass.data.get(DOMAIN, {}).values()
                     if isinstance(candidate, TmtChowHub)
-                    and _is_ouranos_probe_candidate(hass, candidate)
+                    and (
+                        _is_ouranos_probe_candidate(hass, candidate)
+                        or _is_known_ouranos_candidate(candidate)
+                    )
                 ]
                 if len(candidates) != 1:
                     raise HomeAssistantError(
@@ -241,7 +251,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif _is_ouranos_probe_candidate(hass, hub):
             # uuid_type=1 identifies the native transport, but PS25142 and future
             # AutoProduct devices remain probe-only until their exact status and
-            # command framing has been verified on hardware.  Never attach the
+            # command framing has been verified on hardware. Never attach the
             # command-capable persistent session merely from cloud metadata.
             _LOGGER.debug(
                 "Keeping unverified OURANOS controller %s in read-only probe mode",
