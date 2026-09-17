@@ -122,6 +122,85 @@ class TmtChowConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Refresh cloud metadata/AutoProduct Proposal for an existing entry."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            api = TmtChowApi(async_get_clientsession(self.hass))
+            try:
+                await api.async_login(
+                    user_input[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                )
+                devices = await api.async_get_devices()
+            except TmtAuthError:
+                errors["base"] = "invalid_auth"
+            except TmtApiError:
+                errors["base"] = "cannot_connect"
+            else:
+                uuid = str(entry.data.get(CONF_UUID) or "")
+                device = next((item for item in devices if item.uuid == uuid), None)
+                if device is None:
+                    errors["base"] = "unknown_device"
+                else:
+                    controller_type = device.device_type or str(
+                        entry.data.get(CONF_DEVICE_TYPE) or ""
+                    )
+                    proposal_id = proposal_id_for(controller_type)
+                    proposal: dict[str, Any] | None = None
+                    proposal_status = (
+                        "not_applicable" if proposal_id is None else "not_found"
+                    )
+                    if proposal_id is not None:
+                        try:
+                            proposal = await api.async_get_proposal(controller_type)
+                        except TmtAuthError:
+                            errors["base"] = "invalid_auth"
+                        except TmtApiError:
+                            errors["base"] = "cannot_connect"
+                        else:
+                            if proposal is not None:
+                                proposal_status = "available"
+
+                    if not errors:
+                        await self.async_set_unique_id(device.uuid)
+                        self._abort_if_unique_id_mismatch()
+
+                        data = dict(entry.data)
+                        data[CONF_DEVICE_TYPE] = controller_type
+                        data[CONF_PRODUCT_TYPE] = device.product_type
+                        data[CONF_ROLE] = device.role
+                        data[CONF_PROPOSAL_FETCH_STATUS] = proposal_status
+                        data.pop(CONF_PROPOSAL_ID, None)
+                        data.pop(CONF_PROPOSAL, None)
+                        if proposal_id is not None:
+                            data[CONF_PROPOSAL_ID] = proposal_id
+                        if proposal is not None:
+                            data[CONF_PROPOSAL] = proposal
+
+                        # The integration already has an update listener that
+                        # reloads the entry.  Update directly and abort instead
+                        # of calling async_update_reload_and_abort, which would
+                        # cause a double reload on Home Assistant 2026.6+.
+                        self.hass.config_entries.async_update_entry(entry, data=data)
+                        return self.async_abort(reason="reconfigure_successful")
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )
+
     async def _async_finish(self, device: TmtDevice) -> ConfigFlowResult:
         await self.async_set_unique_id(device.uuid)
         self._abort_if_unique_id_configured()
