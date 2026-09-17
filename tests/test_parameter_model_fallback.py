@@ -39,6 +39,29 @@ _LIVE_WIRE_VALUES = (
     0,
 )
 _LIVE_BODY = ",".join(map(str, _LIVE_WIRE_VALUES))
+_PS21050C_LIVE_WIRE_VALUES = (
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0,
+)
+_PS21050C_LIVE_BODY = ",".join(map(str, _PS21050C_LIVE_WIRE_VALUES))
 _APK_WIRE_KEYS = (
     "func_system_learn_method",
     "func_open_over_current",
@@ -109,6 +132,64 @@ def test_ps21050d_option_tables_match_apk_and_live_frame() -> None:
     assert wire_value_to_option(3, 2, _LIVE_WIRE_VALUES) == "75 %"
     assert wire_value_to_option(11, 1, _LIVE_WIRE_VALUES) == "Function ON"
     assert wire_value_to_option(18, 1, _LIVE_WIRE_VALUES) == "Dual Gate"
+
+
+def test_ps21050c_uses_exact_read_only_ps21050_wire_profile() -> None:
+    hub = _hub("PS21050")
+    hub._set_controller_type("PS21050C")
+
+    assert hub.controller_type == "PS21050C"
+    assert hub.configured_controller_type == "PS21050"
+    assert hub.controller_family == "swing"
+    assert "pedestrian" in hub.controller_capabilities
+    assert hub.pedestrian_strategy == "ped_open"
+    assert hub.parameter_model_type == "PS21050D"
+    assert hub.parameter_model_source == "apk_ps21050c_alias_read_only"
+    assert hub.model_parameter_schema == APP_PARAMETERS
+    assert hub.may_probe_parameters is True
+    assert hub.parameter_write_schema_verified is False
+    assert hub.supports_parameters is False
+
+
+def test_ps21050c_refresh_decodes_reported_live_frame() -> None:
+    hub = _hub("PS21050")
+    hub._set_controller_type("PS21050C")
+    calls: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        calls.append((payload, expected))
+        return f"ACK RP,1:{_PS21050C_LIVE_BODY}"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    asyncio.run(hub.async_refresh_parameters())
+
+    assert calls == [("c=RP,1", "ACK RP,1")]
+    assert hub.parameters == _PS21050C_LIVE_WIRE_VALUES
+    assert (
+        wire_value_to_option(11, hub.parameters[11], hub.parameters)
+        == "Function ON"
+    )
+
+
+def test_ps21050c_parameter_write_remains_blocked() -> None:
+    hub = _hub("PS21050")
+    hub._set_controller_type("PS21050C")
+    calls: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        calls.append((payload, expected))
+        return ""
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+
+    try:
+        asyncio.run(hub.async_set_parameter(11, 0))
+    except TmtCommandError as err:
+        assert err.translation_key == "unsupported_controller"
+    else:
+        raise AssertionError("Unverified PS21050C parameter write was allowed")
+
+    assert calls == []
 
 
 def test_ps21050d_hall_current_table_uses_vendor_offset() -> None:

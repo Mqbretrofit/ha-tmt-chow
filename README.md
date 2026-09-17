@@ -135,6 +135,8 @@ During setup, sign in with your TMT Chow account and select the gate you want to
 
 The integration receives the device credentials required for the TMT Chow cloud connection and uses them to maintain the runtime MQTT connection.
 
+`v1.0.4-beta.18` adds explicit `PS21050C` support for accounts configured as `PS21050`. It restores the APK-derived pedestrian control and safely decodes the real-hardware-confirmed 20-value parameter frame. Parameter changes remain disabled for this live controller variant until write behavior is separately verified.
+
 ### Experimental PS19001 native control
 
 `v1.0.4-beta.17` adds complete native control for the confirmed PS19001 / 20-character UID case: full open, full close, stop, pedestrian opening, live status, and all 23 APK-derived model parameters. Existing AWS/MQTT controllers continue to use their unchanged cloud-push and command paths.
