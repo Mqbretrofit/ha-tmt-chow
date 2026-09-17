@@ -9,3 +9,10 @@
 - Leave every verified controller runtime, movement, pedestrian and parameter-write path unchanged
 
 ## v1.0.4-beta.29
+
+- Restored the earlier real-hardware-verified `PS22087` account / `PS22087B` (`P710U`) 15-slot parameter profile, including its stable entity IDs and full-frame `RP,1` → one `WP,1` → `RP,1` verification path
+- Added one read-only unknown-controller diagnostic matrix for the APK 3.2.0 WBT request dialects: `RS`, `READ STATUS`, `RP,1`, and `READ FUNCTION`
+- Added both known OURANOS status-read dialects (`READ STATUS` and `RS`) to the same diagnostic for `uuid_type=1` devices when a local six-digit PIN is configured
+- Added a route report covering configured/live/proposal identity, transport selection, cloud Proposal/FunctionSet, classic Shadow, WBT and OURANOS evidence, payload shapes, blockers, and implementation readiness
+- Added an APK command catalog that records movement, optional-control, learning and write commands without ever transmitting those mutating commands during diagnostics
+- Preserved beta.28 PS25007A UI/translation fixes and every existing controller-specific runtime and parameter route
