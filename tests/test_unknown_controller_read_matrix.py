@@ -67,8 +67,8 @@ def test_unknown_controller_matrix_uses_only_allowlisted_reads() -> None:
     ]
     assert result["rejected_commands"] == ["READ STATUS"]
     assert result["unresolved_commands"] == []
-    assert result["results"]["READ STATUS"]["verdict"] == "rejected"
-    assert result["results"]["RS"]["verdict"] == "acknowledged"
+    assert result["results"]["READ STATUS"]["result"] == "rejected"
+    assert result["results"]["RS"]["result"] == "acknowledged"
     assert result["safety"] == {
         "read_only": True,
         "commands_sent_once": True,
