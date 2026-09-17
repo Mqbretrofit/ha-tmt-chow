@@ -59,6 +59,42 @@ def test_function_set_summary_is_read_only_evidence() -> None:
     assert summary["parameter_set_count"] == 3
 
 
+def test_ps25142_proposal_b_uses_dcmd_and_localized_sliding_gate_name() -> None:
+    proposal = {
+        "proposalType": "PS25142",
+        "proposalVer": "B",
+        "uartVer": "V3.0",
+        "gateType": "橫拉門",
+        "parameterSet": [{} for _ in range(18)],
+        "parameterExt": [],
+        "fuctionSet": [
+            {"dCmd": "Open", "sNotifyContent": ["Opening", "Opened"]},
+            {"dCmd": "Stop", "sNotifyContent": ["Stopped"]},
+            {"dCmd": "Close", "sNotifyContent": ["Closing", "Closed"]},
+            {"dCmd": "PED Open", "sNotifyContent": ["PedOpening", "PedOpened"]},
+        ],
+        "is_tested": True,
+    }
+
+    labels = proposal_function_labels(proposal)
+    summary = proposal_summary(proposal)
+
+    assert "Open" in labels
+    assert "Stop" in labels
+    assert "Close" in labels
+    assert "PED Open" in labels
+    assert summary["gate_family_hint"] == "sliding"
+    assert summary["pedestrian_function_present"] is True
+    assert summary["parameter_set_count"] == 18
+
+
+def test_simplified_chinese_sliding_gate_name_is_supported() -> None:
+    summary = proposal_summary(
+        {"proposalType": "PS25142", "gateType": "横拉门", "fuctionSet": []}
+    )
+    assert summary["gate_family_hint"] == "sliding"
+
+
 def test_proposal_redaction_is_recursive() -> None:
     raw = {
         "proposalType": "PS25142",
