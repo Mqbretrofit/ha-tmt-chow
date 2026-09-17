@@ -23,6 +23,8 @@ _IPV4_RE = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 _MAC_RE = re.compile(r"(?i)(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])")
 _SSID_RE = re.compile(r"(?i)(ssid\s*[:=]\s*)([^,;\r\n]+)")
 _ACK_RS_RE = re.compile(r"ACK RS:[^\"}\r\n]+", re.IGNORECASE)
+_NAK_TOKEN_RE = re.compile(r"\b(?:nak|nack)\b", re.IGNORECASE)
+_ACK_TOKEN_RE = re.compile(r"\back\b", re.IGNORECASE)
 
 
 def _format_exception(err: BaseException) -> str:
@@ -44,6 +46,21 @@ def _sanitize_observed_payload(payload: str, uuid: str) -> str:
     return value
 
 
+def classify_wbt_response(payload: str | None) -> str:
+    """Classify a captured WBT payload without treating NAK as success.
+
+    NAK is still evidence that the dialect exists on the controller. It is not
+    a working implementation path.
+    """
+    if not payload:
+        return "no_response"
+    if _NAK_TOKEN_RE.search(payload):
+        return "rejected"
+    if _ACK_TOKEN_RE.search(payload):
+        return "acknowledged"
+    return "traffic_observed"
+
+
 def _extract_ack_rs(payload: str | None) -> str | None:
     """Extract an ACK RS frame even when the vendor wraps it in another payload."""
     if not payload:
@@ -51,8 +68,6 @@ def _extract_ack_rs(payload: str | None) -> str | None:
     if payload.startswith("ACK RS:"):
         return payload
 
-    # Some native/vendor paths wrap the UART response in JSON.  Search decoded
-    # string values first so a suffix such as `"}` is not mistaken for wire data.
     try:
         envelope = json.loads(payload)
     except (TypeError, ValueError):
@@ -151,7 +166,7 @@ async def _async_probe_wbt_read(
         except TimeoutError:
             result["result"] = "traffic_observed" if observed_raw else "no_response"
         else:
-            result["result"] = "acknowledged"
+            result["result"] = classify_wbt_response(payload)
             result["ack"] = _sanitize_observed_payload(payload, uuid)
         return result
     except (MqttError, TimeoutError) as err:
@@ -238,6 +253,23 @@ async def async_probe_parameter_read(
     )
 
 
+def _matrix_command_lists(
+    results: dict[str, Any],
+) -> tuple[list[str], list[str], list[str]]:
+    working: list[str] = []
+    rejected: list[str] = []
+    unresolved: list[str] = []
+    for command, result in results.items():
+        verdict = result.get("result")
+        if verdict == "acknowledged":
+            working.append(command)
+        elif verdict == "rejected":
+            rejected.append(command)
+        else:
+            unresolved.append(command)
+    return working, rejected, unresolved
+
+
 async def async_probe_wbt_read_matrix(
     *,
     endpoint: str,
@@ -250,8 +282,9 @@ async def async_probe_wbt_read_matrix(
 ) -> dict[str, Any]:
     """Try every known non-mutating WBT read dialect for an unknown controller.
 
-    Each request uses an isolated connection and is sent exactly once. The
-    matrix never sends movement, relay, learning, reset, or write commands.
+    Each request uses an isolated connection and is sent exactly once, in APK
+    catalog order. The matrix never sends movement, relay, learning, reset, or
+    write commands. NAK replies stay in the report as rejected evidence.
     """
     probes = (
         ("RS", ("ACK RS", "NAK RS")),
@@ -266,32 +299,26 @@ async def async_probe_wbt_read_matrix(
         ),
     )
     results: dict[str, Any] = dict(existing_results or {})
-    pending = [item for item in probes if item[0] not in results]
-    completed = await asyncio.gather(
-        *(
-            _async_probe_wbt_read(
-                endpoint=endpoint,
-                uuid=uuid,
-                certificate_pem=certificate_pem,
-                private_key=private_key,
-                command=command,
-                response_markers=markers,
-                response_timeout=response_timeout,
-                mqtt_client_factory=mqtt_client_factory,
-            )
-            for command, markers in pending
+    for command, markers in probes:
+        if command in results:
+            continue
+        results[command] = await _async_probe_wbt_read(
+            endpoint=endpoint,
+            uuid=uuid,
+            certificate_pem=certificate_pem,
+            private_key=private_key,
+            command=command,
+            response_markers=markers,
+            response_timeout=response_timeout,
+            mqtt_client_factory=mqtt_client_factory,
         )
-    )
-    results.update(
-        (command, result)
-        for (command, _markers), result in zip(pending, completed, strict=True)
-    )
-    # Preserve APK command order even when probes completed out of order.
     results = {command: results[command] for command, _markers in probes}
+    working, rejected, unresolved = _matrix_command_lists(results)
     return {
         "safety": {
             "read_only": True,
             "commands_sent_once": True,
+            "commands_sent_serially": True,
             "movement_commands_sent": False,
             "parameter_writes_sent": False,
             "relay_learning_or_reset_sent": False,
@@ -312,14 +339,12 @@ async def async_probe_wbt_read_matrix(
                 "WRITE FUNCTION:<model-specific full frame>",
             ],
             "reason_not_probed": "commands may move hardware or change settings",
-            "mqtt_publish_topic": f"<uuid>/wbt01Rx",
-            "mqtt_observation_topic": f"<uuid>/wbt01Tx",
+            "mqtt_publish_topic": "<uuid>/wbt01Rx",
+            "mqtt_observation_topic": "<uuid>/wbt01Tx",
             "wire_envelope": "c=<command>[;src=<authenticated source tag>]",
         },
         "results": results,
-        "working_commands": [
-            command
-            for command, result in results.items()
-            if result.get("result") == "acknowledged"
-        ],
+        "working_commands": working,
+        "rejected_commands": rejected,
+        "unresolved_commands": unresolved,
     }
