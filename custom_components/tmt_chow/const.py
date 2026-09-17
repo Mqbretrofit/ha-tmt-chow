@@ -20,6 +20,7 @@ LOGIN_PATH: Final = "v4.0/user/outh2/token/"
 DEVICES_PATH: Final = "v4.0/user/devices/"
 CERTIFICATE_PATH: Final = "v4.0/devices/iot/user/certificate/"
 POLICY_PATH: Final = "v4.0/devices/iot/device/policy/"
+PROPOSAL_PATH_TEMPLATE: Final = "v4.0/devices/Proposal/{proposal}/latest/"
 
 OAUTH_CLIENT: Final = (
     "pMFvOSB4KySGR7PDKfMklr4XxbWzyh1Qc0v7JX48:"
@@ -38,6 +39,9 @@ CONF_PRODUCT_TYPE: Final = "product_type"
 CONF_ROLE: Final = "role"
 CONF_SOURCE_TAG: Final = "source_tag"
 CONF_OURANOS_PIN: Final = "ouranos_pin"
+CONF_PROPOSAL_ID: Final = "proposal_id"
+CONF_PROPOSAL: Final = "proposal"
+CONF_PROPOSAL_FETCH_STATUS: Final = "proposal_fetch_status"
 
 DEFAULT_SOURCE_TAG: Final = "P9999999"
 MQTT_PORT: Final = 8883

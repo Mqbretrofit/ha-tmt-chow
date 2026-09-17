@@ -16,7 +16,9 @@ from .const import (
     LOGIN_PATH,
     OAUTH_CLIENT,
     POLICY_PATH,
+    PROPOSAL_PATH_TEMPLATE,
 )
+from .proposal import normalize_proposal_payload, proposal_id_for
 
 
 class TmtApiError(Exception):
@@ -76,7 +78,8 @@ class TmtChowApi:
         *,
         json: dict[str, Any] | None = None,
         basic_auth: bool = False,
-    ) -> dict[str, Any]:
+        allow_not_found: bool = False,
+    ) -> dict[str, Any] | None:
         headers = {
             "Accept": "application/json",
             "User-Agent": "HomeAssistant-TMT-Chow/0.1.0-beta.1",
@@ -100,6 +103,8 @@ class TmtChowApi:
                 except (ValueError, TypeError):
                     payload = {}
 
+                if response.status == 404 and allow_not_found:
+                    return None
                 if response.status in (400, 401, 403):
                     raise TmtAuthError(f"TMT API rejected the request: {response.status}")
                 if response.status < 200 or response.status >= 300:
@@ -125,6 +130,8 @@ class TmtChowApi:
             },
             basic_auth=True,
         )
+        if payload is None:
+            raise TmtAuthError("The TMT response did not contain an access token")
         token = _value(payload, "access_token")
         if not isinstance(token, str) or not token:
             raise TmtAuthError("The TMT response did not contain an access token")
@@ -132,6 +139,8 @@ class TmtChowApi:
 
     async def async_get_devices(self) -> list[TmtDevice]:
         payload = await self._request("GET", DEVICES_PATH)
+        if payload is None:
+            raise TmtApiError("Unexpected empty TMT device response")
         friendly_names: dict[str, str] = {}
         for custom in payload.get("custom_info", []) or []:
             if isinstance(custom, dict) and custom.get("uuid"):
@@ -163,11 +172,32 @@ class TmtChowApi:
                 )
         return devices
 
+    async def async_get_proposal(self, controller_type: str) -> dict[str, Any] | None:
+        """Fetch the latest AutoProduct proposal for one controller, if present.
+
+        TMT Chow 3.2.0 uses this endpoint when a controller is not available as a
+        dedicated static product class.  A missing proposal is a supported state,
+        not a setup failure.
+        """
+        proposal_id = proposal_id_for(controller_type)
+        if proposal_id is None:
+            return None
+        payload = await self._request(
+            "GET",
+            PROPOSAL_PATH_TEMPLATE.format(proposal=proposal_id),
+            allow_not_found=True,
+        )
+        if payload is None:
+            return None
+        return normalize_proposal_payload(payload)
+
     async def async_bootstrap_aws(self, device: TmtDevice) -> TmtAwsCredentials:
         """Create one dedicated certificate and attach its device policy."""
         certificate = await self._request(
             "PUT", CERTIFICATE_PATH, json={"app": 0}
         )
+        if certificate is None:
+            raise TmtApiError("AWS certificate response is incomplete")
         private_key = _value(certificate, "PrivateKey", "privateKey", "private_key")
         certificate_pem = _value(
             certificate, "certificatePem", "CertificatePem", "certificate_pem"
@@ -195,6 +225,8 @@ class TmtChowApi:
                 "uuid": device.uuid,
             },
         )
+        if policy is None:
+            raise TmtApiError("AWS policy response is incomplete")
         thing_name = _value(policy, "thing_name", "thingName", "ThingName")
         if not isinstance(thing_name, str) or not thing_name:
             thing_name = device.uuid

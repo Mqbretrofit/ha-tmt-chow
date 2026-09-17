@@ -15,6 +15,14 @@
         "data": {
           "device": "Gate"
         }
+      },
+      "reconfigure": {
+        "title": "Refresh TMT cloud profile",
+        "description": "Use your TMT Chow login once to refresh this gate's AutoProduct/Proposal metadata. The username, password and Bearer token are not saved.",
+        "data": {
+          "username": "Username / nickname",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -26,7 +34,8 @@
     "abort": {
       "already_configured": "This gate is already configured",
       "cannot_connect": "Cannot connect to TMT Chow",
-      "invalid_auth": "Authentication failed"
+      "invalid_auth": "Authentication failed",
+      "reconfigure_successful": "The TMT cloud profile was refreshed"
     }
   },
   "options": {

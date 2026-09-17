@@ -16,6 +16,9 @@ from .const import (
     CONF_ENDPOINT,
     CONF_OURANOS_PIN,
     CONF_PRIVATE_KEY,
+    CONF_PROPOSAL,
+    CONF_PROPOSAL_FETCH_STATUS,
+    CONF_PROPOSAL_ID,
     CONF_THING_NAME,
     CONF_UUID,
     DOMAIN,
@@ -32,6 +35,12 @@ from .pedestrian import (
     direct_ped_open_blocked,
     pedestrian_strategy_for,
     pedestrian_strategy_reason,
+)
+from .proposal import (
+    normalize_proposal_payload,
+    proposal_function_labels,
+    proposal_summary,
+    redact_proposal_payload,
 )
 from .ps21050d_parameters import (
     CONTROLLER_TYPE as PS21050D,
@@ -51,6 +60,9 @@ _REDACT = {
     CONF_PRIVATE_KEY,
     CONF_CERTIFICATE_ARN,
     CONF_OURANOS_PIN,
+    # The raw cloud proposal can contain userEmail.  Expose only the recursively
+    # sanitized copy below so personal data never leaks through entry diagnostics.
+    CONF_PROPOSAL,
 }
 
 
@@ -124,6 +136,18 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
     ouranos_poller = hass.data.get(OURANOS_POLLERS_DATA_KEY, {}).get(entry.entry_id)
+
+    proposal = normalize_proposal_payload(entry.data.get(CONF_PROPOSAL))
+    proposal_info = proposal_summary(proposal)
+    proposal_labels = proposal_function_labels(proposal)
+    relay4_label = next(
+        (
+            label
+            for label in proposal_labels
+            if "relay 4" in label.casefold() or "relay4" in label.casefold()
+        ),
+        None,
+    )
 
     # Probe the classic AWS IoT Shadow GET path using an isolated read-only MQTT
     # connection. This distinguishes accepted/rejected/no-response without
@@ -264,14 +288,24 @@ async def async_get_config_entry_diagnostics(
             ),
             "pedestrian_direct_command_blocked": direct_blocked,
             "pedestrian_relay4_enabled": pedestrian_strategy == PEDESTRIAN_STRATEGY_RELAY4,
-            # TMT Chow 3.1.4 AutoProduct can select RELAY4 from its cloud
-            # FunctionSet, but the current HA runtime does not receive that
-            # proposal payload. Keep these explicit in diagnostics so missing
-            # FunctionSet evidence is visible instead of being guessed.
-            "function_set_evidence_available": False,
-            "function_set_pedestrian": None,
-            "relay4_available": None,
-            "relay4_function_name": None,
+            "proposal_id": entry.data.get(CONF_PROPOSAL_ID),
+            "proposal_fetch_status": entry.data.get(CONF_PROPOSAL_FETCH_STATUS),
+            "proposal_summary": proposal_info,
+            "proposal_payload": (
+                redact_proposal_payload(proposal) if proposal is not None else None
+            ),
+            # FunctionSet is authoritative evidence from the vendor AutoProduct
+            # profile.  Do not turn it into live commands yet; this beta only
+            # captures and exposes the profile so hardware behavior can be
+            # verified before command/parameter enablement.
+            "function_set_evidence_available": bool(
+                proposal_info.get("function_set_available")
+            ),
+            "function_set_pedestrian": proposal_info.get(
+                "pedestrian_function_present"
+            ),
+            "relay4_available": proposal_info.get("relay4_present"),
+            "relay4_function_name": relay4_label,
             "product_type": hub.product_type,
             "parameter_model_type": hub.parameter_model_type,
             "parameter_model_source": hub.parameter_model_source,
