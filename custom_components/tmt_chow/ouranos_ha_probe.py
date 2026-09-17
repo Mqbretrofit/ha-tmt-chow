@@ -6,8 +6,10 @@ helper through a private integrity-checked glibc loader/runtime. This avoids
 relying on the host's missing ``ld-linux-x86-64.so.2`` and keeps native crashes
 isolated from Home Assistant.
 
-The helper sends exactly one APK-compatible ``READ STATUS`` request. It cannot
-accept arbitrary commands and never sends gate, parameter-read, or
+The helper sends exactly one allowlisted APK-compatible status request. The
+legacy verified path uses ``READ STATUS``; a caller may explicitly select the
+read-only ``RS`` status request for vendor UART V3.0 AutoProduct evidence. It
+cannot accept arbitrary commands and never sends gate, parameter-read, or
 parameter-write commands.
 """
 
@@ -48,6 +50,7 @@ _SUPPORTED_MACHINES: Final = frozenset({"x86_64", "amd64"})
 _TMT_APK_IOTC_VERSION: Final = "0x03010521"
 _PROBE_IOTC_VERSION: Final = "0x03010526"
 _PROBE_RDT_VERSION: Final = "0x03010526"
+_STATUS_COMMAND_MODES: Final = frozenset({"READ_STATUS", "RS"})
 _MAX_TUTK_LIBRARY_BYTES: Final = 2 * 1024 * 1024
 _DOWNLOAD_TIMEOUT: Final = 45
 _HELPER_TIMEOUT: Final = 40
@@ -63,15 +66,22 @@ _GLIBC_SHA512: Final = (
 )
 _MAX_GLIBC_BUNDLE_BYTES: Final = 64 * 1024 * 1024
 _GLIBC_HELPER_SHA256: Final = (
-    "db88aee4b4995254378165456b2d7041dfa17b6637873f1d6a299690ba89e9d2"
+    "72bf1dc3616f13eb1b941a646ca6db2a02efc40eb01020132fd0ea40d38419ff"
 )
 
 
-def _base_result(uuid: str) -> dict[str, Any]:
+def _normalize_status_command(status_command: str) -> str:
+    return status_command.strip().upper().replace(" ", "_")
+
+
+def _base_result(uuid: str, status_command: str = "READ_STATUS") -> dict[str, Any]:
     machine = platform.machine().lower()
+    mode = _normalize_status_command(status_command)
     return {
         "result": "not_run",
         "applicable": len(uuid) == 20,
+        "status_command_mode": mode,
+        "status_command": "RS" if mode == "RS" else "READ STATUS",
         "home_assistant_machine": machine,
         "home_assistant_platform": sys.platform,
         "library_source_repository": _TUTK_SDK_REPOSITORY,
@@ -310,7 +320,12 @@ def _safe_helper_error(stderr: bytes, uuid: str, pin_code: str) -> str | None:
 
 
 async def _async_run_process(
-    argv: list[str], uuid: str, pin_code: str, *, env: dict[str, str] | None = None
+    argv: list[str],
+    uuid: str,
+    pin_code: str,
+    status_command: str = "READ_STATUS",
+    *,
+    env: dict[str, str] | None = None,
 ) -> tuple[asyncio.subprocess.Process, bytes, bytes]:
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -320,8 +335,9 @@ async def _async_run_process(
         env=env,
     )
     try:
+        stdin_payload = f"{uuid}\n{pin_code}\n{status_command}\n".encode("ascii")
         stdout, stderr = await asyncio.wait_for(
-            process.communicate((uuid + "\n" + pin_code + "\n").encode("ascii")),
+            process.communicate(stdin_payload),
             timeout=_HELPER_TIMEOUT,
         )
     except (TimeoutError, asyncio.CancelledError):
@@ -333,9 +349,16 @@ async def _async_run_process(
 
 
 async def async_probe_ouranos_on_ha(
-    hass: HomeAssistant, uuid: str, pin_code: str
+    hass: HomeAssistant,
+    uuid: str,
+    pin_code: str,
+    status_command: str = "READ_STATUS",
 ) -> dict[str, Any]:
-    result = _base_result(uuid)
+    mode = _normalize_status_command(status_command)
+    result = _base_result(uuid, mode)
+    if mode not in _STATUS_COMMAND_MODES:
+        result["result"] = "invalid_status_command"
+        return result
     if len(uuid) != 20:
         result["result"] = "not_applicable"
         return result
@@ -378,7 +401,7 @@ async def async_probe_ouranos_on_ha(
         env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
 
         process, stdout, stderr = await _async_run_process(
-            argv, uuid, pin_code, env=env
+            argv, uuid, pin_code, mode, env=env
         )
         result["helper_started"] = True
     except TimeoutError:

@@ -121,6 +121,22 @@ int main(int argc, char **argv) {
     pin[strcspn(pin, "\r\n")] = 0;
     if (strlen(pin) != 6 || strspn(pin, "0123456789") != 6) { fprintf(stderr, "invalid pin\n"); return 2; }
 
+    char status_mode[32] = "READ_STATUS";
+    char modebuf[32] = {0};
+    if (fgets(modebuf, sizeof(modebuf), stdin)) {
+        modebuf[strcspn(modebuf, "\r\n")] = 0;
+        if (modebuf[0] != 0) {
+            if (strcmp(modebuf, "READ_STATUS") != 0 && strcmp(modebuf, "RS") != 0) {
+                fprintf(stderr, "invalid status mode\n");
+                return 2;
+            }
+            snprintf(status_mode, sizeof(status_mode), "%s", modebuf);
+        }
+    }
+    const char *status_pk_command = strcmp(status_mode, "RS") == 0 ? "RS" : "READ STATUS";
+    const char *status_ack_fragment = strcmp(status_mode, "RS") == 0 ? "ACK RS" : "ACK STATUS";
+    const char *status_nak_fragment = strcmp(status_mode, "RS") == 0 ? "NAK RS" : "NAK READ STATUS";
+
     int iotc_library_loaded=0, rdt_library_loaded=0, iotc_init_code=0, iotc_init_set=0, sid=-1, connect_attempted=0, connect_code=0, connect_set=0;
     int connect_timeout=0, connect_stop_code=0, stop_set=0, worker_stuck=0, iotc_connected=0;
     unsigned int iotc_version=0; int iotc_version_set=0;
@@ -195,28 +211,39 @@ int main(int argc, char **argv) {
             if (rdt_id >= 0) {
                 rdt_connected=1; char buf[4096];
                 {
-                    static const char request_json[] = "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"READ STATUS;src=P9999999\\r\\n\"}}";
-                    char request[sizeof(request_json)];
-                    int request_len = (int)strlen(request_json);
-                    memcpy(request, request_json, sizeof(request_json));
-                    xor_with_pin(request, request_len, pin);
-                    status_write_attempted=1;
-                    status_write_code=RDT_Write(rdt_id,request,request_len); status_write_set=1;
-                    memset(request,0,sizeof(request));
-                    if (status_write_code >= 0) {
-                        status_request_sent=1; long deadline=monotonic_ms()+5000;
-                        while (monotonic_ms() < deadline) {
-                            int ret=RDT_Read(rdt_id,buf,sizeof(buf)-1,500); response_last=ret; response_last_set=1;
-                            if (ret>0) {
-                                int copy_len=ret > (int)sizeof(status_response)-1 ? (int)sizeof(status_response)-1 : ret;
-                                response_read_count++; response_read_bytes += ret;
-                                memcpy(status_response,buf,copy_len);
-                                xor_with_pin(status_response,copy_len,pin);
-                                redact_response(status_response,copy_len,uid,pin);
-                                if (strstr(status_response,"ACK STATUS") || strstr(status_response,"READ STATUS")) status_response_received=1;
-                                break;
+                    char request_json[256];
+                    char request[256];
+                    int request_len = snprintf(
+                        request_json,
+                        sizeof(request_json),
+                        "{\"VER\":1,\"CMD\":\"UART\",\"ACT\":\"POST\",\"DATA\":{\"PKCMD\":\"%s;src=P9999999\\r\\n\"}}",
+                        status_pk_command
+                    );
+                    if (request_len <= 0 || request_len >= (int)sizeof(request_json)) {
+                        status_write_attempted=1;
+                        status_write_code=-10014;
+                        status_write_set=1;
+                    } else {
+                        memcpy(request, request_json, (size_t)request_len + 1);
+                        xor_with_pin(request, request_len, pin);
+                        status_write_attempted=1;
+                        status_write_code=RDT_Write(rdt_id,request,request_len); status_write_set=1;
+                        memset(request,0,sizeof(request));
+                        if (status_write_code >= 0) {
+                            status_request_sent=1; long deadline=monotonic_ms()+5000;
+                            while (monotonic_ms() < deadline) {
+                                int ret=RDT_Read(rdt_id,buf,sizeof(buf)-1,500); response_last=ret; response_last_set=1;
+                                if (ret>0) {
+                                    int copy_len=ret > (int)sizeof(status_response)-1 ? (int)sizeof(status_response)-1 : ret;
+                                    response_read_count++; response_read_bytes += ret;
+                                    memcpy(status_response,buf,copy_len);
+                                    xor_with_pin(status_response,copy_len,pin);
+                                    redact_response(status_response,copy_len,uid,pin);
+                                    if (strstr(status_response,status_ack_fragment) || strstr(status_response,status_nak_fragment)) status_response_received=1;
+                                    break;
+                                }
+                                if (ret<0 && ret!=-10007) break;
                             }
-                            if (ret<0 && ret!=-10007) break;
                         }
                     }
                     memset(pin,0,sizeof(pin));
@@ -234,6 +261,7 @@ int main(int argc, char **argv) {
     printf("\"library_loaded\":%s,\"iotc_library_loaded\":%s,\"rdt_library_loaded\":%s,\"library_error\":",(iotc_library_loaded&&rdt_library_loaded)?"true":"false",iotc_library_loaded?"true":"false",rdt_library_loaded?"true":"false"); if(library_error[0])json_str(library_error);else printf("null");
     printf(",\"iotc_version\":"); if(iotc_version_set)printf("\"0x%08x\"",iotc_version);else printf("null");
     printf(",\"rdt_version\":"); if(rdt_version_set)printf("\"0x%08x\"",(unsigned int)rdt_version);else printf("null");
+    printf(",\"status_command\":"); json_str(status_pk_command);
     printf(",\"symbols\":{\"IOTC_Initialize2\":%s,\"IOTC_Get_Version\":%s,\"IOTC_Get_SessionID\":%s,\"IOTC_Connect_ByUID_Parallel\":%s,\"IOTC_Session_Close\":%s,\"IOTC_DeInitialize\":%s,\"IOTC_Connect_Stop_BySID\":%s,\"RDT_GetRDTApiVer\":%s,\"RDT_Initialize\":%s,\"RDT_Create\":%s,\"RDT_Write\":%s,\"RDT_Read\":%s,\"RDT_Destroy\":%s,\"RDT_DeInitialize\":%s,\"TUTK_SDK_Set_License_Key\":%s}",
       IOTC_Initialize2?"true":"false",IOTC_Get_Version?"true":"false",IOTC_Get_SessionID?"true":"false",IOTC_Connect_ByUID_Parallel?"true":"false",IOTC_Session_Close?"true":"false",IOTC_DeInitialize?"true":"false",IOTC_Connect_Stop_BySID?"true":"false",RDT_GetRDTApiVer?"true":"false",RDT_Initialize?"true":"false",RDT_Create?"true":"false",RDT_Write?"true":"false",RDT_Read?"true":"false",RDT_Destroy?"true":"false",RDT_DeInitialize?"true":"false",TUTK_SDK_Set_License_Key?"true":"false");
 #define NULINT(key,set,val) do{printf(",\"%s\":",key); if(set) printf("%d",val); else printf("null");}while(0)

@@ -20,6 +20,7 @@ from .const import (
     CONF_OURANOS_PIN,
     CONF_PRIVATE_KEY,
     CONF_PRODUCT_TYPE,
+    CONF_PROPOSAL,
     CONF_SOURCE_TAG,
     CONF_THING_NAME,
     CONF_UUID,
@@ -34,6 +35,7 @@ from .mqtt import MqttError
 from .ouranos_ha_probe import async_probe_ouranos_on_ha
 from .ouranos_status import OuranosStatusPoller
 from .pedestrian import PEDESTRIAN_STRATEGY_NONE, pedestrian_strategy_for
+from .proposal import proposal_summary
 from .ps21050d_hub import TmtChowHub
 
 _FRONTEND_DATA_KEY = f"{DOMAIN}_frontend_registered"
@@ -88,12 +90,18 @@ def _find_hub(hass: HomeAssistant, uuid: str) -> TmtChowHub | None:
     )
 
 
-def _entry_uuid_type(hass: HomeAssistant, uuid: str) -> str:
-    """Return the persisted vendor transport type for one configured UUID."""
+def _entry_for_uuid(hass: HomeAssistant, uuid: str) -> ConfigEntry | None:
+    """Return the config entry matching one configured TMT UUID."""
     for entry in hass.config_entries.async_entries(DOMAIN):
         if str(entry.data.get(CONF_UUID) or "") == uuid:
-            return str(entry.data.get(CONF_UUID_TYPE) or "")
-    return ""
+            return entry
+    return None
+
+
+def _entry_uuid_type(hass: HomeAssistant, uuid: str) -> str:
+    """Return the persisted vendor transport type for one configured UUID."""
+    entry = _entry_for_uuid(hass, uuid)
+    return str(entry.data.get(CONF_UUID_TYPE) or "") if entry is not None else ""
 
 
 def _is_known_ouranos_candidate(hub: TmtChowHub) -> bool:
@@ -110,6 +118,28 @@ def _is_ouranos_probe_candidate(hass: HomeAssistant, hub: TmtChowHub) -> bool:
     uuid_type persistence usable.
     """
     return len(hub.uuid) == 20 and _entry_uuid_type(hass, hub.uuid) == "1"
+
+
+def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
+    """Select only the read-only status command justified by stored evidence.
+
+    The verified PS19001 path keeps its existing ``READ STATUS`` command.
+    For vendor-identified OURANOS AutoProduct entries, TMT Chow 3.2.0 maps a
+    cloud ``uartVer: V3.0`` proposal to the UART1 status command ``RS``. No
+    unknown or missing proposal is allowed to change the legacy probe command.
+    """
+    if _is_known_ouranos_candidate(hub):
+        return "READ_STATUS"
+
+    entry = _entry_for_uuid(hass, hub.uuid)
+    if entry is None or str(entry.data.get(CONF_UUID_TYPE) or "") != "1":
+        return "READ_STATUS"
+
+    summary = proposal_summary(entry.data.get(CONF_PROPOSAL))
+    uart_version = str(summary.get("uart_version") or "").strip().upper()
+    if uart_version in {"V3.0", "3.0"}:
+        return "RS"
+    return "READ_STATUS"
 
 
 def _is_verified_ouranos_poller_candidate(hub: TmtChowHub) -> bool:
@@ -183,7 +213,10 @@ def _register_services(hass: HomeAssistant) -> None:
                     )
                 hub = candidates[0]
 
-            return await async_probe_ouranos_on_ha(hass, hub.uuid, pin_code)
+            status_command = _ouranos_probe_status_command(hass, hub)
+            return await async_probe_ouranos_on_ha(
+                hass, hub.uuid, pin_code, status_command
+            )
 
         hass.services.async_register(
             DOMAIN,

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ouranos-self-contained-glibc-helper
+      - ps25142-rs-probe-beta26
     paths:
       - tools/ouranos_glibc_helper.c
       - tools/ouranos_glibc_session_helper.c

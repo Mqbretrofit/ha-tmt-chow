@@ -15,8 +15,10 @@ ouranos_probe:
   description: >-
     Run one APK-compatible read-only status request over ThroughTek IOTC/RDT
     for a controller identified by the vendor as uuid_type 1 (OURANOS), or the
-    legacy verified PS19001 fallback. It sends no gate, parameter-read, or
-    parameter-write command. The PIN is used only for this action and is not saved.
+    legacy verified PS19001 fallback. Verified PS19001 keeps READ STATUS; a
+    vendor AutoProduct Proposal with uartVer V3.0 uses the read-only RS status
+    request. It sends no gate, parameter-read, or parameter-write command. The
+    PIN is used only for this action and is not saved.
   fields:
     uuid:
       name: Gate UUID
