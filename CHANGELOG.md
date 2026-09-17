@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.4-beta.30
 
 - Keep the unknown-controller diagnostic matrix covering every APK read dialect in one download (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`)
 - Classify each dialect as ACK, NAK, or unresolved so a `NAK` stays in the report as rejected evidence instead of a working command
