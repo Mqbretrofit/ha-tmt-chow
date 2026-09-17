@@ -23,6 +23,7 @@ from .const import (
     CONF_SOURCE_TAG,
     CONF_THING_NAME,
     CONF_UUID,
+    CONF_UUID_TYPE,
     DEFAULT_SOURCE_TAG,
     DOMAIN,
     OURANOS_POLLERS_DATA_KEY,
@@ -84,14 +85,31 @@ def _find_hub(hass: HomeAssistant, uuid: str) -> TmtChowHub | None:
     )
 
 
-def _is_known_ouranos_candidate(hub: TmtChowHub) -> bool:
-    """Return whether this hub matches the confirmed PS19001 OURANOS case.
+def _entry_uuid_type(hass: HomeAssistant, uuid: str) -> str:
+    """Return the persisted vendor transport type for one configured UUID."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if str(entry.data.get(CONF_UUID) or "") == uuid:
+            return str(entry.data.get(CONF_UUID_TYPE) or "")
+    return ""
 
-    A 20-character identifier alone does not identify OURANOS: working WBT
-    controllers can use the same identifier length. Until uuid_type is persisted
-    in config entries, restrict this native diagnostic to the PS19001 hardware
-    confirmed by issue #14.
+
+def _is_ouranos_probe_candidate(hass: HomeAssistant, hub: TmtChowHub) -> bool:
+    """Return whether an isolated read-only OURANOS probe is appropriate.
+
+    TMT Chow 3.2.0 selects its native PkRdt/OURANOS connection for vendor
+    ``uuid_type == 1``.  Keep the historic PS19001 fallback for entries created
+    before uuid_type persistence was added.  Identifier length alone is never
+    treated as transport evidence.
     """
+    if len(hub.uuid) != 20:
+        return False
+    if _entry_uuid_type(hass, hub.uuid) == "1":
+        return True
+    return hub.configured_controller_type == "PS19001"
+
+
+def _is_verified_ouranos_poller_candidate(hub: TmtChowHub) -> bool:
+    """Keep automatic native polling restricted to the verified PS19001 path."""
     return hub.configured_controller_type == "PS19001" and len(hub.uuid) == 20
 
 
@@ -138,21 +156,20 @@ def _register_services(hass: HomeAssistant) -> None:
                 hub = _find_hub(hass, requested_uuid)
                 if hub is None:
                     raise HomeAssistantError("TMT Chow gate not found")
-                if not _is_known_ouranos_candidate(hub):
+                if not _is_ouranos_probe_candidate(hass, hub):
                     raise HomeAssistantError(
-                        "Selected gate is not a confirmed PS19001 OURANOS candidate"
+                        "Selected gate is not identified as an OURANOS candidate"
                     )
             else:
                 candidates = [
                     candidate
                     for candidate in hass.data.get(DOMAIN, {}).values()
                     if isinstance(candidate, TmtChowHub)
-                    and _is_known_ouranos_candidate(candidate)
+                    and _is_ouranos_probe_candidate(hass, candidate)
                 ]
                 if len(candidates) != 1:
                     raise HomeAssistantError(
-                        "Specify uuid unless exactly one confirmed PS19001 "
-                        "OURANOS candidate is configured"
+                        "Specify uuid unless exactly one OURANOS candidate is configured"
                     )
                 hub = candidates[0]
 
@@ -214,13 +231,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
         if (
-            _is_known_ouranos_candidate(hub)
+            _is_verified_ouranos_poller_candidate(hub)
             and len(pin_code) == 6
             and all("0" <= char <= "9" for char in pin_code)
         ):
             # Attach before hub startup so the first parameter bootstrap already
             # uses the proven OURANOS route instead of the unavailable WBT path.
             poller = OuranosStatusPoller(hass, hub, pin_code)
+        elif _is_ouranos_probe_candidate(hass, hub):
+            # uuid_type=1 identifies the native transport, but PS25142 and future
+            # AutoProduct devices remain probe-only until their exact status and
+            # command framing has been verified on hardware.  Never attach the
+            # command-capable persistent session merely from cloud metadata.
+            _LOGGER.debug(
+                "Keeping unverified OURANOS controller %s in read-only probe mode",
+                entry.title,
+            )
         else:
             _LOGGER.warning(
                 "Ignoring invalid native PS19001 configuration for %s",
