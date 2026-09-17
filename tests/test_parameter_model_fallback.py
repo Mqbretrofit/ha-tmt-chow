@@ -134,7 +134,7 @@ def test_ps21050d_option_tables_match_apk_and_live_frame() -> None:
     assert wire_value_to_option(18, 1, _LIVE_WIRE_VALUES) == "Dual Gate"
 
 
-def test_ps21050c_uses_exact_read_only_ps21050_wire_profile() -> None:
+def test_ps21050c_uses_exact_writable_ps21050_wire_profile() -> None:
     hub = _hub("PS21050")
     hub._set_controller_type("PS21050C")
 
@@ -144,11 +144,11 @@ def test_ps21050c_uses_exact_read_only_ps21050_wire_profile() -> None:
     assert "pedestrian" in hub.controller_capabilities
     assert hub.pedestrian_strategy == "ped_open"
     assert hub.parameter_model_type == "PS21050D"
-    assert hub.parameter_model_source == "apk_ps21050c_alias_read_only"
+    assert hub.parameter_model_source == "apk_ps21050c_alias"
     assert hub.model_parameter_schema == APP_PARAMETERS
     assert hub.may_probe_parameters is True
-    assert hub.parameter_write_schema_verified is False
-    assert hub.supports_parameters is False
+    assert hub.parameter_write_schema_verified is True
+    assert hub.supports_parameters is True
 
 
 def test_ps21050c_refresh_decodes_reported_live_frame() -> None:
@@ -171,25 +171,66 @@ def test_ps21050c_refresh_decodes_reported_live_frame() -> None:
     )
 
 
-def test_ps21050c_parameter_write_remains_blocked() -> None:
+def test_ps21050c_write_uses_one_wp1_and_exact_full_readback() -> None:
     hub = _hub("PS21050")
     hub._set_controller_type("PS21050C")
     calls: list[tuple[str, str]] = []
 
+    updated = list(_PS21050C_LIVE_WIRE_VALUES)
+    updated[11] = 0
+    updated_values = tuple(updated)
+    updated_body = ",".join(map(str, updated_values))
+    expected_command = encode_parameter_write(updated_values)
+
     async def fake_exchange(payload: str, expected: str) -> str:
         calls.append((payload, expected))
-        return ""
+        if len(calls) == 1:
+            return f"ACK RP,1:{_PS21050C_LIVE_BODY}"
+        if len(calls) == 2:
+            assert payload == f"c={expected_command};src=P9999999"
+            assert expected == "ACK WP"
+            return "ACK WP"
+        return f"ACK RP,1:{updated_body}"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+
+    asyncio.run(hub.async_set_parameter(11, 0))
+
+    assert calls == [
+        ("c=RP,1", "ACK RP,1"),
+        (f"c={expected_command};src=P9999999", "ACK WP"),
+        ("c=RP,1", "ACK RP,1"),
+    ]
+    assert hub.parameters == updated_values
+
+
+def test_ps21050c_rejects_collateral_readback_change() -> None:
+    hub = _hub("PS21050")
+    hub._set_controller_type("PS21050C")
+    changed = list(_PS21050C_LIVE_WIRE_VALUES)
+    changed[11] = 0
+    collateral = list(changed)
+    collateral[12] = 1
+    calls: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        calls.append((payload, expected))
+        if len(calls) == 1:
+            return f"ACK RP,1:{_PS21050C_LIVE_BODY}"
+        if len(calls) == 2:
+            return "ACK WP"
+        return "ACK RP,1:" + ",".join(map(str, collateral))
 
     hub._async_exchange = fake_exchange  # type: ignore[method-assign]
 
     try:
         asyncio.run(hub.async_set_parameter(11, 0))
     except TmtCommandError as err:
-        assert err.translation_key == "unsupported_controller"
+        assert err.translation_key == "parameter_verification_failed"
     else:
-        raise AssertionError("Unverified PS21050C parameter write was allowed")
+        raise AssertionError("Collateral PS21050C parameter change was accepted")
 
-    assert calls == []
+    assert len(calls) == 3
 
 
 def test_ps21050d_hall_current_table_uses_vendor_offset() -> None:
