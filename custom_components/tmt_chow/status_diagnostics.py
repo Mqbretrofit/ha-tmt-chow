@@ -23,7 +23,7 @@ _IPV4_RE = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 _MAC_RE = re.compile(r"(?i)(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])")
 _SSID_RE = re.compile(r"(?i)(ssid\s*[:=]\s*)([^,;\r\n]+)")
 _ACK_RS_RE = re.compile(r"ACK RS:[^\"}\r\n]+", re.IGNORECASE)
-_NAK_TOKEN_RE = re.compile(r"\bnack?\b", re.IGNORECASE)
+_NAK_TOKEN_RE = re.compile(r"\b(?:nak|nack)\b", re.IGNORECASE)
 _ACK_TOKEN_RE = re.compile(r"\back\b", re.IGNORECASE)
 
 
@@ -68,8 +68,6 @@ def _extract_ack_rs(payload: str | None) -> str | None:
     if payload.startswith("ACK RS:"):
         return payload
 
-    # Some native/vendor paths wrap the UART response in JSON.  Search decoded
-    # string values first so a suffix such as `"}` is not mistaken for wire data.
     try:
         envelope = json.loads(payload)
     except (TypeError, ValueError):
@@ -118,7 +116,6 @@ async def _async_probe_wbt_read(
     """Publish one non-movement read command and capture WBT transmit traffic."""
     result: dict[str, Any] = {
         "result": "no_response",
-        "verdict": "no_response",
         "ack": None,
         "published_command": command,
         "observed_payload_count": 0,
@@ -167,13 +164,9 @@ async def _async_probe_wbt_read(
         try:
             payload = await asyncio.wait_for(response, timeout=response_timeout)
         except TimeoutError:
-            verdict = "traffic_observed" if observed_raw else "no_response"
-            result["result"] = verdict
-            result["verdict"] = verdict
+            result["result"] = "traffic_observed" if observed_raw else "no_response"
         else:
-            verdict = classify_wbt_response(payload)
-            result["result"] = verdict
-            result["verdict"] = verdict
+            result["result"] = classify_wbt_response(payload)
             result["ack"] = _sanitize_observed_payload(payload, uuid)
         return result
     except (MqttError, TimeoutError) as err:
@@ -267,7 +260,7 @@ def _matrix_command_lists(
     rejected: list[str] = []
     unresolved: list[str] = []
     for command, result in results.items():
-        verdict = result.get("verdict") or result.get("result")
+        verdict = result.get("result")
         if verdict == "acknowledged":
             working.append(command)
         elif verdict == "rejected":
@@ -319,7 +312,6 @@ async def async_probe_wbt_read_matrix(
             response_timeout=response_timeout,
             mqtt_client_factory=mqtt_client_factory,
         )
-    # Preserve APK command order.
     results = {command: results[command] for command, _markers in probes}
     working, rejected, unresolved = _matrix_command_lists(results)
     return {
