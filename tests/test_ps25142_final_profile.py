@@ -93,9 +93,9 @@ def test_ps25142_write_is_read_write_full_readback_without_retry() -> None:
     asyncio.run(hub.async_set_parameter(17, 0))
 
     assert calls == [
-        ("c=RP,1", "ACK RP,1"),
+        ("c=RP,1", "ACK RP"),
         (f"c=WP,1:{expected_body};src=P9999999", "ACK WP"),
-        ("c=RP,1", "ACK RP,1"),
+        ("c=RP,1", "ACK RP"),
     ]
     assert hub.parameters == expected
 
