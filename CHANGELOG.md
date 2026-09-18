@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4-beta.34
+
+- Fix PS25142 issue #51 where a valid native `ACK RP,1` response could remain unavailable when the UART reply was wrapped as serialized JSON and ended with escaped CR/LF instead of a `;src=` suffix
+- Unwrap the native OURANOS UART `DATA` field before PS25142 parameter decoding, including nested helper response envelopes
+- Fix PS25142 diagnostics so the real RP,1 frame reports 18 tokens instead of counting JSON-envelope commas
+- Expose the successfully decoded PS25142 18-slot values in diagnostics
+- Add regression coverage for the exact issue #51 response: `ACK RP,1:1,8,0,3,0,1,5,0,0,0,0,2,3,0,0,0,1,1`
+- Leave PS25142 movement/status handling and every previously verified controller route unchanged
+
 ## v1.0.4-beta.33
 
 - Promote PS25142 from guarded testing to normal Home Assistant cover control after real hardware confirmed `FULL OPEN`, `FULL CLOSE`, `STOP` and live OURANOS/IOTC-RDT UART V3.0 `RS`
