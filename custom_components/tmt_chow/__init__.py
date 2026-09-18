@@ -297,7 +297,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
-        valid_pin = len(pin_code) == 6 and all("0" <= char <= "9" for char in pin_code)
+        valid_pin = len(pin_code) == 6 and all(
+            "0" <= char <= "9" for char in pin_code
+        )
         if _is_known_ouranos_candidate(hub) and valid_pin:
             # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
