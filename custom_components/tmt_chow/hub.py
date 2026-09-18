@@ -751,7 +751,10 @@ class TmtChowHub:
         command = payload.removeprefix("c=").split(";src=", 1)[0]
         session = self._ouranos_native_session
         assert session is not None
-        if command in {"READ FUNCTION", "RP,1"}:
+        if command == "READ FUNCTION":
+            # Keep the established PS19001 session interface unchanged.
+            result = await session.async_read_parameters()
+        elif command == "RP,1":
             result = await session.async_read_parameters(command)
         elif command.startswith(("WRITE FUNCTION", "WP,1:")):
             result = await session.async_write_parameters(command)
