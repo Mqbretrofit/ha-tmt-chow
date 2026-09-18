@@ -38,6 +38,7 @@ from .pedestrian import (
     pedestrian_strategy_for,
     pedestrian_strategy_reason,
 )
+from .protocol import unwrap_ouranos_uart_data
 from .proposal import (
     normalize_proposal_payload,
     proposal_function_labels,
@@ -86,7 +87,11 @@ def _inspect_parameter_payload(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, str) or not payload.strip():
         return None
 
-    clean = payload.split(";", 1)[0].strip()
+    unwrapped = unwrap_ouranos_uart_data(payload)
+    if unwrapped is None:
+        return None
+
+    clean = unwrapped.split(";", 1)[0].strip()
     body = clean
     ack_prefix: str | None = None
     ack_separator: str | None = None
@@ -776,6 +781,8 @@ async def async_get_config_entry_diagnostics(
             "parameter_decoded_values": (
                 ps22027_decoded_parameter_values(hub.parameters)
                 if is_ps22027_profile
+                else list(hub.parameters)
+                if is_ps25142_profile and hub.parameters is not None
                 else None
             ),
             "model_parameter_schema": _diagnostic_schema(
