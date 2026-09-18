@@ -79,6 +79,17 @@ class FakeSession:
         self.connected = False
 
 
+class FakeMovementSession(FakeSession):
+    def __init__(self, status_result: dict, command_result: dict) -> None:
+        super().__init__(status_result)
+        self.command_result = command_result
+        self.commands: list[str] = []
+
+    async def async_gate_command(self, command: str) -> dict:
+        self.commands.append(command)
+        return self.command_result
+
+
 class FakeControlSession(FakeSession):
     def __init__(self, parameter_reads: list[str] | None = None) -> None:
         super().__init__({})
@@ -207,6 +218,140 @@ def test_ps25142_status_only_profile_blocks_all_movement_commands() -> None:
     ):
         with pytest.raises(hub_module.TmtCommandError):
             asyncio.run(action())
+
+
+def test_ps25142_movement_test_sends_open_once_and_confirms_by_status(
+    monkeypatch,
+) -> None:
+    async def _no_delay(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.tmt_chow.ouranos_status.asyncio.sleep", _no_delay
+    )
+
+    hub = _hub()
+    hub.set_gate_control_enabled(False)
+    closed = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,A2,02,40,00,FF,FF,FF",
+        }
+    )
+    opening = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,E2,8A,40,00,FF,FF,FF",
+        }
+    )
+    assert hub.apply_ouranos_status_response(closed, status_command="RS") is True
+
+    session = FakeMovementSession(
+        {"result": "status_response_received", "native": {"response": opening}},
+        {
+            "result": "command_response_received",
+            "native": {
+                "request_sent": True,
+                "response_received": True,
+                "response": "ACK FULL OPEN;src=PXXXXXXX",
+                "safety": {"gate_command_sent": True},
+            },
+        },
+    )
+    poller = OuranosStatusPoller(
+        object(),
+        hub,
+        "123456",
+        session=session,
+        status_command="RS",
+        expose_control_session=False,
+    )
+
+    result = asyncio.run(poller.async_movement_test("open"))
+
+    assert session.commands == ["FULL OPEN"]
+    assert result["result"] == "acknowledged"
+    assert result["movement_command_sent"] is True
+    assert result["automatic_retry"] is False
+    assert result["telemetry_confirmed"] is True
+    assert result["after"] == {
+        "position": 10,
+        "movement": "opening",
+        "is_operating": True,
+    }
+    assert poller.last_movement_test == result
+
+
+def test_ps25142_movement_test_precondition_blocks_without_command() -> None:
+    hub = _hub()
+    hub.set_gate_control_enabled(False)
+    opened = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,A2,64,40,00,FF,FF,FF",
+        }
+    )
+    assert hub.apply_ouranos_status_response(opened, status_command="RS") is True
+
+    session = FakeMovementSession(
+        {"result": "status_response_received", "native": {"response": opened}},
+        {"result": "command_response_received", "native": {}},
+    )
+    poller = OuranosStatusPoller(
+        object(),
+        hub,
+        "123456",
+        session=session,
+        status_command="RS",
+        expose_control_session=False,
+    )
+
+    result = asyncio.run(poller.async_movement_test("open"))
+
+    assert result["result"] == "precondition_failed"
+    assert result["blocker"] == "open_requires_fully_closed_stopped_gate"
+    assert result["movement_command_sent"] is False
+    assert result["automatic_retry"] is False
+    assert session.commands == []
+
+
+def test_ps25142_movement_test_stop_requires_reported_motion() -> None:
+    hub = _hub()
+    hub.set_gate_control_enabled(False)
+    closed = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,A2,02,40,00,FF,FF,FF",
+        }
+    )
+    assert hub.apply_ouranos_status_response(closed, status_command="RS") is True
+
+    session = FakeMovementSession(
+        {"result": "status_response_received", "native": {"response": closed}},
+        {"result": "command_response_received", "native": {}},
+    )
+    poller = OuranosStatusPoller(
+        object(),
+        hub,
+        "123456",
+        session=session,
+        status_command="RS",
+        expose_control_session=False,
+    )
+
+    result = asyncio.run(poller.async_movement_test("stop"))
+
+    assert result["result"] == "precondition_failed"
+    assert result["blocker"] == "stop_requires_gate_reported_moving"
+    assert session.commands == []
 
 
 def test_ps19001_cover_commands_use_native_session_exactly_once() -> None:

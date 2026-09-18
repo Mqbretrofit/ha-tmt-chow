@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4-beta.32
+
+- Add an explicit PS25142 hardware movement-test action for `FULL OPEN`, `FULL CLOSE` and `STOP` over the already verified OURANOS/IOTC-RDT session
+- Send exactly one movement command per action with no automatic retry, then perform one read-only `RS` refresh to capture the resulting live state
+- Require fresh native status plus guarded end-position preconditions: open only from fully closed/stopped, close only from fully open/stopped, stop only while movement is reported
+- Keep the normal PS25142 Home Assistant cover controls disabled; this beta is a deliberate Developer Tools test path only
+- Persist the last sanitized movement-test result in diagnostics for one-file hardware feedback
+- Leave PS19001 and every previously verified controller/parameter route unchanged
+
 ## v1.0.4-beta.31
 
 - Promote the real-hardware-confirmed PS25142 route to automatic read-only native status: `uuid_type=1` → OURANOS/IOTC-RDT → UART V3.0 `RS` → `ACK RS`

@@ -848,7 +848,22 @@ class TmtChowHub:
             if status is None:
                 return False
             state = "RS"
-            self._apply_status(status)
+            # OURANOS does not provide the separate WBT /position topic used by
+            # _apply_status during travel.  The verified PS25142 ACK RS frame
+            # carries the live percentage itself, so apply it even while moving.
+            if status.position is not None:
+                self._apply_position(status.position, derive_movement=False)
+            self.is_operating = status.is_operating
+            if status.is_operating:
+                self._last_operating_status_monotonic = time.monotonic()
+                if status.is_open_direction is not None:
+                    self.movement = (
+                        "opening" if status.is_open_direction else "closing"
+                    )
+            else:
+                self.movement = None
+            if status.battery_percent is not None:
+                self.battery_percent = status.battery_percent
         else:
             parsed = parse_ouranos_status_response(payload)
             if parsed is None:
