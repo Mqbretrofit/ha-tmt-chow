@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Отвори/Stop/Затвори/Stop",
           "open_stop_close": "Отвори/Stop/Затвори"
         }
+      },
+      "power_saving_mode": {
+        "name": "Режим за пестене на енергия",
+        "state": {
+          "off": "Изключено",
+          "on": "Включено"
+        }
       }
     }
   },

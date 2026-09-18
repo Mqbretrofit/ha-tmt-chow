@@ -21,7 +21,7 @@ from .ouranos_ha_probe import (
 )
 
 _SESSION_HELPER_SHA256: Final = (
-    "3f031d7372eb08d8b9b56b4e21603af965b85621d31ced25597d6b608fb093e2"
+    "7b85b580f9e40b8bff3e3814e006e8b66b77efdf34ee980d7015b4df3cd64f06"
 )
 _SESSION_START_TIMEOUT: Final = 40
 _RESPONSE_TIMEOUT: Final = 8
@@ -29,6 +29,9 @@ _SESSION_STOP_TIMEOUT: Final = 6
 _PS19001_PARAMETER_FRAGMENT_RE: Final = re.compile(
     "".join(rf",{field_id}:[0-9A-Z]+" for field_id in "123456789ABCDEFGHIJ")
     + r"\Z"
+)
+_PS25142_PARAMETER_BODY_RE: Final = re.compile(
+    r"\d+(?:,\d+){17}\Z"
 )
 
 
@@ -90,19 +93,34 @@ class OuranosNativeSession:
             return {"result": "unsupported_command", "native": None}
         return await self._async_exchange(protocol, "command")
 
-    async def async_read_parameters(self) -> dict[str, Any]:
-        """Read the complete PS19001 UART0 parameter frame."""
-        return await self._async_exchange("PARAM_READ", "parameter_read")
+    async def async_read_parameters(
+        self, parameter_command: str = "READ FUNCTION"
+    ) -> dict[str, Any]:
+        """Read one complete allowlisted parameter frame."""
+        mode = str(parameter_command or "READ FUNCTION").strip().upper()
+        protocol = {
+            "READ FUNCTION": "PARAM_READ",
+            "RP,1": "PARAM_READ_V3",
+        }.get(mode)
+        if protocol is None:
+            return {"result": "unsupported_parameter_command", "native": None}
+        return await self._async_exchange(protocol, "parameter_read")
 
     async def async_write_parameters(self, command: str) -> dict[str, Any]:
-        """Write one codec-validated complete PS19001 parameter frame."""
-        prefix = "WRITE FUNCTION"
-        if not command.startswith(prefix):
+        """Write one codec-validated complete parameter frame."""
+        if command.startswith("WRITE FUNCTION"):
+            fragment = command[len("WRITE FUNCTION") :]
+            if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is None:
+                return {"result": "invalid_parameter_command", "native": None}
+            protocol = f"PARAM_WRITE {fragment}"
+        elif command.startswith("WP,1:"):
+            body = command[len("WP,1:") :]
+            if _PS25142_PARAMETER_BODY_RE.fullmatch(body) is None:
+                return {"result": "invalid_parameter_command", "native": None}
+            protocol = f"PARAM_WRITE_V3 {body}"
+        else:
             return {"result": "unsupported_command", "native": None}
-        fragment = command[len(prefix) :]
-        if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is None:
-            return {"result": "invalid_parameter_command", "native": None}
-        return await self._async_exchange(f"PARAM_WRITE {fragment}", "parameter_write")
+        return await self._async_exchange(protocol, "parameter_write")
 
     async def _async_exchange(
         self, protocol_command: str, event: str

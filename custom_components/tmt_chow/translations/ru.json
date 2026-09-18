@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Открыть/Stop/Закрыть/Stop",
           "open_stop_close": "Открыть/Stop/Закрыть"
         }
+      },
+      "power_saving_mode": {
+        "name": "Режим энергосбережения",
+        "state": {
+          "off": "Выкл.",
+          "on": "Вкл."
+        }
       }
     }
   },

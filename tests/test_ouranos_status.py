@@ -206,6 +206,46 @@ def test_native_opening_and_closing_responses_map_movement() -> None:
     assert (hub.position, hub.movement, hub.is_operating) == (31, "closing", True)
 
 
+def test_ps25142_stop_guard_ignores_immediate_stale_moving_rs(monkeypatch) -> None:
+    hub = TmtChowHub(
+        uuid="ABCDEFGHIJKLMNOPQRST",
+        thing_name="test-thing",
+        name="PS25142 gate",
+        endpoint="example.invalid",
+        certificate_pem="",
+        private_key="",
+        source_tag="P9999999",
+        product_type="112",
+        device_type="PS25142",
+    )
+    now = 1000.0
+    monkeypatch.setattr(hub_module.time, "monotonic", lambda: now)
+    hub.position = 44
+    hub.is_operating = False
+    hub.movement = None
+    hub._native_stop_guard_until_monotonic = now + 6.0
+
+    stale = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,E2,39,40,00,FF,FF,FF",
+        }
+    )
+    assert hub.apply_ouranos_status_response(stale, status_command="RS") is True
+    assert hub.position == 44
+    assert hub.is_operating is False
+    assert hub.movement is None
+    assert hub.attributes[ATTR_OURANOS_STATUS] == "RS_STOP_SETTLING"
+
+    now += 7.0
+    assert hub.apply_ouranos_status_response(stale, status_command="RS") is True
+    assert hub.position == 57
+    assert hub.is_operating is True
+    assert hub.movement == "closing"
+
+
 def test_ps25142_status_only_profile_blocks_all_movement_commands() -> None:
     hub = _hub()
     hub.set_gate_control_enabled(False)

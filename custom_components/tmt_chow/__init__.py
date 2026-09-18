@@ -347,7 +347,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
     if hub.configured_controller_type == "PS25142":
-        # Status transport is verified, movement commands are not.
+        # Fail closed until the exact verified Proposal/uuid_type/PIN route is
+        # matched below; then normal cover control is enabled explicitly.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -359,16 +360,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
         elif _is_verified_ps25142_rs_status_candidate(hass, hub) and valid_pin:
-            # Beta.30 real-hardware evidence verified PS25142 as
-            # uuid_type=1 / OURANOS / UART V3.0 with ACK RS.  Keep this route
-            # status-only until movement commands are independently verified.
-            hub.set_gate_control_enabled(False)
+            # Beta.31 verified live RS status and beta.32 verified FULL OPEN,
+            # FULL CLOSE and STOP on real PS25142 hardware. Attach the shared
+            # native session before hub startup so control and RP,1/WP,1
+            # parameter transactions use the same confirmed IOTC/RDT route.
+            hub.set_gate_control_enabled(True)
             poller = OuranosStatusPoller(
                 hass,
                 hub,
                 pin_code,
                 status_command="RS",
-                expose_control_session=False,
+                expose_control_session=True,
             )
         elif _is_ouranos_probe_candidate(hass, hub):
             _LOGGER.debug(
@@ -377,7 +379,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         else:
             _LOGGER.warning(
-                "Ignoring invalid native PS19001 configuration for %s",
+                "Ignoring invalid native OURANOS configuration for %s",
                 entry.title,
             )
     try:

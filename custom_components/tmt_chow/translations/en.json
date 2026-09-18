@@ -41,7 +41,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "PS19001 native connection",
+        "title": "OURANOS native connection",
         "description": "Enable native gate control, live status and model-specific parameter settings through the isolated TUTK/RDT connection. The six-digit gate PIN is stored locally by Home Assistant and is never included in diagnostics. Clear the field to disable the native connection.",
         "data": {
           "ouranos_pin": "Six-digit gate PIN"
@@ -52,7 +52,7 @@
       "invalid_pin": "The gate PIN must contain exactly six digits"
     },
     "abort": {
-      "not_ouranos_candidate": "The native connection is available only for a confirmed 20-character PS19001 gate"
+      "not_ouranos_candidate": "The native connection is available only for a confirmed 20-character OURANOS gate"
     }
   },
   "entity": {
@@ -226,6 +226,13 @@
         "state": {
           "open_stop_close_stop": "Open/Stop/Close/Stop",
           "open_stop_close": "Open/Stop/Close"
+        }
+      },
+      "power_saving_mode": {
+        "name": "Power saving mode",
+        "state": {
+          "off": "Off",
+          "on": "On"
         }
       }
     }

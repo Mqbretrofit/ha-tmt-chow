@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Otevřít/Stop/Zavřít/Stop",
           "open_stop_close": "Otevřít/Stop/Zavřít"
         }
+      },
+      "power_saving_mode": {
+        "name": "Režim úspory energie",
+        "state": {
+          "off": "Vypnuto",
+          "on": "Zapnuto"
+        }
       }
     }
   },

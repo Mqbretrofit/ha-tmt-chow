@@ -41,7 +41,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "PS19001 natív kapcsolat",
+        "title": "OURANOS natív kapcsolat",
         "description": "Bekapcsolja a natív kapuvezérlést, az élő állapotot és a modellspecifikus paraméterbeállításokat az elkülönített TUTK/RDT kapcsolaton. A hatjegyű kapu-PIN-t a Home Assistant helyben tárolja, és nem teszi bele a diagnosztikába. A natív kapcsolat kikapcsolásához törölje a mező tartalmát.",
         "data": {
           "ouranos_pin": "Hatjegyű kapu-PIN"
@@ -52,7 +52,7 @@
       "invalid_pin": "A kapu-PIN-nek pontosan hat számjegyből kell állnia"
     },
     "abort": {
-      "not_ouranos_candidate": "A natív kapcsolat csak megerősített, 20 karakteres azonosítójú PS19001 kapunál érhető el"
+      "not_ouranos_candidate": "A natív kapcsolat csak megerősített, 20 karakteres azonosítójú OURANOS kapunál érhető el"
     }
   },
   "entity": {
@@ -226,6 +226,13 @@
         "state": {
           "open_stop_close_stop": "Nyit/Stop/Zár/Stop",
           "open_stop_close": "Nyit/Stop/Zár"
+        }
+      },
+      "power_saving_mode": {
+        "name": "Energiatakarékos mód",
+        "state": {
+          "off": "Kikapcsolva",
+          "on": "Bekapcsolva"
         }
       }
     }

@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Openen/Stop/Sluiten/Stop",
           "open_stop_close": "Openen/Stop/Sluiten"
         }
+      },
+      "power_saving_mode": {
+        "name": "Energiebesparingsmodus",
+        "state": {
+          "off": "Uit",
+          "on": "Aan"
+        }
       }
     }
   },

@@ -42,6 +42,10 @@ from .ps22087b_parameters import (
     P710UParameterDefinition,
 )
 from .ps25007a_parameters import CONTROLLER_TYPE as PS25007A
+from .ps25142_parameters import (
+    CONTROLLER_TYPE as PS25142,
+    PS25142_PARAMETERS,
+)
 
 _LEGACY_PS21053 = {"PS21053", "PS21053C"}
 
@@ -52,6 +56,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     hub: TmtChowHub = hass.data[DOMAIN][entry.entry_id]
+
+    if hub.parameter_model_type == PS25142 and hub.supports_parameters:
+        async_add_entities(
+            TmtParameterSelect(hub, index, definition)
+            for index, definition in enumerate(PS25142_PARAMETERS)
+        )
+        return
+
     schema = hub.model_parameter_schema
     if not hub.supports_parameters or schema is None:
         return

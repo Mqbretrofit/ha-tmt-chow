@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Deschide/Stop/Închide/Stop",
           "open_stop_close": "Deschide/Stop/Închide"
         }
+      },
+      "power_saving_mode": {
+        "name": "Mod de economisire a energiei",
+        "state": {
+          "off": "Oprit",
+          "on": "Pornit"
+        }
       }
     }
   },

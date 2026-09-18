@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.4-beta.33
+
+- Promote PS25142 from guarded testing to normal Home Assistant cover control after real hardware confirmed `FULL OPEN`, `FULL CLOSE`, `STOP` and live OURANOS/IOTC-RDT UART V3.0 `RS`
+- Ignore the verified stale immediate post-STOP moving `RS` frame during a short settlement window and use read-only `RS` checks to settle the final state; STOP is never automatically resent
+- Add the exact 18-slot PS25142 Proposal-B parameter profile (F1..FP + Fr), including Power saving mode
+- Route PS25142 parameters over native UART V3.0 `RP,1` / `WP,1`
+- Protect every PS25142 parameter change with a fresh full read, exactly one full-frame write with no retry, and mandatory full 18-slot readback equality
+- Keep the native helper strictly allowlisted; arbitrary UART input remains unavailable
+- Preserve PS19001 and all previously verified controller and parameter routes
+
 ## v1.0.4-beta.32
 
 - Add an explicit PS25142 hardware movement-test action for `FULL OPEN`, `FULL CLOSE` and `STOP` over the already verified OURANOS/IOTC-RDT session
