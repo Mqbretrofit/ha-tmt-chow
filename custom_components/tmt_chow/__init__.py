@@ -291,6 +291,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
+    if hub.configured_controller_type == "PS25142":
+        # Status transport is verified, movement commands are not.
+        hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
