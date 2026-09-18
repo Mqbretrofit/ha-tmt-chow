@@ -227,6 +227,13 @@
           "open_stop_close_stop": "Nyit/Stop/Zár/Stop",
           "open_stop_close": "Nyit/Stop/Zár"
         }
+      },
+      "power_saving_mode": {
+        "name": "Energiatakarékos mód",
+        "state": {
+          "off": "Kikapcsolva",
+          "on": "Bekapcsolva"
+        }
       }
     }
   },
