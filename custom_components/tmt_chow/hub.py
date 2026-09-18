@@ -71,6 +71,13 @@ from .ps25007a_parameters import (
     encode_parameter_write as encode_ps25007a_parameter_write,
     parse_parameter_response as parse_ps25007a_parameter_response,
 )
+from .ps25142_parameters import (
+    CONTROLLER_TYPE as PS25142,
+    PARAMETER_COUNT as PS25142_PARAMETER_COUNT,
+    PS25142ParameterError,
+    encode_parameter_write as encode_ps25142_parameter_write,
+    parse_parameter_response as parse_ps25142_parameter_response,
+)
 
 if TYPE_CHECKING:
     from .ouranos_native_session import OuranosNativeSession
@@ -141,6 +148,7 @@ class TmtChowHub:
         self._last_live_position_monotonic: float | None = None
         self._last_operating_status_monotonic: float | None = None
         self._last_ouranos_status_monotonic: float | None = None
+        self._native_stop_guard_until_monotonic: float | None = None
         self._state_synchronized = False
         self._stopping = False
         self._ouranos_native_session: OuranosNativeSession | None = None
@@ -232,6 +240,11 @@ class TmtChowHub:
                 self.model_parameter_schema is not None
                 and len(self.model_parameter_schema) == PS25007A_PARAMETER_COUNT
             )
+        if (
+            self.parameter_model_type == PS25142
+            and self.controller_type == PS25142
+        ):
+            return True
         if self.model_parameter_schema is None:
             return False
         if self.parameter_model_type == PS21050D:
@@ -245,6 +258,8 @@ class TmtChowHub:
             return self.parameter_schema_verified
         if self._is_ps25007a_profile():
             return False
+        if self.parameter_model_type == PS25142 and self.controller_type == PS25142:
+            return self.parameter_schema_verified
         return (
             self.parameter_schema_verified
             and self.parameter_model_type is not None
@@ -329,6 +344,12 @@ class TmtChowHub:
         self.controller_family = controller_family(self.controller_type)
         self.controller_capabilities = controller_capabilities(self.controller_type)
 
+        if self.controller_type == PS25142:
+            self.parameter_model_type = PS25142
+            self.parameter_model_source = "ps25142_proposal_b_wire18"
+            self.model_parameter_schema = None
+            return
+
         if self.controller_type == PS21050D:
             self.parameter_model_type = PS21050D
             self.parameter_model_source = "live_raw_read_only"
@@ -359,6 +380,8 @@ class TmtChowHub:
         self.model_parameter_schema = parameter_schema_for(self.parameter_model_type)
 
     def _parameter_transport(self) -> ParameterTransport:
+        if self.parameter_model_type == PS25142:
+            return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         if self._is_ps25007a_profile():
             return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         if self.parameter_model_type == PS21050D:
@@ -372,6 +395,8 @@ class TmtChowHub:
         return transport
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
+        if self.parameter_model_type == PS25142:
+            return parse_ps25142_parameter_response(payload)
         if self._is_ps25007a_profile():
             return parse_ps25007a_parameter_response(payload)
         if self.parameter_model_type == PS21050D:
@@ -470,7 +495,38 @@ class TmtChowHub:
         await self._async_command("STOP", "ACK STOP")
         self.is_operating = False
         self.movement = None
+        if self.controller_type == PS25142 and self._ouranos_native_session is not None:
+            # Real PS25142 hardware can return one stale moving ACK RS frame
+            # immediately after ACK STOP. Keep the acknowledged STOP state while
+            # read-only RS telemetry settles; never resend STOP automatically.
+            self._native_stop_guard_until_monotonic = time.monotonic() + 6.0
         self._notify()
+        if self.controller_type == PS25142 and self._ouranos_native_session is not None:
+            await self._async_settle_ps25142_stop()
+
+    async def _async_settle_ps25142_stop(self) -> None:
+        """Wait briefly for read-only RS telemetry to reflect an acknowledged STOP."""
+        session = self._ouranos_native_session
+        if session is None:
+            return
+        for delay in (0.8, 1.0, 1.2, 1.5):
+            await asyncio.sleep(delay)
+            result = await session.async_read_status("RS")
+            native = result.get("native")
+            response = native.get("response") if isinstance(native, dict) else None
+            if result.get("result") != "status_response_received" or not isinstance(
+                response, str
+            ):
+                continue
+            status = parse_ouranos_rs_response(response)
+            if status is None:
+                continue
+            if status.is_operating is False:
+                self.apply_ouranos_status_response(response, status_command="RS")
+                self._native_stop_guard_until_monotonic = None
+                return
+        # Keep the explicit ACK STOP state. A later normal status poll will clear
+        # the guard and update the final stationary position once firmware settles.
 
     async def async_refresh_parameters(self) -> None:
         transport = self._parameter_transport()
@@ -497,16 +553,23 @@ class TmtChowHub:
             )
         transport = self._parameter_transport()
         schema = self.model_parameter_schema
-        if schema is None or not 0 <= index < len(schema):
-            raise TmtCommandError(
-                "Unknown gate parameter",
-                translation_key="unknown_parameter",
-            )
-        if not is_editable_parameter(schema[index]):
-            raise TmtCommandError(
-                "This vendor parameter is not directly writable",
-                translation_key="unknown_parameter",
-            )
+        if self.parameter_model_type == PS25142:
+            if not 0 <= index < PS25142_PARAMETER_COUNT:
+                raise TmtCommandError(
+                    "Unknown gate parameter",
+                    translation_key="unknown_parameter",
+                )
+        else:
+            if schema is None or not 0 <= index < len(schema):
+                raise TmtCommandError(
+                    "Unknown gate parameter",
+                    translation_key="unknown_parameter",
+                )
+            if not is_editable_parameter(schema[index]):
+                raise TmtCommandError(
+                    "This vendor parameter is not directly writable",
+                    translation_key="unknown_parameter",
+                )
 
         async with self._transaction_lock:
             current_response = await self._async_exchange(
@@ -525,11 +588,17 @@ class TmtChowHub:
             values = tuple(updated)
             try:
                 command = (
-                    encode_ps25007a_parameter_write(values)
+                    encode_ps25142_parameter_write(values)
+                    if self.parameter_model_type == PS25142
+                    else encode_ps25007a_parameter_write(values)
                     if self._is_ps25007a_live_alias()
                     else encode_model_parameter_write(self.parameter_model_type, values)
                 )
-            except (ParameterCodecError, PS25007AParameterError) as err:
+            except (
+                ParameterCodecError,
+                PS25007AParameterError,
+                PS25142ParameterError,
+            ) as err:
                 raise TmtCommandError(
                     str(err),
                     translation_key="unsupported_parameter_value",
@@ -550,7 +619,10 @@ class TmtChowHub:
             verified = self._decode_parameter_response(verify_response)
             if verified is None or (
                 verified != values
-                if self._is_ps25007a_live_alias()
+                if (
+                    self._is_ps25007a_live_alias()
+                    or self.parameter_model_type == PS25142
+                )
                 else verified[index] != int(value)
             ):
                 raise TmtCommandError(
@@ -677,9 +749,9 @@ class TmtChowHub:
         command = payload.removeprefix("c=").split(";src=", 1)[0]
         session = self._ouranos_native_session
         assert session is not None
-        if command == "READ FUNCTION":
-            result = await session.async_read_parameters()
-        elif command.startswith("WRITE FUNCTION"):
+        if command in {"READ FUNCTION", "RP,1"}:
+            result = await session.async_read_parameters(command)
+        elif command.startswith(("WRITE FUNCTION", "WP,1:")):
             result = await session.async_write_parameters(command)
         else:
             result = await session.async_gate_command(command)
@@ -848,6 +920,23 @@ class TmtChowHub:
             if status is None:
                 return False
             state = "RS"
+            guard_until = self._native_stop_guard_until_monotonic
+            if (
+                guard_until is not None
+                and time.monotonic() < guard_until
+                and status.is_operating is True
+            ):
+                # PS25142 beta.32 hardware evidence showed that the first RS
+                # immediately after ACK STOP can still contain a stale moving
+                # state. Treat it as valid transport evidence but do not undo the
+                # acknowledged STOP state.
+                self._last_ouranos_status_monotonic = time.monotonic()
+                self.attributes[ATTR_OURANOS_STATUS] = "RS_STOP_SETTLING"
+                self.attributes[ATTR_OURANOS_STATUS_RESPONSE] = payload
+                self._notify()
+                return True
+            if status.is_operating is False:
+                self._native_stop_guard_until_monotonic = None
             # OURANOS does not provide the separate WBT /position topic used by
             # _apply_status during travel.  The verified PS25142 ACK RS frame
             # carries the live percentage itself, so apply it even while moving.
