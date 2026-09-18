@@ -1,6 +1,6 @@
 # TMT Chow for Home Assistant
 
-[![Release](https://img.shields.io/badge/release-v1.0.4--beta.30-orange)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.30)
+[![Release](https://img.shields.io/badge/release-v1.0.4--beta.31-orange)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.31)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-41BDF5)](https://www.hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-tmt-chow&category=integration)
@@ -16,17 +16,17 @@ TMT Chow for Home Assistant is an independent open-source community project. Con
 
 If this integration is useful to you, you can support continued development through **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)**. For sponsored feature requests, priority development and additional support options, see **[SUPPORT.md](SUPPORT.md)**.
 
-> **Current release:** [`v1.0.4-beta.30`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.30) (pre-release)
+> **Current release:** [`v1.0.4-beta.31`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.31) (pre-release)
 >
 > Last non-beta release: `v1.0.3`
 
-## What's new in v1.0.4-beta.30
+## What's new in v1.0.4-beta.31
 
-- The unknown-controller diagnostic still tests every safe APK read dialect in one download: `RS`, `READ STATUS`, `RP,1`, and `READ FUNCTION`.
-- Each dialect is now classified as `ACK` (`working_commands`), `NAK` (`rejected_commands`), or unresolved, so a rejected line stays in the JSON instead of looking like a working command.
-- The four WBT read probes run one after another so each captured payload belongs to a single request.
-- Movement, relay, learning, reset and parameter-write commands remain catalogued and are never sent.
-- Verified controller runtime, pedestrian and parameter-write paths are unchanged.
+- PS25142 now has automatic read-only live status over the real-hardware-confirmed OURANOS/IOTC-RDT route.
+- Its UART V3.0 `RS` response is decoded with the existing vendor `ACK RS` status mapping, so availability, position and movement state can reach the Home Assistant cover.
+- PS25142 is classified as a sliding gate from its tested Proposal B metadata.
+- Movement, pedestrian, relay, learning and parameter writes remain disabled for PS25142 until those mutating paths are separately hardware-verified.
+- PS19001 and every existing verified controller route remain unchanged.
 
 ## Features
 
@@ -95,11 +95,11 @@ The table deliberately separates real-hardware evidence from APK/proposal-derive
 | `PS19001` | `PS19001`, 20-character UID | Native IOTC/RDT status/control path and the corrected 19-slot `1..J` UART0 parameter frame used by the current profile | Verified on the documented native profile; x86-64 and local six-digit PIN required |
 | `PS25007` | `PS25007A` / `P500BU` | Exact identity and 17-slot parameter profile; pedestrian behavior has controller-specific safety history | Parameters supported; `PED OPEN` remains an explicitly guarded test path, not a generally verified safe capability |
 
-The other mapped controller classes remain APK/proposal-derived until matching hardware confirms their exact runtime identity, status route, optional controls and parameter layout. `PS25142` is currently a discovery target, not a fully supported controller.
+The other mapped controller classes remain APK/proposal-derived until matching hardware confirms their exact runtime identity, status route, optional controls and parameter layout. `PS25142` has real-hardware-verified read-only native status support; movement and parameter writes remain intentionally disabled pending separate hardware validation.
 
 ## Unknown or unsupported controller: what to do
 
-Starting with `v1.0.4-beta.30`, one Home Assistant diagnostics download performs the safe discovery work needed for an unknown or unverified controller. It checks the classic AWS IoT Shadow, cloud Proposal/FunctionSet data and the known read-only WBT request dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), then records which of those dialects returned ACK, NAK or no usable reply. For vendor `uuid_type=1` devices it can also test the native OURANOS `READ STATUS` and `RS` routes when the local six-digit gate PIN is configured.
+Starting with `v1.0.4-beta.31`, one Home Assistant diagnostics download performs the safe discovery work needed for an unknown or unverified controller. It checks the classic AWS IoT Shadow, cloud Proposal/FunctionSet data and the known read-only WBT request dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), then records which of those dialects returned ACK, NAK or no usable reply. For vendor `uuid_type=1` devices it can also test the native OURANOS `READ STATUS` and `RS` routes when the local six-digit gate PIN is configured.
 
 1. Install the latest test release and restart Home Assistant.
 2. Add the gate normally with the TMT Chow integration. Do not assign another controller's parameter profile manually.
@@ -230,7 +230,7 @@ Stable releases are published on the GitHub Releases page:
 
 https://github.com/Mqbretrofit/ha-tmt-chow/releases
 
-Current release: **[v1.0.4-beta.30](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.30)** (pre-release)
+Current release: **[v1.0.4-beta.31](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.31)** (pre-release)
 
 Last non-beta release: **v1.0.3**
 
@@ -252,17 +252,17 @@ A TMT Chow for Home Assistant egy független, nyílt forráskódú közösségi 
 
 Ha hasznos számodra az integráció, a fejlesztést a **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)** oldalon támogathatod. Támogatott funkciókéréshez, kiemelt fejlesztéshez és további lehetőségekhez lásd a **[SUPPORT.md](SUPPORT.md)** fájlt.
 
-> **Jelenlegi kiadás:** [`v1.0.4-beta.30`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.30) (előzetes kiadás)
+> **Jelenlegi kiadás:** [`v1.0.4-beta.31`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.31) (előzetes kiadás)
 >
 > Utolsó nem beta kiadás: `v1.0.3`
 
-## Újdonságok a v1.0.4-beta.30-ben
+## Újdonságok a v1.0.4-beta.31-ben
 
-- Az ismeretlen vezérlő diagnosztikája továbbra is egy letöltésben végigpróbálja a biztonságos APK-olvasó vonalakat: `RS`, `READ STATUS`, `RP,1` és `READ FUNCTION`.
-- Minden vonal külön minősül: `ACK` (`working_commands`), `NAK` (`rejected_commands`) vagy unresolved, így a visszautasított kérés nem tűnik működő parancsnak.
-- A négy WBT olvasás egymás után fut, hogy minden fogott válasz egyetlen kéréshez tartozzon.
-- Mozgás, relé, tanítás, reset és paraméterírás továbbra is csak katalogizálva van, nem megy ki.
-- A már igazolt vezérlők futási, gyalogos- és paraméterírási útjai változatlanok.
+- A PS25142 automatikus, csak olvasási élő állapotot kapott a valódi hardveren igazolt OURANOS/IOTC-RDT útvonalon.
+- A UART V3.0 `RS` válaszát a meglévő gyári `ACK RS` státuszdekóder kezeli, így az elérhetőség, pozíció és mozgásállapot megjelenhet a Home Assistant coveren.
+- A PS25142 a tesztelt Proposal B alapján sliding gate-ként van besorolva.
+- A mozgatás, gyalogos nyitás, relé/tanítás és paraméterírás a PS25142-nél külön hardveres igazolásig tiltva marad.
+- A PS19001 és minden korábban igazolt vezérlő útvonala változatlan.
 
 ## Fő funkciók
 
@@ -311,11 +311,11 @@ A táblázat szándékosan különválasztja a valódi hardveres bizonyítékot 
 | `PS19001` | `PS19001`, 20 karakteres UID | Natív IOTC/RDT állapot-/vezérlési útvonal és a jelenlegi profil javított, 19 mezős `1..J` UART0 paraméterkerete | A dokumentált natív profil igazolt; x86-64 rendszer és helyben tárolt hatjegyű PIN szükséges |
 | `PS25007` | `PS25007A` / `P500BU` | Pontos azonosítás és 17 mezős paraméterprofil; a gyalogos működéshez vezérlőspecifikus biztonsági előzmény tartozik | Paraméterek támogatva; a `PED OPEN` külön védett tesztútvonal, nem általánosan igazolt biztonságos képesség |
 
-A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig APK-/proposal-alapú. A `PS25142` jelenleg diagnosztikai felderítési cél, nem teljesen támogatott vezérlő.
+A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig APK-/proposal-alapú. A `PS25142` valódi hardveren igazolt, csak olvasási natív állapottámogatást kapott; a mozgatás és a paraméterírás külön hardveres ellenőrzésig szándékosan tiltva marad.
 
 ## Ismeretlen vagy nem támogatott vezérlő: mit tegyen a felhasználó?
 
-A `v1.0.4-beta.30` verziótól egyetlen Home Assistant-diagnosztika elvégzi az ismeretlen vagy még nem igazolt vezérlő biztonságos felderítését. Ellenőrzi a klasszikus AWS IoT Shadow útvonalat, a felhős Proposal/FunctionSet adatokat és az ismert, csak olvasási WBT-kéréseket (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), majd feljegyzi, melyik vonal adott ACK-t, NAK-ot vagy használható választ. A gyártó által `uuid_type=1` értékkel jelölt eszközöknél a natív OURANOS `READ STATUS` és `RS` útvonalat is megpróbálja, ha a helyi hatjegyű kapu-PIN be van állítva.
+A `v1.0.4-beta.31` verziótól egyetlen Home Assistant-diagnosztika elvégzi az ismeretlen vagy még nem igazolt vezérlő biztonságos felderítését. Ellenőrzi a klasszikus AWS IoT Shadow útvonalat, a felhős Proposal/FunctionSet adatokat és az ismert, csak olvasási WBT-kéréseket (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), majd feljegyzi, melyik vonal adott ACK-t, NAK-ot vagy használható választ. A gyártó által `uuid_type=1` értékkel jelölt eszközöknél a natív OURANOS `READ STATUS` és `RS` útvonalat is megpróbálja, ha a helyi hatjegyű kapu-PIN be van állítva.
 
 1. Telepítsd a legújabb tesztverziót, majd indítsd újra a Home Assistantot.
 2. Add hozzá a kaput normál módon a TMT Chow integrációval. Ne rendeld hozzá kézzel egy másik vezérlő paraméterprofilját.
