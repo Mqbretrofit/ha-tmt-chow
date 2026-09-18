@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Apri/Stop/Chiudi/Stop",
           "open_stop_close": "Apri/Stop/Chiudi"
         }
+      },
+      "power_saving_mode": {
+        "name": "Modalità risparmio energetico",
+        "state": {
+          "off": "Disattivato",
+          "on": "Attivato"
+        }
       }
     }
   },
