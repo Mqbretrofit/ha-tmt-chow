@@ -11,6 +11,7 @@ import re
 from collections.abc import Sequence
 
 from .parameters import PARAMETERS, ParameterDefinition
+from .protocol import unwrap_ouranos_uart_data
 
 CONTROLLER_TYPE = "PS25142"
 PARAMETER_COUNT = 18
@@ -54,9 +55,10 @@ def validate_wire_values(values: Sequence[int]) -> tuple[int, ...]:
 
 def parse_parameter_response(payload: str) -> tuple[int, ...] | None:
     """Parse ACK RP,1 telemetry or an already extracted raw 18-slot body."""
-    if not isinstance(payload, str):
+    clean = unwrap_ouranos_uart_data(payload)
+    if clean is None:
         return None
-    clean = payload.strip()
+    clean = clean.strip()
     if not clean or "NAK " in clean:
         return None
     match = _RP_RE.search(clean)
