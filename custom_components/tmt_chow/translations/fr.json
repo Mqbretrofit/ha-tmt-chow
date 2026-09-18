@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Ouvrir/Stop/Fermer/Stop",
           "open_stop_close": "Ouvrir/Stop/Fermer"
         }
+      },
+      "power_saving_mode": {
+        "name": "Mode économie d’énergie",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé"
+        }
       }
     }
   },
