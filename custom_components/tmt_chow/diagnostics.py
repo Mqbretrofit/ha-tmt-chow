@@ -643,6 +643,11 @@ async def async_get_config_entry_diagnostics(
                 if ouranos_poller is not None
                 else False
             ),
+            "ps25142_movement_test_last_result": (
+                ouranos_poller.last_movement_test
+                if ouranos_poller is not None
+                else None
+            ),
             "shadow_get_probe_result": shadow_get_probe["result"],
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],
