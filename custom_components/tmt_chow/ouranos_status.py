@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -183,6 +184,18 @@ class OuranosStatusPoller:
             rejected = (
                 isinstance(native_response, str) and "NAK " in native_response
             )
+
+            if normalized == "stop" and acknowledged:
+                # Beta.32 proved ACK STOP stops the physical PS25142, but the
+                # immediately following RS can still contain one stale moving
+                # frame. Preserve the explicit STOP result while telemetry
+                # settles; never resend STOP.
+                self._hub.is_operating = False
+                self._hub.movement = None
+                self._hub._native_stop_guard_until_monotonic = (  # noqa: SLF001
+                    time.monotonic() + 6.0
+                )
+                self._hub._notify()  # noqa: SLF001
 
             # One read-only RS refresh after the one-shot command.  This can
             # confirm motion even when the movement ACK itself is not returned.
