@@ -21,7 +21,10 @@ from custom_components.tmt_chow.const import (
     OURANOS_STATUS_AVAILABILITY_SECONDS,
 )
 from custom_components.tmt_chow.ouranos_status import OuranosStatusPoller
-from custom_components.tmt_chow.protocol import parse_ouranos_status_response
+from custom_components.tmt_chow.protocol import (
+    parse_ouranos_rs_response,
+    parse_ouranos_status_response,
+)
 from custom_components.tmt_chow.ps19001_parameters import (
     APP_PARAMETERS as PS19001_PARAMETERS,
     encode_parameter_write as encode_ps19001_parameter_write,
@@ -61,10 +64,12 @@ class FakeSession:
         self.result = result
         self.connected = True
         self.read_count = 0
+        self.read_modes: list[str] = []
         self.stopped = False
 
-    async def async_read_status(self) -> dict:
+    async def async_read_status(self, status_command: str = "READ_STATUS") -> dict:
         self.read_count += 1
+        self.read_modes.append(status_command)
         return self.result
 
     async def async_stop(self) -> None:
@@ -122,6 +127,60 @@ def test_confirmed_ped_closed_response_maps_to_closed_cover() -> None:
     assert hub.attributes[ATTR_OURANOS_STATUS] == "PED CLOSED"
     assert hub.attributes[ATTR_OURANOS_STATUS_RESPONSE] == payload
     assert updates == [True]
+
+
+def test_ps25142_real_ack_rs_frame_maps_to_closed_status() -> None:
+    payload = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,A2,02,40,00,FF,FF,FF;src=PXXXXXXX",
+        }
+    )
+    status = parse_ouranos_rs_response(payload)
+    assert status is not None
+    assert status.position == 2
+    assert status.is_operating is False
+    assert status.is_open_direction is False
+    assert status.battery_percent == 0
+
+    hub = _hub()
+    assert hub.apply_ouranos_status_response(payload, status_command="RS") is True
+    assert hub.position == 0
+    assert hub.movement is None
+    assert hub.is_operating is False
+    assert hub.ouranos_status_available is True
+    assert hub.attributes[ATTR_OURANOS_STATUS] == "RS"
+
+
+def test_ps25142_rs_poller_is_read_only_and_uses_rs_mode() -> None:
+    hub = _hub()
+    hub.set_gate_control_enabled(False)
+    payload = json.dumps(
+        {
+            "VER": 1,
+            "CMD": "UART",
+            "RESULT": 0,
+            "DATA": "ACK RS:00,00,A2,02,40,00,FF,FF,FF",
+        }
+    )
+    session = FakeSession(
+        {"result": "status_response_received", "native": {"response": payload}}
+    )
+    poller = OuranosStatusPoller(
+        object(),
+        hub,
+        "123456",
+        session=session,
+        status_command="RS",
+        expose_control_session=False,
+    )
+
+    assert asyncio.run(poller.async_refresh_once()) is True
+    assert session.read_modes == ["RS"]
+    assert hub.position == 0
+    assert hub.gate_control_enabled is False
 
 
 def test_native_opening_and_closing_responses_map_movement() -> None:
