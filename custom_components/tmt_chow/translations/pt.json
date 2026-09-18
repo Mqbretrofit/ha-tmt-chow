@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Abrir/Stop/Fechar/Stop",
           "open_stop_close": "Abrir/Stop/Fechar"
         }
+      },
+      "power_saving_mode": {
+        "name": "Modo de poupança de energia",
+        "state": {
+          "off": "Desligado",
+          "on": "Ligado"
+        }
       }
     }
   },
