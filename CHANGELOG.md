@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.31
+
+- Promote the real-hardware-confirmed PS25142 route to automatic read-only native status: `uuid_type=1` → OURANOS/IOTC-RDT → UART V3.0 `RS` → `ACK RS`
+- Decode the confirmed 9-byte `ACK RS` payload with the existing vendor status bit mapping and expose live cover availability/state
+- Classify PS25142 as a sliding gate from its tested Proposal B metadata
+- Keep PS25142 movement, pedestrian, relay, learning and parameter-write commands disabled until separately hardware-verified
+- Preserve the existing PS19001 `READ STATUS` native session and all previously verified controller routes unchanged
+
 ## v1.0.4-beta.30
 
 - Keep the unknown-controller diagnostic matrix covering every APK read dialect in one download (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`)
