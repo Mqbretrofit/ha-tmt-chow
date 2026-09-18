@@ -72,25 +72,52 @@ def parse_ack_rs(payload: str | None) -> GateStatus | None:
     return decode_dev_status(payload.removeprefix("ACK RS:"))
 
 
-def parse_ouranos_rs_response(payload: str | None) -> GateStatus | None:
-    """Parse an OURANOS UART envelope containing an ACK RS status frame."""
+def unwrap_ouranos_uart_data(payload: str | None) -> str | None:
+    """Return UART DATA text from raw, helper-wrapped or nested JSON payloads."""
     if not payload:
         return None
 
     data = payload.strip()
-    try:
-        envelope = json.loads(data)
-    except (TypeError, ValueError):
-        envelope = None
+    # The native helper can hand Python a JSON string whose response field is
+    # itself a serialized UART envelope. Decode a bounded number of layers
+    # before protocol-specific parsing so escaped CR/LF never reaches tokens.
+    for _ in range(3):
+        try:
+            envelope = json.loads(data)
+        except (TypeError, ValueError):
+            break
 
-    if isinstance(envelope, dict):
-        if (
-            str(envelope.get("CMD", "")).upper() != "UART"
-            or envelope.get("RESULT") != 0
-            or not isinstance(envelope.get("DATA"), str)
-        ):
+        if isinstance(envelope, str):
+            data = envelope.strip()
+            continue
+        if not isinstance(envelope, dict):
             return None
-        data = envelope["DATA"].strip()
+
+        if "DATA" in envelope:
+            if (
+                str(envelope.get("CMD", "")).upper() != "UART"
+                or envelope.get("RESULT") != 0
+                or not isinstance(envelope.get("DATA"), str)
+            ):
+                return None
+            data = envelope["DATA"].strip()
+            continue
+
+        response = envelope.get("response")
+        if isinstance(response, str):
+            data = response.strip()
+            continue
+
+        return None
+
+    return data
+
+
+def parse_ouranos_rs_response(payload: str | None) -> GateStatus | None:
+    """Parse an OURANOS UART envelope containing an ACK RS status frame."""
+    data = unwrap_ouranos_uart_data(payload)
+    if data is None:
+        return None
 
     marker = data.upper().find("ACK RS:")
     if marker < 0:
