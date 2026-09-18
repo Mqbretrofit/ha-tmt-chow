@@ -49,6 +49,7 @@ class OuranosStatusPoller:
         self.last_attempt_at: str | None = None
         self.last_success_at: str | None = None
         self.consecutive_failures = 0
+        self.last_movement_test: dict[str, Any] | None = None
 
     async def async_start(self) -> None:
         """Start polling without delaying integration setup."""
@@ -101,6 +102,162 @@ class OuranosStatusPoller:
             self.consecutive_failures = 0
             self.last_success_at = datetime.now(UTC).isoformat()
             return True
+
+    async def async_movement_test(self, action: str) -> dict[str, Any]:
+        """Send exactly one guarded PS25142 movement test command.
+
+        This deliberately does not enable the normal cover controls.  The caller
+        must already have a fresh verified status, and OPEN/CLOSE are only allowed
+        from their opposite stopped end positions.  STOP is only allowed while
+        movement is currently reported.  A movement command is never retried.
+        """
+        normalized = str(action or "").strip().lower()
+        wire_command = {
+            "open": "FULL OPEN",
+            "close": "FULL CLOSE",
+            "stop": "STOP",
+        }.get(normalized)
+        if wire_command is None:
+            result = {
+                "result": "invalid_action",
+                "action": normalized,
+                "movement_command_sent": False,
+                "automatic_retry": False,
+            }
+            self.last_movement_test = result
+            return result
+
+        async with self._refresh_lock:
+            before = {
+                "position": self._hub.position,
+                "movement": self._hub.movement,
+                "is_operating": self._hub.is_operating,
+            }
+            blocker: str | None = None
+            if not self._hub.ouranos_status_available:
+                blocker = "fresh_native_status_required"
+            elif normalized == "open" and not (
+                self._hub.position == 0 and self._hub.is_operating is False
+            ):
+                blocker = "open_requires_fully_closed_stopped_gate"
+            elif normalized == "close" and not (
+                self._hub.position == 100 and self._hub.is_operating is False
+            ):
+                blocker = "close_requires_fully_open_stopped_gate"
+            elif normalized == "stop" and self._hub.is_operating is not True:
+                blocker = "stop_requires_gate_reported_moving"
+
+            if blocker is not None:
+                result = {
+                    "result": "precondition_failed",
+                    "action": normalized,
+                    "wire_command": wire_command,
+                    "blocker": blocker,
+                    "before": before,
+                    "movement_command_sent": False,
+                    "automatic_retry": False,
+                }
+                self.last_movement_test = result
+                return result
+
+            command_result = await self._session.async_gate_command(wire_command)
+            native = command_result.get("native")
+            native_response = (
+                native.get("response") if isinstance(native, dict) else None
+            )
+            safety = native.get("safety") if isinstance(native, dict) else None
+            command_sent = bool(
+                (
+                    isinstance(safety, dict)
+                    and safety.get("gate_command_sent") is True
+                )
+                or (
+                    isinstance(native, dict)
+                    and native.get("request_sent") is True
+                )
+            )
+            acknowledged = (
+                isinstance(native_response, str)
+                and f"ACK {wire_command}" in native_response
+            )
+            rejected = (
+                isinstance(native_response, str) and "NAK " in native_response
+            )
+
+            # One read-only RS refresh after the one-shot command.  This can
+            # confirm motion even when the movement ACK itself is not returned.
+            status_result: dict[str, Any] | None = None
+            if command_sent:
+                await asyncio.sleep(1.0)
+                status_result = await self._session.async_read_status(
+                    self._status_command
+                )
+                status_native = status_result.get("native")
+                status_response = (
+                    status_native.get("response")
+                    if isinstance(status_native, dict)
+                    else None
+                )
+                if (
+                    status_result.get("result") == "status_response_received"
+                    and isinstance(status_response, str)
+                ):
+                    if self._hub.apply_ouranos_status_response(
+                        status_response, status_command=self._status_command
+                    ):
+                        self.last_result = "status_response_received"
+                        self.last_attempt_at = datetime.now(UTC).isoformat()
+                        self.last_success_at = self.last_attempt_at
+                        self.consecutive_failures = 0
+
+            after = {
+                "position": self._hub.position,
+                "movement": self._hub.movement,
+                "is_operating": self._hub.is_operating,
+            }
+            telemetry_confirmed = (
+                normalized == "open"
+                and self._hub.is_operating is True
+                and self._hub.movement == "opening"
+            ) or (
+                normalized == "close"
+                and self._hub.is_operating is True
+                and self._hub.movement == "closing"
+            ) or (
+                normalized == "stop"
+                and self._hub.is_operating is False
+            )
+
+            outcome = (
+                "rejected"
+                if rejected
+                else "acknowledged"
+                if acknowledged
+                else "telemetry_confirmed"
+                if telemetry_confirmed
+                else "sent_no_ack"
+                if command_sent
+                else "transport_failed"
+            )
+            result = {
+                "result": outcome,
+                "action": normalized,
+                "wire_command": wire_command,
+                "before": before,
+                "after": after,
+                "movement_command_sent": command_sent,
+                "automatic_retry": False,
+                "command_transport_result": command_result.get("result"),
+                "command_response": native_response,
+                "post_status_result": (
+                    status_result.get("result")
+                    if isinstance(status_result, dict)
+                    else None
+                ),
+                "telemetry_confirmed": telemetry_confirmed,
+            }
+            self.last_movement_test = result
+            return result
 
     @property
     def refresh_in_progress(self) -> bool:
