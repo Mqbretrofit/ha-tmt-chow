@@ -1,6 +1,6 @@
 # TMT Chow for Home Assistant
 
-[![Release](https://img.shields.io/badge/release-v1.0.4--beta.33-orange)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.33)
+[![Release](https://img.shields.io/badge/release-v1.0.4--beta.34-orange)](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.34)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-41BDF5)](https://www.hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-tmt-chow&category=integration)
@@ -16,17 +16,17 @@ TMT Chow for Home Assistant is an independent open-source community project. Con
 
 If this integration is useful to you, you can support continued development through **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)**. For sponsored feature requests, priority development and additional support options, see **[SUPPORT.md](SUPPORT.md)**.
 
-> **Current release:** [`v1.0.4-beta.33`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.33) (pre-release)
+> **Current release:** [`v1.0.4-beta.34`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.34) (pre-release)
 >
 > Last non-beta release: `v1.0.3`
 
-## What's new in v1.0.4-beta.33
+## What's new in v1.0.4-beta.34
 
-- PS25142 is promoted from test mode to normal Home Assistant cover control: live status plus `OPEN`, `CLOSE` and `STOP` use the real-hardware-verified OURANOS/IOTC-RDT UART V3.0 route.
-- The PS25142 STOP path now guards the controller's verified stale immediate post-STOP `RS` frame and settles state with read-only `RS` requests; the STOP command itself is never resent.
-- All 18 PS25142 Proposal-B parameters are exposed as configuration selects, including the additional `Fr` Power saving mode.
-- Parameters use the vendor UART V3.0 `RP,1` / `WP,1` path. Every change performs a fresh full read, exactly one full-frame write with no retry, then requires the complete 18-slot readback to match before Home Assistant accepts it.
-- PS19001 and every previously verified controller/parameter route remain unchanged.
+- Fixes PS25142 issue #51: valid native `ACK RP,1` replies are now unwrapped from the OURANOS JSON envelope before decoding.
+- The confirmed 18-value Proposal-B frame is now decoded into the PS25142 parameter entities instead of leaving all 18 unavailable.
+- Diagnostics now inspect the real UART `DATA` frame, report the correct 18-token count, and expose the decoded values.
+- Regression tests include the exact real-hardware response `ACK RP,1:1,8,0,3,0,1,5,0,0,0,0,2,3,0,0,0,1,1`.
+- PS25142 cover status/control and all previously verified controller routes remain unchanged.
 
 ## Features
 
@@ -101,7 +101,7 @@ The other mapped controller classes remain APK/proposal-derived until matching h
 
 ## Unknown or unsupported controller: what to do
 
-Starting with `v1.0.4-beta.33`, one Home Assistant diagnostics download performs the safe discovery work needed for an unknown or unverified controller. It checks the classic AWS IoT Shadow, cloud Proposal/FunctionSet data and the known read-only WBT request dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), then records which of those dialects returned ACK, NAK or no usable reply. For vendor `uuid_type=1` devices it can also test the native OURANOS `READ STATUS` and `RS` routes when the local six-digit gate PIN is configured.
+Starting with `v1.0.4-beta.34`, one Home Assistant diagnostics download performs the safe discovery work needed for an unknown or unverified controller. It checks the classic AWS IoT Shadow, cloud Proposal/FunctionSet data and the known read-only WBT request dialects (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), then records which of those dialects returned ACK, NAK or no usable reply. For vendor `uuid_type=1` devices it can also test the native OURANOS `READ STATUS` and `RS` routes when the local six-digit gate PIN is configured.
 
 1. Install the latest test release and restart Home Assistant.
 2. Add the gate normally with the TMT Chow integration. Do not assign another controller's parameter profile manually.
@@ -232,7 +232,7 @@ Stable releases are published on the GitHub Releases page:
 
 https://github.com/Mqbretrofit/ha-tmt-chow/releases
 
-Current release: **[v1.0.4-beta.33](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.33)** (pre-release)
+Current release: **[v1.0.4-beta.34](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.34)** (pre-release)
 
 Last non-beta release: **v1.0.3**
 
@@ -254,17 +254,17 @@ A TMT Chow for Home Assistant egy független, nyílt forráskódú közösségi 
 
 Ha hasznos számodra az integráció, a fejlesztést a **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)** oldalon támogathatod. Támogatott funkciókéréshez, kiemelt fejlesztéshez és további lehetőségekhez lásd a **[SUPPORT.md](SUPPORT.md)** fájlt.
 
-> **Jelenlegi kiadás:** [`v1.0.4-beta.33`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.33) (előzetes kiadás)
+> **Jelenlegi kiadás:** [`v1.0.4-beta.34`](https://github.com/Mqbretrofit/ha-tmt-chow/releases/tag/v1.0.4-beta.34) (előzetes kiadás)
 >
 > Utolsó nem beta kiadás: `v1.0.3`
 
-## Újdonságok a v1.0.4-beta.33-ben
+## Újdonságok a v1.0.4-beta.34-ben
 
-- A PS25142 kilép a tesztmódból: a normál Home Assistant cover élő állapota, `NYITÁS`, `ZÁRÁS` és `STOP` vezérlése a valódi hardveren igazolt OURANOS/IOTC-RDT UART V3.0 útvonalat használja.
-- A STOP után igazoltan előforduló első elavult `RS` mozgási mintát az integráció már kiszűri, és csak olvasási `RS` kérésekkel várja meg a stabil állapotot; a STOP parancsot soha nem küldi újra automatikusan.
-- Mind a 18 PS25142 Proposal-B paraméter megjelenik konfigurációs választóként, köztük a plusz `Fr` Energiatakarékos mód.
-- A paraméterek a gyári UART V3.0 `RP,1` / `WP,1` útvonalon működnek. Minden módosítás előtt teljes friss kiolvasás történik, pontosan egy teljeskeretes írás megy ki újrapróbálás nélkül, majd a teljes 18 mezős visszaolvasásnak egyeznie kell.
-- A PS19001 és minden korábban igazolt vezérlő- és paraméterútvonal változatlan.
+- Javítja a PS25142 #51 hibát: a natív `ACK RP,1` választ az integráció már először kibontja az OURANOS JSON burkolatból, és csak utána dekódolja.
+- A valódi hardveren kapott 18 értékes Proposal-B keret most már betöltődik a PS25142 paraméter-entitásokba, így nem marad mind a 18 „Unavailable”.
+- A diagnosztika a valódi UART `DATA` keretet vizsgálja, helyesen 18 tokent jelez, és megmutatja a dekódolt értékeket is.
+- Regressziós teszt került be a pontos hardveres válaszra: `ACK RP,1:1,8,0,3,0,1,5,0,0,0,0,2,3,0,0,0,1,1`.
+- A PS25142 cover állapot/vezérlés és minden korábban igazolt vezérlőútvonal változatlan.
 
 ## Fő funkciók
 
@@ -318,7 +318,7 @@ A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig 
 
 ## Ismeretlen vagy nem támogatott vezérlő: mit tegyen a felhasználó?
 
-A `v1.0.4-beta.33` verziótól egyetlen Home Assistant-diagnosztika elvégzi az ismeretlen vagy még nem igazolt vezérlő biztonságos felderítését. Ellenőrzi a klasszikus AWS IoT Shadow útvonalat, a felhős Proposal/FunctionSet adatokat és az ismert, csak olvasási WBT-kéréseket (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), majd feljegyzi, melyik vonal adott ACK-t, NAK-ot vagy használható választ. A gyártó által `uuid_type=1` értékkel jelölt eszközöknél a natív OURANOS `READ STATUS` és `RS` útvonalat is megpróbálja, ha a helyi hatjegyű kapu-PIN be van állítva.
+A `v1.0.4-beta.34` verziótól egyetlen Home Assistant-diagnosztika elvégzi az ismeretlen vagy még nem igazolt vezérlő biztonságos felderítését. Ellenőrzi a klasszikus AWS IoT Shadow útvonalat, a felhős Proposal/FunctionSet adatokat és az ismert, csak olvasási WBT-kéréseket (`RS`, `READ STATUS`, `RP,1`, `READ FUNCTION`), majd feljegyzi, melyik vonal adott ACK-t, NAK-ot vagy használható választ. A gyártó által `uuid_type=1` értékkel jelölt eszközöknél a natív OURANOS `READ STATUS` és `RS` útvonalat is megpróbálja, ha a helyi hatjegyű kapu-PIN be van állítva.
 
 1. Telepítsd a legújabb tesztverziót, majd indítsd újra a Home Assistantot.
 2. Add hozzá a kaput normál módon a TMT Chow integrációval. Ne rendeld hozzá kézzel egy másik vezérlő paraméterprofilját.
