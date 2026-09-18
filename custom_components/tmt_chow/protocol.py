@@ -72,6 +72,34 @@ def parse_ack_rs(payload: str | None) -> GateStatus | None:
     return decode_dev_status(payload.removeprefix("ACK RS:"))
 
 
+def parse_ouranos_rs_response(payload: str | None) -> GateStatus | None:
+    """Parse an OURANOS UART envelope containing an ACK RS status frame."""
+    if not payload:
+        return None
+
+    data = payload.strip()
+    try:
+        envelope = json.loads(data)
+    except (TypeError, ValueError):
+        envelope = None
+
+    if isinstance(envelope, dict):
+        if (
+            str(envelope.get("CMD", "")).upper() != "UART"
+            or envelope.get("RESULT") != 0
+            or not isinstance(envelope.get("DATA"), str)
+        ):
+            return None
+        data = envelope["DATA"].strip()
+
+    marker = data.upper().find("ACK RS:")
+    if marker < 0:
+        return None
+    ack = data[marker:]
+    ack = re.split(r";src=", ack, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    return parse_ack_rs(ack)
+
+
 _OURANOS_STATUS_RE = re.compile(
     r"^ACK STATUS:(?P<state>[^,]+),(?P<position>-?\d+)\s*$",
     re.IGNORECASE,
