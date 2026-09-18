@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from custom_components.tmt_chow import (
     _is_known_ouranos_candidate,
     _is_ouranos_probe_candidate,
+    _is_verified_ps25142_rs_status_candidate,
     _ouranos_probe_status_command,
 )
 from custom_components.tmt_chow.const import (
@@ -80,3 +81,18 @@ def test_verified_ps19001_keeps_read_status_even_with_v3_proposal() -> None:
     hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS19001")
     hass = _hass_for(uuid, "1", {"uartVer": "V3.0"})
     assert _ouranos_probe_status_command(hass, hub) == "READ_STATUS"
+
+
+def test_ps25142_verified_rs_runtime_requires_exact_vendor_evidence() -> None:
+    uuid = "12345678901234567890"
+    hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS25142")
+    proposal = {"uartVer": "V3.0", "gateType": "橫拉門", "proposalType": "B"}
+    assert _is_verified_ps25142_rs_status_candidate(
+        _hass_for(uuid, "1", proposal), hub
+    ) is True
+    assert _is_verified_ps25142_rs_status_candidate(
+        _hass_for(uuid, "5", proposal), hub
+    ) is False
+    assert _is_verified_ps25142_rs_status_candidate(
+        _hass_for(uuid, "1", {"uartVer": "V2.0", "gateType": "橫拉門"}), hub
+    ) is False
