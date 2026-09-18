@@ -128,6 +128,24 @@ static int valid_parameter_fragment(const char *fragment) {
     return fragment[index] == 0;
 }
 
+static int valid_v3_parameter_body(const char *body) {
+    int fields = 0;
+    size_t index = 0, length = strlen(body);
+    if (length < 1 || length > 256) return 0;
+    while (body[index] != 0) {
+        size_t value_start = index;
+        while (body[index] >= '0' && body[index] <= '9') {
+            ++index;
+        }
+        if (index == value_start) return 0;
+        ++fields;
+        if (body[index] == 0) break;
+        if (body[index] != ',') return 0;
+        ++index;
+    }
+    return fields == 18 && index == length;
+}
+
 static int send_exchange(
     int rdt_id,
     fn_rdt_write rdt_write,
@@ -380,11 +398,18 @@ int main(int argc, char **argv) {
             event = "command"; pk_command = "PED OPEN"; expected_ack = "ACK PED OPEN"; gate_command = 1;
         } else if (strcmp(command, "PARAM_READ") == 0) {
             event = "parameter_read"; pk_command = "READ FUNCTION"; expected_ack = "ACK READ FUNCTION"; parameter_read = 1;
+        } else if (strcmp(command, "PARAM_READ_V3") == 0) {
+            event = "parameter_read"; pk_command = "RP,1"; expected_ack = "ACK RP"; parameter_read = 1;
         } else if (strncmp(command, "PARAM_WRITE ", 12) == 0 &&
                    valid_parameter_fragment(command + 12)) {
             static char write_command[800];
             snprintf(write_command, sizeof(write_command), "WRITE FUNCTION%s", command + 12);
             event = "parameter_write"; pk_command = write_command; expected_ack = "ACK FUNCTION"; parameter_write = 1;
+        } else if (strncmp(command, "PARAM_WRITE_V3 ", 15) == 0 &&
+                   valid_v3_parameter_body(command + 15)) {
+            static char write_command_v3[512];
+            snprintf(write_command_v3, sizeof(write_command_v3), "WP,1:%s", command + 15);
+            event = "parameter_write"; pk_command = write_command_v3; expected_ack = "ACK WP"; parameter_write = 1;
         } else {
             printf("{\"event\":\"error\",\"error\":"
                    "\"unsupported_command\",\"transport_alive\":true}\n");
