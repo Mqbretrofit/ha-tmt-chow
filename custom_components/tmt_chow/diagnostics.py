@@ -147,6 +147,12 @@ def _expected_wire_token_count(schema: tuple | None, profile: tuple | None) -> i
 
 def _needs_controller_discovery(hub: TmtChowHub) -> bool:
     """Return whether one broad read-only route matrix adds useful evidence."""
+    if (
+        hub.parameter_model_type == PS25142
+        and hub.parameter_schema_verified
+        and hub.parameter_model_source == "ps25142_proposal_b_wire18"
+    ):
+        return False
     return (
         hub.controller_type is None
         or hub.controller_family is None
