@@ -1,4 +1,4 @@
-"""Controller-family mapping extracted from TMT Chow Android 3.1.4.
+"""Controller-family mapping from TMT Chow Android plus verified cloud metadata.
 
 The Android app contains separate product implementations for sliding, swing,
 garage, tube-motor and accessory devices.  This table is intentionally based
@@ -6,8 +6,7 @@ on the controller/device type string (for example PS21053), not product_type:
 the cloud API can return the same product_type value for different device
 types.
 
-Only PS21053/PS21053C currently have a verified 17-value parameter schema in
-this Home Assistant integration.  Family recognition must therefore never be
+PS25142 is added only as a sliding-family classification from its tested Proposal B\nand beta.30 hardware status evidence; this does not enable its movement or writes.\n\nOnly PS21053/PS21053C currently have a verified 17-value parameter schema in\nthis Home Assistant integration.  Family recognition must therefore never be
 used as permission to write that parameter schema to another controller.
 """
 
