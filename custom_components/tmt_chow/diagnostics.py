@@ -58,6 +58,11 @@ from .ps22087b_parameters import (
     CONTROLLER_TYPE as PS22087B,
     PARAMETERS as PS22087B_PARAMETERS,
 )
+from .ps25142_parameters import (
+    CONTROLLER_TYPE as PS25142,
+    PARAMETER_COUNT as PS25142_PARAMETER_COUNT,
+    PS25142_PARAMETERS,
+)
 from .shadow_diagnostics import async_probe_shadow_get
 from .status_diagnostics import (
     async_probe_parameter_read,
@@ -412,6 +417,19 @@ def _diagnostic_schema(
     is_ps22027_profile: bool,
 ) -> list[dict[str, Any]]:
     """Serialize standard generated schemas and the verified P710U wire schema."""
+    if hub.parameter_model_type == PS25142:
+        return [
+            {
+                "index": index,
+                "key": definition.key,
+                "name": definition.key,
+                "kind": "option",
+                "options": list(definition.options),
+                "writable": True,
+                "source": "PS25142 Proposal B / UART V3.0",
+            }
+            for index, definition in enumerate(PS25142_PARAMETERS, start=1)
+        ]
     if hub.parameter_model_type == PS22087B:
         return [
             {
@@ -563,11 +581,14 @@ async def async_get_config_entry_diagnostics(
         in {"ps22027_wire20_read_only", "ps22027_wire20_verified"}
     )
     is_ps22087b_profile = hub.parameter_model_type == PS22087B
+    is_ps25142_profile = hub.parameter_model_type == PS25142
     profile = (
         (PS21050D_UART_VERSION, (), "ps21050_app_wire20", "")
         if hub.parameter_model_type == PS21050D
         else (1, (), "ps22087b_p710u_wire15", "")
         if is_ps22087b_profile
+        else (1, (), "ps25142_proposal_b_wire18", "")
+        if is_ps25142_profile
         else protocol_profile_for(hub.parameter_model_type)
     )
     schema = hub.model_parameter_schema
@@ -580,6 +601,8 @@ async def async_get_config_entry_diagnostics(
     expected_wire_tokens = (
         len(PS22087B_PARAMETERS)
         if is_ps22087b_profile
+        else PS25142_PARAMETER_COUNT
+        if is_ps25142_profile
         else _expected_wire_token_count(schema, profile)
     )
     pedestrian_strategy = hub.pedestrian_strategy
@@ -714,8 +737,14 @@ async def async_get_config_entry_diagnostics(
             "product_type": hub.product_type,
             "parameter_model_type": hub.parameter_model_type,
             "parameter_model_source": hub.parameter_model_source,
-            "model_parameter_schema_available": schema is not None,
-            "model_parameter_schema_count": len(schema or ()),
+            "model_parameter_schema_available": (
+                schema is not None or is_ps25142_profile
+            ),
+            "model_parameter_schema_count": (
+                PS25142_PARAMETER_COUNT
+                if is_ps25142_profile
+                else len(schema or ())
+            ),
             "parameter_codec_available": profile is not None,
             "parameter_uart_version": profile[0] if profile is not None else None,
             "parameter_skip_positions": list(profile[1]) if profile is not None else [],
