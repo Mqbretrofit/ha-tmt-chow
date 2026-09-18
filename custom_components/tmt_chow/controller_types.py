@@ -6,12 +6,14 @@ on the controller/device type string (for example PS21053), not product_type:
 the cloud API can return the same product_type value for different device
 types.
 
-PS25142 is added only as a sliding-family classification from its tested Proposal B
-and beta.30 hardware status evidence; this does not enable its movement or writes.
+PS25142 is classified as sliding from its tested Proposal B metadata. Real
+hardware has verified its OURANOS/IOTC-RDT UART V3.0 status route plus FULL
+OPEN, FULL CLOSE and STOP movement commands. Its separate 18-slot Proposal-B
+parameter profile is selected only for the exact PS25142 identity and remains
+guarded by full read-before-write and full-frame readback verification.
 
-Only PS21053/PS21053C currently have a verified 17-value parameter schema in
-this Home Assistant integration.  Family recognition must therefore never be
-used as permission to write that parameter schema to another controller.
+Family recognition alone is never used as permission to borrow another
+controller's parameter schema or command path.
 """
 
 from __future__ import annotations
