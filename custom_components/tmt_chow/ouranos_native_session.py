@@ -69,7 +69,11 @@ class OuranosNativeSession:
     ) -> dict[str, Any]:
         """Request one allowlisted status response over the native connection."""
         mode = str(status_command or "READ_STATUS").strip().upper()
-        protocol = {"READ_STATUS": "STATUS", "READ STATUS": "STATUS", "RS": "STATUS_RS"}.get(mode)
+        protocol = {
+            "READ_STATUS": "STATUS",
+            "READ STATUS": "STATUS",
+            "RS": "STATUS_RS",
+        }.get(mode)
         if protocol is None:
             return {"result": "unsupported_status_command", "native": None}
         return await self._async_exchange(protocol, "status")
