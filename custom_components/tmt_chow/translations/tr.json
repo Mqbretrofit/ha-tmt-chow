@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Aç/Stop/Kapat/Stop",
           "open_stop_close": "Aç/Stop/Kapat"
         }
+      },
+      "power_saving_mode": {
+        "name": "Güç tasarrufu modu",
+        "state": {
+          "off": "Kapalı",
+          "on": "Açık"
+        }
       }
     }
   },
