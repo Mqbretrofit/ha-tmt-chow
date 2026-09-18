@@ -347,7 +347,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
     if hub.configured_controller_type == "PS25142":
-        # Status transport is verified, movement commands are not.
+        # Fail closed until the exact verified Proposal/uuid_type/PIN route is
+        # matched below; then normal cover control is enabled explicitly.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -378,7 +379,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         else:
             _LOGGER.warning(
-                "Ignoring invalid native PS19001 configuration for %s",
+                "Ignoring invalid native OURANOS configuration for %s",
                 entry.title,
             )
     try:
