@@ -227,6 +227,13 @@
           "open_stop_close_stop": "Open/Stop/Close/Stop",
           "open_stop_close": "Open/Stop/Close"
         }
+      },
+      "power_saving_mode": {
+        "name": "Power saving mode",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
       }
     }
   },
