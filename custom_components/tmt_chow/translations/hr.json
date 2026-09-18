@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Otvori/Stop/Zatvori/Stop",
           "open_stop_close": "Otvori/Stop/Zatvori"
         }
+      },
+      "power_saving_mode": {
+        "name": "Način uštede energije",
+        "state": {
+          "off": "Isključeno",
+          "on": "Uključeno"
+        }
       }
     }
   },
