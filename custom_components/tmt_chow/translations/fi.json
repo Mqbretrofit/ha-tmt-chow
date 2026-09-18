@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Avaa/Stop/Sulje/Stop",
           "open_stop_close": "Avaa/Stop/Sulje"
         }
+      },
+      "power_saving_mode": {
+        "name": "Virransäästötila",
+        "state": {
+          "off": "Pois",
+          "on": "Päällä"
+        }
       }
     }
   },
