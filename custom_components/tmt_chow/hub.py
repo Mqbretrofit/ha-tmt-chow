@@ -381,7 +381,9 @@ class TmtChowHub:
 
     def _parameter_transport(self) -> ParameterTransport:
         if self.parameter_model_type == PS25142:
-            return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
+            # AutoProduct V3 accepts ACK RP as the generic acknowledgement;
+            # the parser accepts both ACK RP and ACK RP,1 wire spellings.
+            return ParameterTransport(1, "RP,1", "ACK RP", "ACK WP")
         if self._is_ps25007a_profile():
             return ParameterTransport(1, "RP,1", "ACK RP,1", "ACK WP")
         if self.parameter_model_type == PS21050D:
