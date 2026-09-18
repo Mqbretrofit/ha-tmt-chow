@@ -6,6 +6,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
+
 import custom_components.tmt_chow.hub as hub_module
 from custom_components.tmt_chow.button import (
     TmtOuranosRefreshButton,
@@ -191,6 +193,20 @@ def test_native_opening_and_closing_responses_map_movement() -> None:
 
     assert hub.apply_ouranos_status_response(_response("CLOSING", 31)) is True
     assert (hub.position, hub.movement, hub.is_operating) == (31, "closing", True)
+
+
+def test_ps25142_status_only_profile_blocks_all_movement_commands() -> None:
+    hub = _hub()
+    hub.set_gate_control_enabled(False)
+
+    for action in (
+        hub.async_open,
+        hub.async_close,
+        hub.async_stop_gate,
+        hub.async_pedestrian_open,
+    ):
+        with pytest.raises(hub_module.TmtCommandError):
+            asyncio.run(action())
 
 
 def test_ps19001_cover_commands_use_native_session_exactly_once() -> None:
