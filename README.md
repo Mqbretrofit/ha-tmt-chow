@@ -71,7 +71,6 @@ The integration exposes supported ChowHUB settings as Home Assistant entities, i
 - STOP input function
 - Gate operation sequence
 - Power saving mode on PS25142
-- Power saving mode on PS25142
 
 Parameter availability, order and wire encoding are selected from the detected controller model. Parameter changes are written back to the controller and then read again so Home Assistant only reflects the controller's confirmed state.
 
@@ -96,9 +95,9 @@ The table deliberately separates real-hardware evidence from APK/proposal-derive
 | `PS22087` | `PS22087B` / `P710U` | 15-slot `F1..F9,A..F` frame and an `F8` value change with the other 14 fields preserved; undocumented `B` and `D` stay read-only | Verified for the tested write and full-frame preservation |
 | `PS19001` | `PS19001`, 20-character UID | Native IOTC/RDT status/control path and the corrected 19-slot `1..J` UART0 parameter frame used by the current profile | Verified on the documented native profile; x86-64 and local six-digit PIN required |
 | `PS25007` | `PS25007A` / `P500BU` | Exact identity and 17-slot parameter profile; pedestrian behavior has controller-specific safety history | Parameters supported; `PED OPEN` remains an explicitly guarded test path, not a generally verified safe capability |
-| `PS25142` | `PS25142`, 20-character UID | OURANOS/IOTC-RDT transport and UART V3.0 live state; `FULL OPEN`, `FULL CLOSE` and `STOP` all returned ACK and physically worked; Proposal B supplies the exact 18-slot parameter layout | Normal cover status/control enabled. The 18-slot RP,1/WP,1 parameter path is Proposal/APK-derived and protected by full read-before-write/readback; parameter mutation has not yet been independently exercised on this hardware |
+| `PS25142` | `PS25142`, 20-character UID | OURANOS/IOTC-RDT transport and UART V3.0 live state; `FULL OPEN`, `FULL CLOSE` and `STOP` all returned ACK and physically worked; Home Assistant followed `Opening → Open → Closing → Closed` correctly on real hardware | ✅ **Verified working:** normal cover status, position, open, close and stop. All 18 Proposal-B parameters are exposed; the guarded RP,1/WP,1 write path is implemented, but an actual parameter change has not yet been independently exercised on this hardware |
 
-The other mapped controller classes remain APK/proposal-derived until matching hardware confirms their exact runtime identity, status route, optional controls and parameter layout. `PS25142` now has real-hardware-verified native status plus full open/close/stop control. Its exact 18-slot parameter definition comes from the controller's tested Proposal B profile and uses the APK-derived UART V3.0 AutoProduct RP,1/WP,1 transport with strict full-frame verification.
+The other mapped controller classes remain APK/proposal-derived until matching hardware confirms their exact runtime identity, status route, optional controls and parameter layout. **PS25142 is now confirmed working on real hardware in Home Assistant for live status, position, open, close and stop.** Its exact 18-slot parameter definition comes from the controller's tested Proposal B profile and uses the APK-derived UART V3.0 AutoProduct RP,1/WP,1 transport with strict full-frame verification.
 
 ## Unknown or unsupported controller: what to do
 
@@ -313,9 +312,9 @@ A táblázat szándékosan különválasztja a valódi hardveres bizonyítékot 
 | `PS22087` | `PS22087B` / `P710U` | 15 mezős `F1..F9,A..F` keret és egy `F8` módosítás a másik 14 mező változatlan megőrzésével; a dokumentálatlan `B` és `D` csak olvasható | A tesztelt írás és a teljes keret megőrzése igazolt |
 | `PS19001` | `PS19001`, 20 karakteres UID | Natív IOTC/RDT állapot-/vezérlési útvonal és a jelenlegi profil javított, 19 mezős `1..J` UART0 paraméterkerete | A dokumentált natív profil igazolt; x86-64 rendszer és helyben tárolt hatjegyű PIN szükséges |
 | `PS25007` | `PS25007A` / `P500BU` | Pontos azonosítás és 17 mezős paraméterprofil; a gyalogos működéshez vezérlőspecifikus biztonsági előzmény tartozik | Paraméterek támogatva; a `PED OPEN` külön védett tesztútvonal, nem általánosan igazolt biztonságos képesség |
-| `PS25142` | `PS25142`, 20 karakteres UID | OURANOS/IOTC-RDT transport és UART V3.0 élő állapot; a `FULL OPEN`, `FULL CLOSE` és `STOP` mind ACK-ot adott és fizikailag helyesen működött; a Proposal B adja a pontos 18 mezős paraméterprofilt | Normál cover állapot/vezérlés engedélyezve. A 18 mezős RP,1/WP,1 paraméterút Proposal/APK-alapú, teljes előolvasással és visszaellenőrzéssel védett; paramétermódosítás ezen a hardveren még nem lett külön kipróbálva |
+| `PS25142` | `PS25142`, 20 karakteres UID | OURANOS/IOTC-RDT transport és UART V3.0 élő állapot; a `FULL OPEN`, `FULL CLOSE` és `STOP` mind ACK-ot adott és fizikailag helyesen működött; a Home Assistant valós hardveren helyesen követte a `Nyitás → Nyitva → Zárás → Zárva` állapotot | ✅ **Igazoltan működik:** normál cover állapot, pozíció, nyitás, zárás és STOP. Mind a 18 Proposal-B paraméter megjelenik; a védett RP,1/WP,1 írási útvonal elkészült, de konkrét paramétermódosítás ezen a hardveren még nem lett külön kipróbálva |
 
-A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig APK-/proposal-alapú. A `PS25142` natív állapota és teljes nyitás/zárás/STOP vezérlése valódi hardveren igazolt. A pontos 18 mezős paraméterdefiníció a vezérlő tesztelt Proposal B profiljából jön, az UART V3.0 AutoProduct `RP,1`/`WP,1` transportot pedig teljes előolvasás és teljeskeretes visszaellenőrzés védi.
+A többi leképezett vezérlőosztály azonos hardveren végzett ellenőrzésig APK-/proposal-alapú. **A PS25142 Home Assistant támogatása valós hardveren igazoltan működik az élő állapot, pozíció, nyitás, zárás és STOP funkciókkal.** A pontos 18 mezős paraméterdefiníció a vezérlő tesztelt Proposal B profiljából jön, az UART V3.0 AutoProduct `RP,1`/`WP,1` transportot pedig teljes előolvasás és teljeskeretes visszaellenőrzés védi.
 
 ## Ismeretlen vagy nem támogatott vezérlő: mit tegyen a felhasználó?
 
