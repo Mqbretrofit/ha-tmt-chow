@@ -42,7 +42,7 @@ SLIDING_CONTROLLERS: Final = frozenset({
     "PS22061", "PS22065", "PS22070", "PS22091",
     "PS22110", "PS22111",
     "PS23001", "PS23004", "PS23009", "PS23010", "PS23016",
-    "PS25094",
+    "PS25094", "PS25142",
 })
 
 SWING_CONTROLLERS: Final = frozenset({
