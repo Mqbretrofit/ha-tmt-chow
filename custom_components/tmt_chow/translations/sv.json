@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Öppna/Stop/Stäng/Stop",
           "open_stop_close": "Öppna/Stop/Stäng"
         }
+      },
+      "power_saving_mode": {
+        "name": "Energisparläge",
+        "state": {
+          "off": "Av",
+          "on": "På"
+        }
       }
     }
   },
