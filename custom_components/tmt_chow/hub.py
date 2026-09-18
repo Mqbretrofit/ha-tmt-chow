@@ -649,6 +649,10 @@ class TmtChowHub:
         the command is accepted as successful and False is returned so callers
         do not overwrite newer live state with optimistic state.
         """
+        if self.controller_type == PS25142 and command in {"FULL OPEN", "FULL CLOSE"}:
+            # A new intentional motion supersedes any prior STOP settlement
+            # window so its live RS telemetry is never mistaken for stale data.
+            self._native_stop_guard_until_monotonic = None
         async with self._transaction_lock:
             start_position = self.position
             start_operating = self.is_operating
