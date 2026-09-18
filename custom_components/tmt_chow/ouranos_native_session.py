@@ -1,4 +1,4 @@
-"""Persistent, allowlisted native IOTC/RDT session for PS19001."""
+"""Persistent, allowlisted native IOTC/RDT session for verified controllers."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .ouranos_ha_probe import (
 )
 
 _SESSION_HELPER_SHA256: Final = (
-    "dd825d6a5a96e78c6dee95e75788e638cc74f7c175fe0b2d10095acb27e572d7"
+    "3f031d7372eb08d8b9b56b4e21603af965b85621d31ced25597d6b608fb093e2"
 )
 _SESSION_START_TIMEOUT: Final = 40
 _RESPONSE_TIMEOUT: Final = 8
@@ -64,9 +64,19 @@ class OuranosNativeSession:
         """Return whether the persistent helper is currently alive."""
         return self._process is not None and self._process.returncode is None
 
-    async def async_read_status(self) -> dict[str, Any]:
-        """Request one status response over the existing native connection."""
-        return await self._async_exchange("STATUS", "status")
+    async def async_read_status(
+        self, status_command: str = "READ_STATUS"
+    ) -> dict[str, Any]:
+        """Request one allowlisted status response over the native connection."""
+        mode = str(status_command or "READ_STATUS").strip().upper()
+        protocol = {
+            "READ_STATUS": "STATUS",
+            "READ STATUS": "STATUS",
+            "RS": "STATUS_RS",
+        }.get(mode)
+        if protocol is None:
+            return {"result": "unsupported_status_command", "native": None}
+        return await self._async_exchange(protocol, "status")
 
     async def async_gate_command(self, command: str) -> dict[str, Any]:
         """Send one fixed movement command; arbitrary wire commands are rejected."""

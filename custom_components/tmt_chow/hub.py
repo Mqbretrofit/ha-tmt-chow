@@ -53,6 +53,7 @@ from .protocol import (
     decode_dev_status,
     extract_shadow_reported,
     parse_ack_rs,
+    parse_ouranos_rs_response,
     parse_ouranos_status_response,
     parse_position,
 )
@@ -143,6 +144,7 @@ class TmtChowHub:
         self._state_synchronized = False
         self._stopping = False
         self._ouranos_native_session: OuranosNativeSession | None = None
+        self._gate_control_enabled = True
 
         # TMT uses the device UUID as the topic/Shadow thing identifier.
         self.rx_topic = f"{uuid}/wbt01Rx"
@@ -205,6 +207,22 @@ class TmtChowHub:
     ) -> None:
         """Attach the verified PS19001 native transport used by this hub."""
         self._ouranos_native_session = session
+
+    @property
+    def gate_control_enabled(self) -> bool:
+        """Return whether movement commands are enabled for this runtime profile."""
+        return self._gate_control_enabled
+
+    def set_gate_control_enabled(self, enabled: bool) -> None:
+        """Enable or disable movement commands without affecting read-only status."""
+        self._gate_control_enabled = bool(enabled)
+
+    def _ensure_gate_control_enabled(self) -> None:
+        if not self._gate_control_enabled:
+            raise TmtCommandError(
+                "Gate movement commands are not yet hardware-verified for this controller",
+                translation_key="unsupported_controller",
+            )
 
     @property
     def parameter_schema_verified(self) -> bool:
@@ -380,6 +398,7 @@ class TmtChowHub:
         return tag
 
     async def async_open(self) -> None:
+        self._ensure_gate_control_enabled()
         acknowledged = await self._async_command(
             "FULL OPEN",
             "ACK FULL OPEN",
@@ -391,6 +410,7 @@ class TmtChowHub:
             self._notify()
 
     async def async_close(self) -> None:
+        self._ensure_gate_control_enabled()
         acknowledged = await self._async_command(
             "FULL CLOSE",
             "ACK FULL CLOSE",
@@ -403,6 +423,7 @@ class TmtChowHub:
 
     async def async_pedestrian_open(self) -> None:
         """Open to the controller's configured pedestrian/partial position."""
+        self._ensure_gate_control_enabled()
         if self._is_ps25007a_live_alias():
             source_tag = self._identified_source_tag()
             if source_tag is None:
@@ -445,6 +466,7 @@ class TmtChowHub:
             self._notify()
 
     async def async_stop_gate(self) -> None:
+        self._ensure_gate_control_enabled()
         await self._async_command("STOP", "ACK STOP")
         self.is_operating = False
         self.movement = None
@@ -816,20 +838,29 @@ class TmtChowHub:
         if status.battery_percent is not None:
             self.battery_percent = status.battery_percent
 
-    def apply_ouranos_status_response(self, payload: str | None) -> bool:
-        """Apply one verified read-only PS19001 ``ACK STATUS`` response."""
-        parsed = parse_ouranos_status_response(payload)
-        if parsed is None:
-            return False
-
-        state, status = parsed
-        if status.position is not None:
-            self._apply_position(status.position, derive_movement=False)
-        self.is_operating = status.is_operating
-        if status.is_operating and status.is_open_direction is not None:
-            self.movement = "opening" if status.is_open_direction else "closing"
-        elif not status.is_operating:
-            self.movement = None
+    def apply_ouranos_status_response(
+        self, payload: str | None, *, status_command: str = "READ_STATUS"
+    ) -> bool:
+        """Apply one verified read-only native status response."""
+        mode = str(status_command or "READ_STATUS").strip().upper()
+        if mode == "RS":
+            status = parse_ouranos_rs_response(payload)
+            if status is None:
+                return False
+            state = "RS"
+            self._apply_status(status)
+        else:
+            parsed = parse_ouranos_status_response(payload)
+            if parsed is None:
+                return False
+            state, status = parsed
+            if status.position is not None:
+                self._apply_position(status.position, derive_movement=False)
+            self.is_operating = status.is_operating
+            if status.is_operating and status.is_open_direction is not None:
+                self.movement = "opening" if status.is_open_direction else "closing"
+            elif not status.is_operating:
+                self.movement = None
 
         self._last_ouranos_status_monotonic = time.monotonic()
         self.attributes[ATTR_OURANOS_STATUS] = state

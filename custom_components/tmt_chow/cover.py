@@ -40,6 +40,13 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
         self._attr_unique_id = hub.uuid
 
     @property
+    def supported_features(self) -> CoverEntityFeature:
+        """Expose controls only when the runtime route is verified for movement."""
+        if not self.hub.gate_control_enabled:
+            return CoverEntityFeature(0)
+        return self._attr_supported_features
+
+    @property
     def current_cover_position(self) -> int | None:
         return self.hub.position
 

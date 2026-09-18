@@ -1,4 +1,4 @@
-"""Native status polling for confirmed PS19001 gates."""
+"""Native status polling for verified OURANOS gate routes."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class OuranosStatusPoller:
-    """Periodically read status through the shared native PS19001 session."""
+    """Periodically read status through a verified native OURANOS session."""
 
     def __init__(
         self,
@@ -31,13 +31,18 @@ class OuranosStatusPoller:
         *,
         interval: float = OURANOS_STATUS_POLL_SECONDS,
         session: OuranosNativeSession | None = None,
+        status_command: str = "READ_STATUS",
+        expose_control_session: bool = True,
     ) -> None:
         self._hass = hass
         self._hub = hub
         self._pin_code = pin_code
         self._interval = interval
+        self._status_command = status_command
+        self._expose_control_session = expose_control_session
         self._session = session or OuranosNativeSession(hass, hub.uuid, pin_code)
-        self._hub.set_ouranos_native_session(self._session)
+        if expose_control_session:
+            self._hub.set_ouranos_native_session(self._session)
         self._refresh_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last_result: str | None = None
@@ -58,18 +63,21 @@ class OuranosStatusPoller:
                 await self._task
             self._task = None
         await self._session.async_stop()
-        self._hub.set_ouranos_native_session(None)
+        if self._expose_control_session:
+            self._hub.set_ouranos_native_session(None)
 
     async def async_refresh_once(self) -> bool:
         """Read and apply one native gate status."""
         async with self._refresh_lock:
             self.last_attempt_at = datetime.now(UTC).isoformat()
-            result: dict[str, Any] = await self._session.async_read_status()
+            result: dict[str, Any] = await self._session.async_read_status(
+                self._status_command
+            )
             self.last_result = str(result.get("result") or "unknown")
             if self.last_result != "status_response_received":
                 self.consecutive_failures += 1
                 _LOGGER.debug(
-                    "PS19001 native status read for %s ended with %s",
+                    "OURANOS native status read for %s ended with %s",
                     self._hub.name,
                     self.last_result,
                 )
@@ -83,7 +91,9 @@ class OuranosStatusPoller:
                 self.consecutive_failures += 1
                 self._hub.notify_ouranos_status_failure()
                 return False
-            if not self._hub.apply_ouranos_status_response(response):
+            if not self._hub.apply_ouranos_status_response(
+                response, status_command=self._status_command
+            ):
                 self.last_result = "invalid_status_response"
                 self.consecutive_failures += 1
                 self._hub.notify_ouranos_status_failure()
@@ -113,7 +123,7 @@ class OuranosStatusPoller:
                 self.consecutive_failures += 1
                 self._hub.notify_ouranos_status_failure()
                 _LOGGER.exception(
-                    "Unexpected PS19001 native status read failure for %s",
+                    "Unexpected OURANOS native status read failure for %s",
                     self._hub.name,
                 )
                 succeeded = False

@@ -228,6 +228,9 @@ def test_persistent_helper_has_strict_allowlisted_control_protocol() -> None:
     assert digest in session_module
     assert source.count("rdt_write(rdt_id, request, request_length)") == 1
     assert 'strcmp(command, "STATUS")' in source
+    assert 'strcmp(command, "STATUS_RS")' in source
+    assert 'pk_command = "RS"' in source
+    assert 'expected_ack = "ACK RS"' in source
     assert 'strcmp(command, "QUIT")' in source
     for command in ("FULL OPEN", "FULL CLOSE", "PED OPEN", "READ FUNCTION"):
         assert command in source

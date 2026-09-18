@@ -368,6 +368,8 @@ int main(int argc, char **argv) {
         int gate_command = 0, parameter_read = 0, parameter_write = 0;
         if (strcmp(command, "STATUS") == 0) {
             event = "status"; pk_command = "READ STATUS"; expected_ack = "ACK STATUS";
+        } else if (strcmp(command, "STATUS_RS") == 0) {
+            event = "status"; pk_command = "RS"; expected_ack = "ACK RS";
         } else if (strcmp(command, "OPEN") == 0) {
             event = "command"; pk_command = "FULL OPEN"; expected_ack = "ACK FULL OPEN"; gate_command = 1;
         } else if (strcmp(command, "CLOSE") == 0) {

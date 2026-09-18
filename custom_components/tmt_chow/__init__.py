@@ -142,9 +142,35 @@ def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
     return "READ_STATUS"
 
 
-def _is_verified_ouranos_poller_candidate(hub: TmtChowHub) -> bool:
-    """Keep automatic native polling restricted to the verified PS19001 path."""
-    return _is_known_ouranos_candidate(hub)
+def _is_verified_ps25142_rs_status_candidate(
+    hass: HomeAssistant, hub: TmtChowHub
+) -> bool:
+    """Return whether stored vendor evidence matches the verified PS25142 RS route."""
+    if (
+        hub.configured_controller_type != "PS25142"
+        or len(hub.uuid) != 20
+        or _entry_uuid_type(hass, hub.uuid) != "1"
+    ):
+        return False
+    entry = _entry_for_uuid(hass, hub.uuid)
+    if entry is None:
+        return False
+    summary = proposal_summary(entry.data.get(CONF_PROPOSAL))
+    uart_version = str(summary.get("uart_version") or "").strip().upper()
+    return (
+        summary.get("available") is True
+        and uart_version in {"V3.0", "3.0"}
+        and summary.get("gate_family_hint") == "sliding"
+    )
+
+
+def _is_verified_ouranos_poller_candidate(
+    hass: HomeAssistant, hub: TmtChowHub
+) -> bool:
+    """Return whether automatic native status polling is hardware-verified."""
+    return _is_known_ouranos_candidate(hub) or _is_verified_ps25142_rs_status_candidate(
+        hass, hub
+    )
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -265,22 +291,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
+    if hub.configured_controller_type == "PS25142":
+        # Status transport is verified, movement commands are not.
+        hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
     if pin_code:
-        if (
-            _is_verified_ouranos_poller_candidate(hub)
-            and len(pin_code) == 6
-            and all("0" <= char <= "9" for char in pin_code)
-        ):
-            # Attach before hub startup so the first parameter bootstrap already
-            # uses the proven OURANOS route instead of the unavailable WBT path.
+        valid_pin = len(pin_code) == 6 and all(
+            "0" <= char <= "9" for char in pin_code
+        )
+        if _is_known_ouranos_candidate(hub) and valid_pin:
+            # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
+        elif _is_verified_ps25142_rs_status_candidate(hass, hub) and valid_pin:
+            # Beta.30 real-hardware evidence verified PS25142 as
+            # uuid_type=1 / OURANOS / UART V3.0 with ACK RS.  Keep this route
+            # status-only until movement commands are independently verified.
+            hub.set_gate_control_enabled(False)
+            poller = OuranosStatusPoller(
+                hass,
+                hub,
+                pin_code,
+                status_command="RS",
+                expose_control_session=False,
+            )
         elif _is_ouranos_probe_candidate(hass, hub):
-            # uuid_type=1 identifies the native transport, but PS25142 and future
-            # AutoProduct devices remain probe-only until their exact status and
-            # command framing has been verified on hardware. Never attach the
-            # command-capable persistent session merely from cloud metadata.
             _LOGGER.debug(
                 "Keeping unverified OURANOS controller %s in read-only probe mode",
                 entry.title,
