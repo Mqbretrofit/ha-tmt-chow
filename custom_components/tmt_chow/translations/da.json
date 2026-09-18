@@ -193,6 +193,13 @@
           "open_stop_close_stop": "Åbn/Stop/Luk/Stop",
           "open_stop_close": "Åbn/Stop/Luk"
         }
+      },
+      "power_saving_mode": {
+        "name": "Strømbesparelsestilstand",
+        "state": {
+          "off": "Fra",
+          "on": "Til"
+        }
       }
     }
   },
