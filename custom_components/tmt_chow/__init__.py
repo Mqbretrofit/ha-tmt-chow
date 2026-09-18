@@ -45,6 +45,7 @@ _FRONTEND_MODULE_URL = (
 )
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 SERVICE_OURANOS_PROBE = "ouranos_probe"
+SERVICE_PS25142_MOVEMENT_TEST = "ps25142_movement_test"
 _PS19001_LIVE_PARAMETER_COUNT = 19
 _PS19001_LEGACY_PARAMETER_RANGE = range(20, 24)
 _LEGACY_OURANOS_CANDIDATE_ERROR = (
@@ -243,6 +244,60 @@ def _register_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_OURANOS_PROBE,
             _async_ouranos_probe,
+            supports_response=SupportsResponse.ONLY,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_PS25142_MOVEMENT_TEST):
+
+        async def _async_ps25142_movement_test(call: ServiceCall) -> dict:
+            if call.data.get("confirm") is not True:
+                raise HomeAssistantError(
+                    "Set confirm=true to run the PS25142 movement test"
+                )
+
+            action = str(call.data.get("action", "")).strip().lower()
+            if action not in {"open", "close", "stop"}:
+                raise HomeAssistantError(
+                    "Action must be one of: open, close, stop"
+                )
+
+            requested_uuid = str(call.data.get("uuid", "")).strip()
+            if requested_uuid:
+                hub = _find_hub(hass, requested_uuid)
+                if hub is None:
+                    raise HomeAssistantError("TMT Chow gate not found")
+                if not _is_verified_ps25142_rs_status_candidate(hass, hub):
+                    raise HomeAssistantError(
+                        "Selected gate is not the verified PS25142 OURANOS/V3.0 profile"
+                    )
+            else:
+                candidates = [
+                    candidate
+                    for candidate in hass.data.get(DOMAIN, {}).values()
+                    if isinstance(candidate, TmtChowHub)
+                    and _is_verified_ps25142_rs_status_candidate(hass, candidate)
+                ]
+                if len(candidates) != 1:
+                    raise HomeAssistantError(
+                        "Specify uuid unless exactly one verified PS25142 is configured"
+                    )
+                hub = candidates[0]
+
+            entry = _entry_for_uuid(hass, hub.uuid)
+            if entry is None:
+                raise HomeAssistantError("PS25142 config entry not found")
+            poller = hass.data.get(OURANOS_POLLERS_DATA_KEY, {}).get(entry.entry_id)
+            if not isinstance(poller, OuranosStatusPoller):
+                raise HomeAssistantError(
+                    "PS25142 native status session is not active; save the six-digit PIN first"
+                )
+
+            return await poller.async_movement_test(action)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_PS25142_MOVEMENT_TEST,
+            _async_ps25142_movement_test,
             supports_response=SupportsResponse.ONLY,
         )
 
