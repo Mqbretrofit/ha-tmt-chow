@@ -29,6 +29,14 @@ from typing import Any, Final
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .ouranos_arm64 import (
+    ARM64_MACHINES,
+    arm64_source_metadata,
+    async_ensure_arm64_libraries,
+    async_ensure_arm64_runtime,
+    is_arm64_machine,
+)
+
 _TUTK_SDK_REPOSITORY: Final = "Soldier-Sen/tutk"
 _TUTK_SDK_COMMIT: Final = "8a93626da7c12c936d550750e887a020c3049dc0"
 _TUTK_SDK_PATH: Final = "Lib/Linux/x64/tmp_so"
