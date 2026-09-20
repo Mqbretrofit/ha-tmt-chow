@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — issue #53 ARM64 / PS17062
+
+- Add isolated ARM64/Bionic OURANOS support using the exact TMT Chow 3.1.5.33 ARM64 `libIOTCAPIs.so` / `libRDTAPIs.so` pair extracted from the public APK with strict size and SHA-256 verification
+- Confirm on real PS17062/aarch64 hardware that `IOTC_Initialize2`, IOTC connect, RDT initialize/channel creation and `READ STATUS` all succeed
+- Record the hardware response `ACK STATUS:PED CLOSED,2`; record that `RS` is rejected by this controller
+- Promote the exact PS17062 + 20-character UID + `uuid_type=1` profile to automatic persistent native `READ STATUS` polling
+- Keep PS17062 movement/pedestrian controls disabled until separately hardware-verified
+- Keep PS17062 parameter writes disabled and disable normal runtime parameter polling because the legacy `READ FUNCTION` route was not acknowledged
+- Treat a successful native diagnostic read matrix as verified route evidence so diagnostics no longer report the obsolete “one read-only native status response is still required” blocker
+- Preserve the existing PS19001, PS25142, x86-64/glibc, AWS/WBT and all other verified controller routes unchanged
+
 ## v1.0.4-beta.34
 
 - Fix PS25142 issue #51 where a valid native `ACK RP,1` response could remain unavailable when the UART reply was wrapped as serialized JSON and ended with escaped CR/LF instead of a `;src=` suffix
