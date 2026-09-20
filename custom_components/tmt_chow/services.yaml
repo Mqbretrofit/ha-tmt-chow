@@ -45,7 +45,9 @@ ps25142_movement_test:
     automatically. Open is allowed only from a fully closed/stopped gate, close
     only from a fully open/stopped gate, and stop only while Home Assistant
     currently reports movement. A read-only RS status refresh follows the
-    one-shot movement command. Normal cover movement controls remain disabled.
+    one-shot movement command. Normal cover controls are also enabled for the
+    exact verified PS17062 native profile; this action remains available for
+    explicit diagnostics and hardware validation.
   fields:
     uuid:
       name: Gate UUID
