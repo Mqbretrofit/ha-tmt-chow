@@ -355,6 +355,6 @@ def test_ps17062_mapped_parameter_profile_stays_read_only() -> None:
     assert hub.controller_type == "PS17062"
     assert hub.parameter_model_type == "PS17062"
     assert hub.model_parameter_schema is not None
-    assert hub.may_probe_parameters is True
+    assert hub.may_probe_parameters is False
     assert hub.parameter_write_schema_verified is False
     assert hub.supports_parameters is False
