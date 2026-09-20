@@ -89,7 +89,7 @@ jobs:
       - name: Install pinned NDK and extraction tools
         run: |
           set -euo pipefail
-          yes | sdkmanager "ndk;${NDK_VERSION}" >/dev/null
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" "ndk;${NDK_VERSION}" >/dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends erofs-utils e2fsprogs
 
