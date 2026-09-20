@@ -204,13 +204,24 @@ class OuranosNativeSession:
                 )
                 library_path = str(libdir)
             env = {**os.environ, "LD_LIBRARY_PATH": library_path}
+            if is_arm64_machine():
+                argv = [
+                    str(loader),
+                    str(helper),
+                    str(iotc_path),
+                    str(rdt_path),
+                ]
+            else:
+                argv = [
+                    str(loader),
+                    "--library-path",
+                    library_path,
+                    str(helper),
+                    str(iotc_path),
+                    str(rdt_path),
+                ]
             self._process = await asyncio.create_subprocess_exec(
-                str(loader),
-                "--library-path",
-                library_path,
-                str(helper),
-                str(iotc_path),
-                str(rdt_path),
+                *argv,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
