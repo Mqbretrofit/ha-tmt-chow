@@ -130,6 +130,7 @@ def test_ps17062_uses_verified_status_and_guarded_parameter_arm64_route() -> Non
     assert "_is_verified_ps17062_read_status_candidate" in init_source
     assert 'hub.configured_controller_type in {"PS25142", "PS17062"}' in init_source
     assert 'status_command="READ_STATUS"' in init_source
+    assert "hub.set_gate_control_enabled(True)" in init_source
     assert "expose_control_session=True" in init_source
     assert "_PS17062_PARAMETER_FRAGMENT_RE" in session_source
     assert "PARAM_WRITE_PS17062" in session_source
@@ -153,4 +154,4 @@ def test_ps17062_movement_test_remains_explicit_and_guarded() -> None:
     assert "return await poller.async_movement_test(action)" in init_source
     assert "ps17062_movement_test:" in service_source
     assert "never" in service_source and "retried" in service_source
-    assert "Normal cover movement controls remain disabled." in service_source
+    assert "Normal cover controls are also enabled" in service_source
