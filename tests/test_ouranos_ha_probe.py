@@ -54,7 +54,7 @@ def _load_probe():
 
 def test_home_assistant_probe_uses_pinned_tmt_generation_x64_sdk() -> None:
     probe = _load_probe()
-    assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64"})
+    assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64", "aarch64", "arm64"})
     assert probe._TUTK_SDK_REPOSITORY == "Soldier-Sen/tutk"
     assert probe._TUTK_SDK_COMMIT == "8a93626da7c12c936d550750e887a020c3049dc0"
     assert probe._TUTK_SDK_PATH == "Lib/Linux/x64/tmp_so"
