@@ -5,6 +5,11 @@ from __future__ import annotations
 import asyncio
 
 from custom_components.tmt_chow.hub import TmtCommandError
+from custom_components.tmt_chow.parameter_codec import (
+    decode_model_parameter_response,
+    encode_model_parameter_write,
+    parameter_defaults,
+)
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 from custom_components.tmt_chow.ps21050d_parameters import (
     APP_PARAMETERS,
@@ -348,13 +353,58 @@ def test_unrelated_configured_model_keeps_ps21050d_raw_read_only_fallback() -> N
     assert hub.supports_parameters is False
 
 
-def test_ps17062_mapped_parameter_profile_stays_read_only() -> None:
+def test_ps17062_mapped_parameter_profile_uses_guarded_full_frame_route() -> None:
     hub = _hub("PS17062")
     hub._set_controller_type("PS17062")
 
     assert hub.controller_type == "PS17062"
     assert hub.parameter_model_type == "PS17062"
     assert hub.model_parameter_schema is not None
-    assert hub.may_probe_parameters is False
-    assert hub.parameter_write_schema_verified is False
-    assert hub.supports_parameters is False
+    assert len(hub.model_parameter_schema) == 23
+    assert hub.may_probe_parameters is True
+    assert hub.parameter_write_schema_verified is True
+    assert hub.supports_parameters is True
+
+
+def test_ps17062_parameter_write_reads_once_writes_once_and_verifies() -> None:
+    hub = _hub("PS17062")
+    hub._set_controller_type("PS17062")
+    defaults = parameter_defaults("PS17062")
+    assert defaults is not None and len(defaults) == 23
+
+    initial_command = encode_model_parameter_write("PS17062", defaults)
+    assert initial_command.startswith("WRITE FUNCTION,0:")
+    assert ",M:" in initial_command
+    initial_response = "ACK READ FUNCTION" + initial_command.removeprefix(
+        "WRITE FUNCTION"
+    )
+    assert decode_model_parameter_response("PS17062", initial_response) == defaults
+
+    updated = list(defaults)
+    updated[14] = 0 if updated[14] != 0 else 1
+    updated_values = tuple(updated)
+    updated_command = encode_model_parameter_write("PS17062", updated_values)
+    updated_response = "ACK READ FUNCTION" + updated_command.removeprefix(
+        "WRITE FUNCTION"
+    )
+    calls: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        calls.append((payload, expected))
+        if len(calls) == 1:
+            return initial_response
+        if len(calls) == 2:
+            assert payload == f"c={updated_command};src=P9999999"
+            assert expected == "ACK FUNCTION"
+            return "ACK FUNCTION"
+        return updated_response
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    asyncio.run(hub.async_set_parameter(14, updated_values[14]))
+
+    assert calls == [
+        ("c=READ FUNCTION", "ACK READ FUNCTION"),
+        (f"c={updated_command};src=P9999999", "ACK FUNCTION"),
+        ("c=READ FUNCTION", "ACK READ FUNCTION"),
+    ]
+    assert hub.parameters == updated_values
