@@ -126,6 +126,23 @@ jobs:
           }
           EOF
 
+      - name: Verify pinned TMT APK ARM64 SDK fingerprints
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/arm64-ouranos"
+          mkdir -p "$work/tmt"
+          apk="$work/tmt/TMT_Chow.apk"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 300 \
+            --user-agent "Mozilla/5.0 (GitHub Actions; TMT Chow integration)" \
+            "https://d.apkpure.net/b/APK/tw.timotion?version=latest" \
+            -o "$apk"
+          unzip -p "$apk" lib/arm64-v8a/libIOTCAPIs.so > "$work/tmt/libIOTCAPIs.so"
+          unzip -p "$apk" lib/arm64-v8a/libRDTAPIs.so > "$work/tmt/libRDTAPIs.so"
+          test "$(stat -c%s "$work/tmt/libIOTCAPIs.so")" = "272024"
+          test "$(stat -c%s "$work/tmt/libRDTAPIs.so")" = "42400"
+          echo "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4  $work/tmt/libIOTCAPIs.so" | sha256sum -c -
+          echo "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934  $work/tmt/libRDTAPIs.so" | sha256sum -c -
+
       - name: Build pinned Bionic runtime and ARM64 helpers
         run: |
           set -euo pipefail
