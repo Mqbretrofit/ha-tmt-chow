@@ -252,14 +252,24 @@ def _safe_extract_runtime(archive_data: bytes, target: Path, archive_sha: str) -
     try:
         with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as archive:
             for member in archive.getmembers():
-                relative = PurePosixPath(member.name.lstrip("./"))
-                if not relative.parts:
+                member_name = member.name
+                while member_name.startswith("./"):
+                    member_name = member_name[2:]
+                if not member_name or member_name == ".":
                     continue
+                relative = PurePosixPath(member_name)
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise RuntimeError("arm64_runtime_archive_invalid")
                 relative_text = relative.as_posix()
+                if member.isdir():
+                    if not any(
+                        path.startswith(relative_text.rstrip("/") + "/")
+                        for path in _RUNTIME_FILES
+                    ):
+                        raise RuntimeError("arm64_runtime_archive_invalid")
+                    continue
                 if (
-                    relative.is_absolute()
-                    or ".." in relative.parts
-                    or relative_text not in _RUNTIME_FILES
+                    relative_text not in _RUNTIME_FILES
                     or not member.isfile()
                     or member.issym()
                     or member.islnk()
