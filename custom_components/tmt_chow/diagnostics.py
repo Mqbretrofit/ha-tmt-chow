@@ -326,7 +326,7 @@ def _controller_route_analysis(
             {
                 "source": "ouranos_iotc_rdt",
                 "result": "verified_live_status",
-                "role": "native status/control transport",
+                "role": "native status transport",
             }
         )
         evidence.append("native OURANOS status response verified")
@@ -352,11 +352,7 @@ def _controller_route_analysis(
     uart_version = str(proposal_info.get("uart_version") or "").strip().upper()
     expected_status_command = (
         "READ STATUS"
-        if (
-            hub.configured_controller_type in {"PS19001", "PS17062"}
-            and "READ STATUS" in ouranos_working
-        )
-        or hub.configured_controller_type == "PS19001"
+        if hub.configured_controller_type in {"PS19001", "PS17062"}
         else "READ STATUS"
         if "READ STATUS" in ouranos_working and "RS" not in ouranos_working
         else "RS"
