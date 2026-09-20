@@ -109,6 +109,9 @@ def _base_result(uuid: str, status_command: str = "READ_STATUS") -> dict[str, An
             arm64_metadata.get("path") if arm64 else _TUTK_SDK_PATH
         ),
         "library_source_abi": arm64_metadata.get("abi") if arm64 else "linux-x86_64",
+        "library_source_type": arm64_metadata.get("source_type") if arm64 else "github_raw",
+        "library_source_version": arm64_metadata.get("version") if arm64 else _PROBE_IOTC_VERSION,
+        "library_source_package": arm64_metadata.get("package") if arm64 else None,
         "library_architecture_supported": machine in _SUPPORTED_MACHINES,
         "library_downloaded": False,
         "library_integrity_verified": False,
@@ -116,7 +119,7 @@ def _base_result(uuid: str, status_command: str = "READ_STATUS") -> dict[str, An
         "rdt_library_integrity_verified": False,
         "tmt_apk_iotc_version": _TMT_APK_IOTC_VERSION,
         "probe_iotc_version_expected": (
-            None if arm64 else _PROBE_IOTC_VERSION
+            _TMT_APK_IOTC_VERSION if arm64 else _PROBE_IOTC_VERSION
         ),
         "probe_rdt_version_expected": (
             None if arm64 else _PROBE_RDT_VERSION
