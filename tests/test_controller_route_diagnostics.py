@@ -64,3 +64,40 @@ def test_route_report_identifies_wbt_from_read_only_probe() -> None:
     assert report["selected_route"]["transport"] == "aws_wbt_mqtt"
     assert report["selected_route"]["runtime_state_source"] == "classic_shadow"
     assert report["implementation_readiness"] == "routing_evidence_collected"
+
+
+def test_ps17062_read_status_matrix_verifies_native_route_without_live_poller() -> None:
+    report = _controller_route_analysis(
+        hub=_hub(
+            configured_controller_type="PS17062",
+            controller_type="PS17062",
+            product_type="109",
+            controller_family="swing",
+            ouranos_status_available=False,
+            model_parameter_schema=(object(),),
+            parameter_write_schema_verified=False,
+            parameter_schema_verified=True,
+        ),
+        uuid_type="1",
+        proposal_info={"available": False, "function_set_available": False},
+        shadow_probe={"result": "rejected"},
+        status_probe={"result": "no_response", "observed_payload_count": 0},
+        parameter_probe={"result": "no_response", "observed_payload_count": 0},
+        ouranos_matrix={
+            "result": "completed",
+            "blocker": None,
+            "working_commands": ["READ STATUS"],
+        },
+    )
+
+    assert report["selected_route"]["transport"] == "ouranos_iotc_rdt"
+    assert report["selected_route"]["confidence"] == "verified"
+    assert report["selected_route"]["expected_status_command"] == "READ STATUS"
+    assert "OURANOS read matrix responses=READ STATUS" in report["evidence"]
+    assert "one read-only native status response is still required" not in report[
+        "remaining_blockers"
+    ]
+    assert "PS17062 parameter write route is not hardware-verified" in report[
+        "remaining_blockers"
+    ]
+    assert report["implementation_readiness"] == "mapped_read_only"
