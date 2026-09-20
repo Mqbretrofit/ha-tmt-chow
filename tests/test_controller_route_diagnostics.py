@@ -75,7 +75,7 @@ def test_ps17062_read_status_matrix_verifies_native_route_without_live_poller() 
             controller_family="swing",
             ouranos_status_available=False,
             model_parameter_schema=(object(),),
-            parameter_write_schema_verified=False,
+            parameter_write_schema_verified=True,
             parameter_schema_verified=True,
         ),
         uuid_type="1",
@@ -97,7 +97,7 @@ def test_ps17062_read_status_matrix_verifies_native_route_without_live_poller() 
     assert "one read-only native status response is still required" not in report[
         "remaining_blockers"
     ]
-    assert "PS17062 parameter write route is not hardware-verified" in report[
+    assert "PS17062 parameter write route is not hardware-verified" not in report[
         "remaining_blockers"
     ]
-    assert report["implementation_readiness"] == "mapped_read_only"
+    assert report["implementation_readiness"] == "mapped_and_write_verified"
