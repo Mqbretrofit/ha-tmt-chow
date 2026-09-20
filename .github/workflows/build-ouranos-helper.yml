@@ -86,10 +86,14 @@ jobs:
           fetch-depth: 0
 
 
-      - name: Install pinned NDK and extraction tools
+      - name: Select hosted NDK and install extraction tools
         run: |
           set -euo pipefail
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" "ndk;${NDK_VERSION}" >/dev/null
+          ndk_root="$(find "$ANDROID_SDK_ROOT/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -n "$ndk_root"
+          echo "NDK_ROOT=$ndk_root" >> "$GITHUB_ENV"
+          echo "NDK_RESOLVED_VERSION=$(basename "$ndk_root")" >> "$GITHUB_ENV"
+          echo "Using NDK: $ndk_root"
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends erofs-utils e2fsprogs
 
@@ -103,7 +107,7 @@ jobs:
             curl --fail --location --silent --show-error "$base/$name" -o "$work/tutk/$name"
           done
 
-          readelf_bin="$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          readelf_bin="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           for name in libIOTCAPIs.so libRDTAPIs.so libTUTKGlobalAPIs.so; do
             file "$work/tutk/$name"
             "$readelf_bin" -h "$work/tutk/$name" | grep -E 'Class:|Machine:'
@@ -165,7 +169,7 @@ jobs:
           test -f "$work/payload/bin/linker64"
           cp "$work/payload/bin/linker64" "$work/runtime/bin/linker64"
 
-          toolchain="$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          toolchain="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
           cc="$toolchain/aarch64-linux-android${API_LEVEL}-clang"
           strip="$toolchain/llvm-strip"
 
@@ -191,7 +195,7 @@ jobs:
             "schema_version": 1,
             "architecture": "aarch64",
             "android_api": ${API_LEVEL},
-            "ndk_version": "${NDK_VERSION}",
+            "ndk_version": "${NDK_RESOLVED_VERSION}",
             "aosp_commit": "${AOSP_COMMIT}",
             "aosp_apex_sha256": "${APEX_SHA256}"
           }
