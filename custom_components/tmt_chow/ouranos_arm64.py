@@ -191,13 +191,13 @@ async def _async_download_apk_to_file(
         await hass.async_add_executor_job(os.replace, temp, target)
     except RuntimeError:
         try:
-            await hass.async_add_executor_job(temp.unlink, missing_ok=True)
+            await hass.async_add_executor_job(lambda: temp.unlink(missing_ok=True))
         except OSError:
             pass
         raise
     except Exception as err:
         try:
-            await hass.async_add_executor_job(temp.unlink, missing_ok=True)
+            await hass.async_add_executor_job(lambda: temp.unlink(missing_ok=True))
         except OSError:
             pass
         raise RuntimeError(
@@ -341,7 +341,7 @@ async def async_ensure_arm64_libraries(
         )
     finally:
         try:
-            await hass.async_add_executor_job(apk_path.unlink, missing_ok=True)
+            await hass.async_add_executor_job(lambda: apk_path.unlink(missing_ok=True))
         except OSError:
             pass
 
