@@ -72,6 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: "27.2.12479018"
+      ANDROID_SDK_ROOT: "/usr/local/lib/android/sdk"
       API_LEVEL: "35"
       TUTK_REPO: "yanjuntext/NewJKDevice"
       TUTK_COMMIT: "0423b6c0cfbf9156eb9990250b955f1f6aafcf20"
@@ -84,8 +85,6 @@ jobs:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
 
       - name: Install pinned NDK and extraction tools
         run: |
