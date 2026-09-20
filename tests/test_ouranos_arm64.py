@@ -35,24 +35,30 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_arm64_tutk_manifest_is_commit_pinned_and_complete() -> None:
+def test_arm64_tutk_manifest_is_tmt_apk_pinned_and_complete() -> None:
     payload = json.loads(TUTK_MANIFEST.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["architecture"] == "aarch64"
     assert payload["abi"] == "arm64-v8a"
-    assert payload["source_repository"] == "yanjuntext/NewJKDevice"
-    assert payload["source_commit"] == "0423b6c0cfbf9156eb9990250b955f1f6aafcf20"
-    assert payload["source_path"] == "tutk/libs/arm64-v8a"
+    assert payload["source_type"] == "tmt_apk"
+    assert payload["source_package"] == "tw.timotion"
+    assert payload["source_id"] == "tmt-chow-arm64-iotc-rdt-3.1.5.33"
+    assert payload["source_path"] == "lib/arm64-v8a"
+    assert payload["source_url"].startswith("https://d.apkpure.net/")
     assert set(payload["files"]) == {
         "libIOTCAPIs.so",
         "libRDTAPIs.so",
-        "libTUTKGlobalAPIs.so",
     }
-    for metadata in payload["files"].values():
-        assert len(metadata["sha256"]) == 64
-        int(metadata["sha256"], 16)
-        assert 0 < metadata["size"] < 8 * 1024 * 1024
-
+    assert payload["files"]["libIOTCAPIs.so"] == {
+        "apk_path": "lib/arm64-v8a/libIOTCAPIs.so",
+        "sha256": "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4",
+        "size": 272024,
+    }
+    assert payload["files"]["libRDTAPIs.so"] == {
+        "apk_path": "lib/arm64-v8a/libRDTAPIs.so",
+        "sha256": "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934",
+        "size": 42400,
+    }
 
 def test_arm64_runtime_archive_is_integrity_pinned_and_minimal() -> None:
     expected = RUNTIME_SHA.read_text(encoding="ascii").strip()
@@ -100,6 +106,9 @@ def test_arm64_runtime_is_isolated_and_does_not_replace_x86_path() -> None:
 
     assert 'ARM64_MACHINES: Final = frozenset({"aarch64", "arm64"})' in arm64_source
     assert '"runtime/lib64/libstdc++.so"' in arm64_source
+    assert "zipfile.ZipFile" in arm64_source
+    assert "arm64_tmt_apk_library_integrity_failed" in arm64_source
+    assert "TUTKGlobalAPIs" not in TUTK_MANIFEST.read_text(encoding="utf-8")
     assert "async_ensure_arm64_libraries" in probe_source
     assert "async_ensure_arm64_runtime" in probe_source
     assert "is_arm64_machine(machine)" in probe_source
