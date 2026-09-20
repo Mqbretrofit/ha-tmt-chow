@@ -283,7 +283,17 @@ class TmtChowHub:
 
     @property
     def may_probe_parameters(self) -> bool:
-        """Return whether this controller has a safe read-only parameter profile."""
+        """Return whether this controller has a verified runtime parameter-read route."""
+        if (
+            self.parameter_model_type == "PS17062"
+            or self.controller_type == "PS17062"
+            or self.configured_controller_type == "PS17062"
+        ):
+            # The PS17062 schema is known from the APK, but issue #53 hardware
+            # did not ACK READ FUNCTION on the legacy WBT route. Keep normal
+            # runtime parameter polling disabled until its native read dialect
+            # is separately verified.
+            return False
         return self.parameter_schema_verified
 
     async def async_start(self) -> None:
