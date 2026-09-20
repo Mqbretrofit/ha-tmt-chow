@@ -1,0 +1,22 @@
+{
+  "abi": "arm64-v8a",
+  "architecture": "aarch64",
+  "files": {
+    "libIOTCAPIs.so": {
+      "sha256": "44486800266966077c3c20f2ea6c577e610ede44bd6867be9112cb6610998386",
+      "size": 218832
+    },
+    "libRDTAPIs.so": {
+      "sha256": "cdcc95316fa85f8b5d80a58a2f5d67075f10250dae043673d9ef684ae63c628d",
+      "size": 50888
+    },
+    "libTUTKGlobalAPIs.so": {
+      "sha256": "cea8463b8c30e7f3139bcf52bf71ab0d516896cd4aaa04dc8ff4a322a1ce0beb",
+      "size": 3401600
+    }
+  },
+  "schema_version": 1,
+  "source_commit": "0423b6c0cfbf9156eb9990250b955f1f6aafcf20",
+  "source_path": "tutk/libs/arm64-v8a",
+  "source_repository": "yanjuntext/NewJKDevice"
+}
