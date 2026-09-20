@@ -8,6 +8,7 @@ import re
 
 from .model_parameter_schemas import parameter_options, parameter_schema_for
 from .model_protocol_profiles import HEX_DIGITS, protocol_profile_for
+from .protocol import unwrap_ouranos_uart_data
 
 # Schema tuple indexes. Kept local so the generated data stays compact.
 _KIND = 0
@@ -213,7 +214,10 @@ def decode_model_parameter_response(
 
 
 def _extract_read_fragment(payload: str, uart: int) -> str | None:
-    clean = payload.split(";", 1)[0].strip()
+    unwrapped = unwrap_ouranos_uart_data(payload)
+    if unwrapped is None:
+        return None
+    clean = unwrapped.split(";", 1)[0].strip()
     if uart == 0:
         marker = "ACK READ FUNCTION"
         pos = clean.find(marker)
