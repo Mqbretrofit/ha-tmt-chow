@@ -129,7 +129,10 @@ def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
     cloud ``uartVer: V3.0`` proposal to the UART1 status command ``RS``. No
     unknown or missing proposal is allowed to change the legacy probe command.
     """
-    if _is_known_ouranos_candidate(hub):
+    if (
+        _is_known_ouranos_candidate(hub)
+        or _is_verified_ps17062_read_status_candidate(hass, hub)
+    ):
         return "READ_STATUS"
 
     entry = _entry_for_uuid(hass, hub.uuid)
@@ -141,6 +144,17 @@ def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
     if uart_version in {"V3.0", "3.0"}:
         return "RS"
     return "READ_STATUS"
+
+
+def _is_verified_ps17062_read_status_candidate(
+    hass: HomeAssistant, hub: TmtChowHub
+) -> bool:
+    """Return whether this is the hardware-verified PS17062 native status route."""
+    return (
+        hub.configured_controller_type == "PS17062"
+        and len(hub.uuid) == 20
+        and _entry_uuid_type(hass, hub.uuid) == "1"
+    )
 
 
 def _is_verified_ps25142_rs_status_candidate(
@@ -169,8 +183,10 @@ def _is_verified_ouranos_poller_candidate(
     hass: HomeAssistant, hub: TmtChowHub
 ) -> bool:
     """Return whether automatic native status polling is hardware-verified."""
-    return _is_known_ouranos_candidate(hub) or _is_verified_ps25142_rs_status_candidate(
-        hass, hub
+    return (
+        _is_known_ouranos_candidate(hub)
+        or _is_verified_ps17062_read_status_candidate(hass, hub)
+        or _is_verified_ps25142_rs_status_candidate(hass, hub)
     )
 
 
@@ -346,9 +362,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
-    if hub.configured_controller_type == "PS25142":
-        # Fail closed until the exact verified Proposal/uuid_type/PIN route is
-        # matched below; then normal cover control is enabled explicitly.
+    if hub.configured_controller_type in {"PS25142", "PS17062"}:
+        # Fail closed for native profiles until movement is separately verified.
+        # PS17062 is status-only for now; PS25142 is enabled explicitly below
+        # only when its exact hardware-verified movement profile matches.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -359,6 +376,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if _is_known_ouranos_candidate(hub) and valid_pin:
             # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
+        elif _is_verified_ps17062_read_status_candidate(hass, hub) and valid_pin:
+            # Issue #53 real hardware verified PS17062 on ARM64 with native
+            # IOTC/RDT READ STATUS. Keep this profile strictly status-only:
+            # no movement session exposure and no native parameter writes.
+            poller = OuranosStatusPoller(
+                hass,
+                hub,
+                pin_code,
+                status_command="READ_STATUS",
+                expose_control_session=False,
+            )
         elif _is_verified_ps25142_rs_status_candidate(hass, hub) and valid_pin:
             # Beta.31 verified live RS status and beta.32 verified FULL OPEN,
             # FULL CLOSE and STOP on real PS25142 hardware. Attach the shared
