@@ -45,6 +45,7 @@ _RUNTIME_FILES: Final = frozenset(
         "runtime/lib64/libc.so",
         "runtime/lib64/libdl.so",
         "runtime/lib64/libm.so",
+        "runtime/lib64/libstdc++.so",
         "runtime-manifest.json",
     }
 )
