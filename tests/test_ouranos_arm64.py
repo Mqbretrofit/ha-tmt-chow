@@ -118,14 +118,23 @@ def test_arm64_runtime_is_isolated_and_does_not_replace_x86_path() -> None:
     assert "ouranos_glibc_session_helper.amd64" in session_source
 
 
-def test_ps17062_uses_verified_status_only_arm64_route() -> None:
+def test_ps17062_uses_verified_status_and_guarded_parameter_arm64_route() -> None:
     init_source = (ROOT / "custom_components" / "tmt_chow" / "__init__.py").read_text(
         encoding="utf-8"
     )
+    session_source = SESSION_MODULE.read_text(encoding="utf-8")
+    helper_source = (
+        ROOT / "tools" / "ouranos_glibc_session_helper.c"
+    ).read_text(encoding="utf-8")
+
     assert "_is_verified_ps17062_read_status_candidate" in init_source
     assert 'hub.configured_controller_type in {"PS25142", "PS17062"}' in init_source
     assert 'status_command="READ_STATUS"' in init_source
-    assert "expose_control_session=False" in init_source
+    assert "expose_control_session=True" in init_source
+    assert "_PS17062_PARAMETER_FRAGMENT_RE" in session_source
+    assert "PARAM_WRITE_PS17062" in session_source
+    assert "valid_ps17062_parameter_fragment" in helper_source
+    assert "0123456789ABCDEFGHIJKLM" in helper_source
     assert "_is_verified_ouranos_poller_candidate" in init_source
 
 
