@@ -46,6 +46,7 @@ _FRONTEND_MODULE_URL = (
 SERVICE_PEDESTRIAN_OPEN = "pedestrian_open"
 SERVICE_OURANOS_PROBE = "ouranos_probe"
 SERVICE_PS25142_MOVEMENT_TEST = "ps25142_movement_test"
+SERVICE_PS17062_MOVEMENT_TEST = "ps17062_movement_test"
 _PS19001_LIVE_PARAMETER_COUNT = 19
 _PS19001_LEGACY_PARAMETER_RANGE = range(20, 24)
 _LEGACY_OURANOS_CANDIDATE_ERROR = (
@@ -129,7 +130,10 @@ def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
     cloud ``uartVer: V3.0`` proposal to the UART1 status command ``RS``. No
     unknown or missing proposal is allowed to change the legacy probe command.
     """
-    if _is_known_ouranos_candidate(hub):
+    if (
+        _is_known_ouranos_candidate(hub)
+        or _is_verified_ps17062_read_status_candidate(hass, hub)
+    ):
         return "READ_STATUS"
 
     entry = _entry_for_uuid(hass, hub.uuid)
@@ -141,6 +145,17 @@ def _ouranos_probe_status_command(hass: HomeAssistant, hub: TmtChowHub) -> str:
     if uart_version in {"V3.0", "3.0"}:
         return "RS"
     return "READ_STATUS"
+
+
+def _is_verified_ps17062_read_status_candidate(
+    hass: HomeAssistant, hub: TmtChowHub
+) -> bool:
+    """Return whether this is the hardware-verified PS17062 native status route."""
+    return (
+        hub.configured_controller_type == "PS17062"
+        and len(hub.uuid) == 20
+        and _entry_uuid_type(hass, hub.uuid) == "1"
+    )
 
 
 def _is_verified_ps25142_rs_status_candidate(
@@ -169,8 +184,10 @@ def _is_verified_ouranos_poller_candidate(
     hass: HomeAssistant, hub: TmtChowHub
 ) -> bool:
     """Return whether automatic native status polling is hardware-verified."""
-    return _is_known_ouranos_candidate(hub) or _is_verified_ps25142_rs_status_candidate(
-        hass, hub
+    return (
+        _is_known_ouranos_candidate(hub)
+        or _is_verified_ps17062_read_status_candidate(hass, hub)
+        or _is_verified_ps25142_rs_status_candidate(hass, hub)
     )
 
 
@@ -301,6 +318,65 @@ def _register_services(hass: HomeAssistant) -> None:
             supports_response=SupportsResponse.ONLY,
         )
 
+    if not hass.services.has_service(DOMAIN, SERVICE_PS17062_MOVEMENT_TEST):
+
+        async def _async_ps17062_movement_test(call: ServiceCall) -> dict:
+            """Run one explicitly confirmed PS17062 hardware movement test."""
+            if call.data.get("confirm") is not True:
+                raise HomeAssistantError(
+                    "Set confirm=true to run the PS17062 movement test"
+                )
+
+            action = str(call.data.get("action", "")).strip().lower()
+            if action not in {"open", "close", "stop"}:
+                raise HomeAssistantError(
+                    "Action must be one of: open, close, stop"
+                )
+
+            requested_uuid = str(call.data.get("uuid", "")).strip()
+            if requested_uuid:
+                hub = _find_hub(hass, requested_uuid)
+                if hub is None:
+                    raise HomeAssistantError("TMT Chow gate not found")
+                if not _is_verified_ps17062_read_status_candidate(hass, hub):
+                    raise HomeAssistantError(
+                        "Selected gate is not the verified PS17062 OURANOS/READ STATUS profile"
+                    )
+            else:
+                candidates = [
+                    candidate
+                    for candidate in hass.data.get(DOMAIN, {}).values()
+                    if isinstance(candidate, TmtChowHub)
+                    and _is_verified_ps17062_read_status_candidate(hass, candidate)
+                ]
+                if len(candidates) != 1:
+                    raise HomeAssistantError(
+                        "Specify uuid unless exactly one verified PS17062 is configured"
+                    )
+                hub = candidates[0]
+
+            entry = _entry_for_uuid(hass, hub.uuid)
+            if entry is None:
+                raise HomeAssistantError("PS17062 config entry not found")
+            poller = hass.data.get(OURANOS_POLLERS_DATA_KEY, {}).get(entry.entry_id)
+            if not isinstance(poller, OuranosStatusPoller):
+                raise HomeAssistantError(
+                    "PS17062 native status session is not active; save the six-digit PIN first"
+                )
+
+            # Deliberately bypass normal cover controls only inside this explicit
+            # hardware-test action. The poller enforces fresh-status and endpoint
+            # preconditions, sends exactly one movement command with no retry,
+            # then verifies the result using the already proven READ STATUS path.
+            return await poller.async_movement_test(action)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_PS17062_MOVEMENT_TEST,
+            _async_ps17062_movement_test,
+            supports_response=SupportsResponse.ONLY,
+        )
+
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload an entry after its native status option changes."""
@@ -346,9 +422,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
-    if hub.configured_controller_type == "PS25142":
-        # Fail closed until the exact verified Proposal/uuid_type/PIN route is
-        # matched below; then normal cover control is enabled explicitly.
+    if hub.configured_controller_type in {"PS25142", "PS17062"}:
+        # Fail closed until the exact verified native profile is matched below.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -359,6 +434,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if _is_known_ouranos_candidate(hub) and valid_pin:
             # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
+        elif _is_verified_ps17062_read_status_candidate(hass, hub) and valid_pin:
+            # Issue #53 real hardware verified PS17062 native READ STATUS plus
+            # FULL OPEN and FULL CLOSE on ARM64. Enable the normal HA cover
+            # controls and the APK-declared PED OPEN button on this exact
+            # UUID/uuid_type/PIN-gated native profile. The shared session also
+            # carries guarded READ/WRITE FUNCTION parameter transactions.
+            hub.set_gate_control_enabled(True)
+            poller = OuranosStatusPoller(
+                hass,
+                hub,
+                pin_code,
+                status_command="READ_STATUS",
+                expose_control_session=True,
+            )
         elif _is_verified_ps25142_rs_status_candidate(hass, hub) and valid_pin:
             # Beta.31 verified live RS status and beta.32 verified FULL OPEN,
             # FULL CLOSE and STOP on real PS25142 hardware. Attach the shared

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.0.4-beta.35
+
+- Add isolated ARM64/Bionic OURANOS support using the exact TMT Chow 3.1.5.33 ARM64 `libIOTCAPIs.so` / `libRDTAPIs.so` pair extracted from the public APK with strict size and SHA-256 verification
+- Confirm on real PS17062/aarch64 hardware that `IOTC_Initialize2`, IOTC connect, RDT initialize/channel creation and `READ STATUS` all succeed
+- Record the hardware response `ACK STATUS:PED CLOSED,2`; record that `RS` is rejected by this controller
+- Promote the exact PS17062 + 20-character UID + `uuid_type=1` profile to automatic persistent native `READ STATUS` polling
+- Add an explicit `tmt_chow.ps17062_movement_test` developer action for one-shot `FULL OPEN`, `FULL CLOSE` or `STOP` validation with explicit confirmation, fresh-state/end-position preconditions, no automatic retry, and one post-command `READ STATUS` verification
+- Promote the exact verified PS17062 native profile to normal Home Assistant open/close/stop controls after the reporter confirmed both open and close through the guarded action path
+- Enable the existing APK-declared PS17062 pedestrian button over native `PED OPEN`; it is only available with fresh native status while the gate is fully closed and stopped
+- Reporter confirmed the normal Home Assistant controls work and the pedestrian command operates the gate; the exact pedestrian travel distance is still being rechecked
+- Enable the APK-derived PS17062 23-parameter UART0 profile over the verified native IOTC/RDT session. Reads use native `READ FUNCTION`; writes require a fresh complete read, exactly one complete `WRITE FUNCTION` frame with no retry, and mandatory full-frame readback equality
+- Require a fresh native status session and a stopped gate before any PS17062 parameter write
+- Treat a successful native diagnostic read matrix as verified route evidence so diagnostics no longer report the obsolete “one read-only native status response is still required” blocker
+- Preserve the existing PS19001, PS25142, x86-64/glibc, AWS/WBT and all other verified controller routes unchanged
+
 ## v1.0.4-beta.34
 
 - Fix PS25142 issue #51 where a valid native `ACK RP,1` response could remain unavailable when the UART reply was wrapped as serialized JSON and ended with escaped CR/LF instead of a `;src=` suffix

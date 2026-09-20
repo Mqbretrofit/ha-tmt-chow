@@ -282,8 +282,13 @@ def _controller_route_analysis(
         if working:
             evidence.append("WBT read matrix responses=" + ", ".join(working))
 
+    ouranos_working = (
+        list(ouranos_matrix.get("working_commands") or [])
+        if ouranos_matrix is not None
+        else []
+    )
     if ouranos_matrix is not None:
-        working = list(ouranos_matrix.get("working_commands") or [])
+        working = ouranos_working
         data_sources.append(
             {
                 "source": "ouranos_read_dialect_matrix",
@@ -314,19 +319,21 @@ def _controller_route_analysis(
     else:
         blockers.append("vendor cloud Proposal is unavailable")
 
+    native_status_verified = hub.ouranos_status_available or bool(ouranos_working)
+
     if hub.ouranos_status_available:
         data_sources.append(
             {
                 "source": "ouranos_iotc_rdt",
                 "result": "verified_live_status",
-                "role": "native status/control transport",
+                "role": "native status transport",
             }
         )
         evidence.append("native OURANOS status response verified")
 
-    if uuid_type_text == "1" or hub.ouranos_status_available:
+    if uuid_type_text == "1" or native_status_verified:
         transport = "ouranos_iotc_rdt"
-        transport_confidence = "verified" if hub.ouranos_status_available else "vendor_metadata"
+        transport_confidence = "verified" if native_status_verified else "vendor_metadata"
     elif shadow_result == "accepted" or status_result in {
         "acknowledged",
         "traffic_observed",
@@ -345,7 +352,11 @@ def _controller_route_analysis(
     uart_version = str(proposal_info.get("uart_version") or "").strip().upper()
     expected_status_command = (
         "READ STATUS"
-        if hub.configured_controller_type == "PS19001"
+        if hub.configured_controller_type in {"PS19001", "PS17062"}
+        else "READ STATUS"
+        if "READ STATUS" in ouranos_working and "RS" not in ouranos_working
+        else "RS"
+        if "RS" in ouranos_working and "READ STATUS" not in ouranos_working
         else "RS"
         if uart_version in {"V3.0", "3.0"}
         else "unknown"
@@ -360,8 +371,13 @@ def _controller_route_analysis(
         blockers.append("FunctionSet evidence is unavailable")
     if hub.model_parameter_schema is None:
         blockers.append("no mapped parameter schema is selected")
-    if transport == "ouranos_iotc_rdt" and not hub.ouranos_status_available:
+    if transport == "ouranos_iotc_rdt" and not native_status_verified:
         blockers.append("one read-only native status response is still required")
+    if (
+        hub.configured_controller_type == "PS17062"
+        and not hub.parameter_write_schema_verified
+    ):
+        blockers.append("PS17062 parameter write route is not hardware-verified")
 
     return {
         "report_version": 1,
@@ -394,7 +410,7 @@ def _controller_route_analysis(
                 else "wbt_rs"
                 if status_result in {"acknowledged", "traffic_observed"}
                 else "ouranos_native"
-                if hub.ouranos_status_available or uuid_type_text == "1"
+                if native_status_verified or uuid_type_text == "1"
                 else "unresolved"
             ),
         },
@@ -680,6 +696,13 @@ async def async_get_config_entry_diagnostics(
             "ps25142_movement_test_last_result": (
                 ouranos_poller.last_movement_test
                 if ouranos_poller is not None
+                and hub.configured_controller_type == "PS25142"
+                else None
+            ),
+            "ps17062_movement_test_last_result": (
+                ouranos_poller.last_movement_test
+                if ouranos_poller is not None
+                and hub.configured_controller_type == "PS17062"
                 else None
             ),
             "shadow_get_probe_result": shadow_get_probe["result"],

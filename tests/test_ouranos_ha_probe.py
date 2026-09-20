@@ -44,17 +44,34 @@ def _load_probe():
         sys.modules.setdefault("homeassistant.core", core)
         sys.modules.setdefault("homeassistant.helpers", helpers)
         sys.modules.setdefault("homeassistant.helpers.aiohttp_client", aiohttp_client)
-    spec = importlib.util.spec_from_file_location("tmt_chow_ouranos_ha_probe", PROBE_PATH)
+    package_name = "tmt_chow_probe_testpkg"
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(PROBE_PATH.parent)]
+    sys.modules.setdefault(package_name, package)
+
+    arm64_name = f"{package_name}.ouranos_arm64"
+    if arm64_name not in sys.modules:
+        arm64_path = PROBE_PATH.with_name("ouranos_arm64.py")
+        arm64_spec = importlib.util.spec_from_file_location(arm64_name, arm64_path)
+        assert arm64_spec is not None
+        assert arm64_spec.loader is not None
+        arm64_module = importlib.util.module_from_spec(arm64_spec)
+        sys.modules[arm64_name] = arm64_module
+        arm64_spec.loader.exec_module(arm64_module)
+
+    probe_name = f"{package_name}.ouranos_ha_probe"
+    spec = importlib.util.spec_from_file_location(probe_name, PROBE_PATH)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[probe_name] = module
     spec.loader.exec_module(module)
     return module
 
 
 def test_home_assistant_probe_uses_pinned_tmt_generation_x64_sdk() -> None:
     probe = _load_probe()
-    assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64"})
+    assert probe._SUPPORTED_MACHINES == frozenset({"x86_64", "amd64", "aarch64", "arm64"})
     assert probe._TUTK_SDK_REPOSITORY == "Soldier-Sen/tutk"
     assert probe._TUTK_SDK_COMMIT == "8a93626da7c12c936d550750e887a020c3049dc0"
     assert probe._TUTK_SDK_PATH == "Lib/Linux/x64/tmp_so"

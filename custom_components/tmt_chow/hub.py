@@ -253,7 +253,16 @@ class TmtChowHub:
 
     @property
     def parameter_write_schema_verified(self) -> bool:
-        """Return whether parameter writes are verified for the live controller."""
+        """Return whether parameter writes are enabled for a guarded full-frame route."""
+        if (
+            self.parameter_model_type == "PS17062"
+            and self.controller_type == "PS17062"
+            and self.configured_controller_type == "PS17062"
+        ):
+            # PS17062 uses the APK-derived UART0 legacy frame. Writes remain
+            # guarded by fresh full READ FUNCTION, exactly one complete WRITE
+            # FUNCTION frame, and mandatory full-frame readback equality.
+            return self.parameter_schema_verified
         if self._is_ps25007a_live_alias():
             return self.parameter_schema_verified
         if self._is_ps25007a_profile():
@@ -274,7 +283,7 @@ class TmtChowHub:
 
     @property
     def may_probe_parameters(self) -> bool:
-        """Return whether this controller has a safe read-only parameter profile."""
+        """Return whether this controller has a safe model-specific read profile."""
         return self.parameter_schema_verified
 
     async def async_start(self) -> None:
@@ -451,6 +460,17 @@ class TmtChowHub:
     async def async_pedestrian_open(self) -> None:
         """Open to the controller's configured pedestrian/partial position."""
         self._ensure_gate_control_enabled()
+        if self.controller_type == "PS17062":
+            if self._ouranos_native_session is None or not self.ouranos_status_available:
+                raise TmtCommandError(
+                    "PS17062 pedestrian opening requires a fresh native status session",
+                    translation_key="gate_offline",
+                )
+            if self.position != 0 or self.is_operating is not False:
+                raise TmtCommandError(
+                    "PS17062 pedestrian opening requires a fully closed, stopped gate",
+                    translation_key="command_failed",
+                )
         if self._is_ps25007a_live_alias():
             source_tag = self._identified_source_tag()
             if source_tag is None:
@@ -553,6 +573,17 @@ class TmtChowHub:
                 "Parameter writing is not verified for this live controller variant",
                 translation_key="unsupported_controller",
             )
+        if self.controller_type == "PS17062":
+            if self._ouranos_native_session is None or not self.ouranos_status_available:
+                raise TmtCommandError(
+                    "PS17062 parameter changes require a fresh native status session",
+                    translation_key="parameters_not_ready",
+                )
+            if self.is_operating is not False:
+                raise TmtCommandError(
+                    "PS17062 parameters can only be changed while the gate is stopped",
+                    translation_key="command_failed",
+                )
         transport = self._parameter_transport()
         schema = self.model_parameter_schema
         if self.parameter_model_type == PS25142:

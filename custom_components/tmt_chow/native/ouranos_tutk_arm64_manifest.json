@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "architecture": "aarch64",
+  "abi": "arm64-v8a",
+  "source_type": "tmt_apk",
+  "source_name": "TMT Chow! Android APK",
+  "source_package": "tw.timotion",
+  "source_version": "V3.1.4/V3.2.0 ARM64 SDK pair",
+  "source_id": "tmt-chow-arm64-iotc-rdt-3.1.5.33",
+  "source_url": "https://d.apkpure.net/b/APK/tw.timotion?version=latest",
+  "source_path": "lib/arm64-v8a",
+  "files": {
+    "libIOTCAPIs.so": {
+      "apk_path": "lib/arm64-v8a/libIOTCAPIs.so",
+      "sha256": "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4",
+      "size": 272024
+    },
+    "libRDTAPIs.so": {
+      "apk_path": "lib/arm64-v8a/libRDTAPIs.so",
+      "sha256": "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934",
+      "size": 42400
+    }
+  }
+}

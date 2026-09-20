@@ -45,6 +45,15 @@ class TmtPedestrianOpenButton(TmtChowEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
+        if (
+            self.hub.controller_type == "PS17062"
+            and (
+                self.hub.position != 0
+                or self.hub.is_operating is not False
+                or not self.hub.ouranos_status_available
+            )
+        ):
+            return False
         return (
             self.hub.available
             and self.hub.pedestrian_strategy != PEDESTRIAN_STRATEGY_NONE

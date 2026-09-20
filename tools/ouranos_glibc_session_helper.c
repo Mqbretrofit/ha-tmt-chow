@@ -108,11 +108,14 @@ static void print_ready(int connected, const char *stage, int code) {
     fflush(stdout);
 }
 
-static int valid_parameter_fragment(const char *fragment) {
-    static const char field_ids[] = "123456789ABCDEFGHIJ";
+static int valid_parameter_fragment_for_ids(
+    const char *fragment,
+    const char *field_ids
+) {
     size_t field, index = 0, length = strlen(fragment);
+    size_t field_count = strlen(field_ids);
     if (length < 4 || length > 768 || fragment[0] != ',') return 0;
-    for (field = 0; field < sizeof(field_ids) - 1; ++field) {
+    for (field = 0; field < field_count; ++field) {
         size_t value_start;
         if (fragment[index++] != ',' ||
             fragment[index++] != field_ids[field] ||
@@ -126,6 +129,17 @@ static int valid_parameter_fragment(const char *fragment) {
         if (index == value_start) return 0;
     }
     return fragment[index] == 0;
+}
+
+static int valid_parameter_fragment(const char *fragment) {
+    return valid_parameter_fragment_for_ids(fragment, "123456789ABCDEFGHIJ");
+}
+
+static int valid_ps17062_parameter_fragment(const char *fragment) {
+    return valid_parameter_fragment_for_ids(
+        fragment,
+        "0123456789ABCDEFGHIJKLM"
+    );
 }
 
 static int valid_v3_parameter_body(const char *body) {
@@ -405,6 +419,17 @@ int main(int argc, char **argv) {
             static char write_command[800];
             snprintf(write_command, sizeof(write_command), "WRITE FUNCTION%s", command + 12);
             event = "parameter_write"; pk_command = write_command; expected_ack = "ACK FUNCTION"; parameter_write = 1;
+        } else if (strncmp(command, "PARAM_WRITE_PS17062 ", 20) == 0 &&
+                   valid_ps17062_parameter_fragment(command + 20)) {
+            static char write_command_ps17062[800];
+            snprintf(
+                write_command_ps17062,
+                sizeof(write_command_ps17062),
+                "WRITE FUNCTION%s",
+                command + 20
+            );
+            event = "parameter_write"; pk_command = write_command_ps17062;
+            expected_ack = "ACK FUNCTION"; parameter_write = 1;
         } else if (strncmp(command, "PARAM_WRITE_V3 ", 15) == 0 &&
                    valid_v3_parameter_body(command + 15)) {
             static char write_command_v3[512];

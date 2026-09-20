@@ -1,4 +1,4 @@
-name: Build OURANOS glibc helper
+name: Build OURANOS native helpers
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - ouranos-self-contained-glibc-helper
       - ps25142-rs-probe-beta26
       - ps25142-runtime-beta31
+      - issue-53-arm64-ouranos
     paths:
       - tools/ouranos_glibc_helper.c
       - tools/ouranos_glibc_session_helper.c
@@ -17,6 +18,7 @@ permissions:
 
 jobs:
   build-x86-64:
+    if: github.ref_name != 'issue-53-arm64-ouranos'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -63,4 +65,174 @@ jobs:
             exit 0
           fi
           git commit -m "Build x86_64 OURANOS helper [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+
+  build-arm64:
+    if: github.ref_name == 'issue-53-arm64-ouranos'
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "29.0.14206865"
+      ANDROID_SDK_ROOT: "/usr/local/lib/android/sdk"
+      API_LEVEL: "35"
+      AOSP_COMMIT: "070571b455076f77a01c7b07154a15e545d2b428"
+      APEX_SHA256: "83bf0dce249728dae48149b80d28b48115c54adad95a352120d58a6ac669d1fc"
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+
+      - name: Select hosted NDK and install extraction tools
+        run: |
+          set -euo pipefail
+          ndk_root="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          test -d "$ndk_root"
+          echo "NDK_ROOT=$ndk_root" >> "$GITHUB_ENV"
+          echo "NDK_RESOLVED_VERSION=$(basename "$ndk_root")" >> "$GITHUB_ENV"
+          echo "Using NDK: $ndk_root"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends erofs-utils e2fsprogs
+
+      - name: Write pinned TMT ARM64 SDK manifest
+        run: |
+          set -euo pipefail
+          mkdir -p custom_components/tmt_chow/native
+          cat > custom_components/tmt_chow/native/ouranos_tutk_arm64_manifest.json <<'EOF'
+          {
+            "schema_version": 2,
+            "architecture": "aarch64",
+            "abi": "arm64-v8a",
+            "source_type": "tmt_apk",
+            "source_name": "TMT Chow! Android APK",
+            "source_package": "tw.timotion",
+            "source_version": "V3.1.4/V3.2.0 ARM64 SDK pair",
+            "source_id": "tmt-chow-arm64-iotc-rdt-3.1.5.33",
+            "source_url": "https://d.apkpure.net/b/APK/tw.timotion?version=latest",
+            "source_path": "lib/arm64-v8a",
+            "files": {
+              "libIOTCAPIs.so": {
+                "apk_path": "lib/arm64-v8a/libIOTCAPIs.so",
+                "sha256": "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4",
+                "size": 272024
+              },
+              "libRDTAPIs.so": {
+                "apk_path": "lib/arm64-v8a/libRDTAPIs.so",
+                "sha256": "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934",
+                "size": 42400
+              }
+            }
+          }
+          EOF
+
+      - name: Verify pinned TMT APK ARM64 SDK fingerprints
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/arm64-ouranos"
+          mkdir -p "$work/tmt"
+          apk="$work/tmt/TMT_Chow.apk"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 300 \
+            --user-agent "Mozilla/5.0 (GitHub Actions; TMT Chow integration)" \
+            "https://d.apkpure.net/b/APK/tw.timotion?version=latest" \
+            -o "$apk"
+          unzip -p "$apk" lib/arm64-v8a/libIOTCAPIs.so > "$work/tmt/libIOTCAPIs.so"
+          unzip -p "$apk" lib/arm64-v8a/libRDTAPIs.so > "$work/tmt/libRDTAPIs.so"
+          test "$(stat -c%s "$work/tmt/libIOTCAPIs.so")" = "272024"
+          test "$(stat -c%s "$work/tmt/libRDTAPIs.so")" = "42400"
+          echo "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4  $work/tmt/libIOTCAPIs.so" | sha256sum -c -
+          echo "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934  $work/tmt/libRDTAPIs.so" | sha256sum -c -
+
+      - name: Build pinned Bionic runtime and ARM64 helpers
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/arm64-ouranos"
+          mkdir -p "$work/apex" "$work/payload" "$work/runtime/bin" "$work/runtime/lib64" "$work/bin"
+          apex_url="https://android.googlesource.com/platform/prebuilts/runtime/+/${AOSP_COMMIT}/mainline/runtime/apex/com.android.runtime-arm64.apex?format=TEXT"
+          curl --fail --location --silent --show-error "$apex_url" -o "$work/runtime.apex.base64"
+          base64 -d "$work/runtime.apex.base64" > "$work/runtime.apex"
+          echo "${APEX_SHA256}  $work/runtime.apex" | sha256sum -c -
+          unzip -q "$work/runtime.apex" -d "$work/apex"
+          if ! fsck.erofs --extract="$work/payload" "$work/apex/apex_payload.img"; then
+            debugfs -R "rdump / $work/payload" "$work/apex/apex_payload.img"
+          fi
+
+          libroot="$work/payload/lib64/bionic"
+          if [ ! -f "$libroot/libc.so" ]; then
+            libroot="$work/payload/lib64"
+          fi
+          for runtime_file in libc.so libdl.so libm.so; do
+            test -f "$libroot/$runtime_file"
+            cp "$libroot/$runtime_file" "$work/runtime/lib64/$runtime_file"
+          done
+          stdcpp="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/21/libstdc++.so"
+          test -f "$stdcpp"
+          cp "$stdcpp" "$work/runtime/lib64/libstdc++.so"
+          test -f "$work/payload/bin/linker64"
+          cp "$work/payload/bin/linker64" "$work/runtime/bin/linker64"
+
+          toolchain="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cc="$toolchain/aarch64-linux-android${API_LEVEL}-clang"
+          strip="$toolchain/llvm-strip"
+
+          "$cc" -O2 -Wall -Wextra tools/ouranos_glibc_helper.c -ldl -pthread \
+            -o "$work/bin/ouranos_bionic_helper.arm64"
+          "$cc" -O2 -Wall -Wextra tools/ouranos_glibc_session_helper.c -ldl -pthread \
+            -o "$work/bin/ouranos_bionic_session_helper.arm64"
+          "$strip" "$work/bin/ouranos_bionic_helper.arm64"
+          "$strip" "$work/bin/ouranos_bionic_session_helper.arm64"
+
+          file "$work/bin/ouranos_bionic_helper.arm64"
+          file "$work/bin/ouranos_bionic_session_helper.arm64"
+
+          staging="$work/package"
+          mkdir -p "$staging/bin" "$staging/runtime/bin" "$staging/runtime/lib64"
+          cp "$work/bin/ouranos_bionic_helper.arm64" "$staging/bin/"
+          cp "$work/bin/ouranos_bionic_session_helper.arm64" "$staging/bin/"
+          cp "$work/runtime/bin/linker64" "$staging/runtime/bin/"
+          cp "$work/runtime/lib64/"*.so "$staging/runtime/lib64/"
+
+          cat > "$staging/runtime-manifest.json" <<EOF
+          {
+            "schema_version": 1,
+            "architecture": "aarch64",
+            "android_api": ${API_LEVEL},
+            "ndk_version": "${NDK_RESOLVED_VERSION}",
+            "aosp_commit": "${AOSP_COMMIT}",
+            "aosp_apex_sha256": "${APEX_SHA256}"
+          }
+          EOF
+
+          output="custom_components/tmt_chow/native/ouranos_bionic_runtime.arm64.tar.gz"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -C "$staging" -cf - . | gzip -n > "$output"
+          sha256sum "$output" | awk '{print $1}' > "$output.sha256"
+
+          sha256sum "$work/bin/ouranos_bionic_helper.arm64" | awk '{print $1}' \
+            > custom_components/tmt_chow/native/ouranos_bionic_helper.arm64.sha256
+          sha256sum "$work/bin/ouranos_bionic_session_helper.arm64" | awk '{print $1}' \
+            > custom_components/tmt_chow/native/ouranos_bionic_session_helper.arm64.sha256
+
+          echo "Runtime SHA256: $(cat "$output.sha256")"
+          echo "Probe helper SHA256: $(cat custom_components/tmt_chow/native/ouranos_bionic_helper.arm64.sha256)"
+          echo "Session helper SHA256: $(cat custom_components/tmt_chow/native/ouranos_bionic_session_helper.arm64.sha256)"
+
+      - name: Commit generated ARM64 runtime metadata
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            custom_components/tmt_chow/native/ouranos_tutk_arm64_manifest.json \
+            custom_components/tmt_chow/native/ouranos_bionic_runtime.arm64.tar.gz \
+            custom_components/tmt_chow/native/ouranos_bionic_runtime.arm64.tar.gz.sha256 \
+            custom_components/tmt_chow/native/ouranos_bionic_helper.arm64.sha256 \
+            custom_components/tmt_chow/native/ouranos_bionic_session_helper.arm64.sha256
+          if git diff --cached --quiet; then
+            echo "Generated ARM64 runtime is already up to date."
+            exit 0
+          fi
+          git commit -m "Build ARM64 OURANOS runtime [skip ci]"
+          git fetch origin "${{ github.ref_name }}"
+          git rebase "origin/${{ github.ref_name }}"
           git push origin HEAD:${{ github.ref_name }}

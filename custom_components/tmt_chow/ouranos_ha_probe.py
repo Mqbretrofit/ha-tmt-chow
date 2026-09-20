@@ -29,6 +29,14 @@ from typing import Any, Final
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .ouranos_arm64 import (
+    ARM64_MACHINES,
+    arm64_source_metadata,
+    async_ensure_arm64_libraries,
+    async_ensure_arm64_runtime,
+    is_arm64_machine,
+)
+
 _TUTK_SDK_REPOSITORY: Final = "Soldier-Sen/tutk"
 _TUTK_SDK_COMMIT: Final = "8a93626da7c12c936d550750e887a020c3049dc0"
 _TUTK_SDK_PATH: Final = "Lib/Linux/x64/tmp_so"
@@ -46,7 +54,7 @@ _TUTK_LIBRARY_FILES: Final[dict[str, tuple[str, str]]] = {
         "739575ad864b0e76c7fe89546e55e08e5ff8e63c36a95e08e5e744a607362296",
     ),
 }
-_SUPPORTED_MACHINES: Final = frozenset({"x86_64", "amd64"})
+_SUPPORTED_MACHINES: Final = frozenset({"x86_64", "amd64", *ARM64_MACHINES})
 _TMT_APK_IOTC_VERSION: Final = "0x03010521"
 _PROBE_IOTC_VERSION: Final = "0x03010526"
 _PROBE_RDT_VERSION: Final = "0x03010526"
@@ -77,6 +85,13 @@ def _normalize_status_command(status_command: str) -> str:
 def _base_result(uuid: str, status_command: str = "READ_STATUS") -> dict[str, Any]:
     machine = platform.machine().lower()
     mode = _normalize_status_command(status_command)
+    arm64 = is_arm64_machine(machine)
+    arm64_metadata: dict[str, Any] = {}
+    if arm64:
+        try:
+            arm64_metadata = arm64_source_metadata()
+        except RuntimeError:
+            arm64_metadata = {}
     return {
         "result": "not_run",
         "applicable": len(uuid) == 20,
@@ -84,19 +99,40 @@ def _base_result(uuid: str, status_command: str = "READ_STATUS") -> dict[str, An
         "status_command": "RS" if mode == "RS" else "READ STATUS",
         "home_assistant_machine": machine,
         "home_assistant_platform": sys.platform,
-        "library_source_repository": _TUTK_SDK_REPOSITORY,
-        "library_source_commit": _TUTK_SDK_COMMIT,
-        "library_source_path": _TUTK_SDK_PATH,
+        "library_source_repository": (
+            arm64_metadata.get("repository") if arm64 else _TUTK_SDK_REPOSITORY
+        ),
+        "library_source_commit": (
+            arm64_metadata.get("commit") if arm64 else _TUTK_SDK_COMMIT
+        ),
+        "library_source_path": (
+            arm64_metadata.get("path") if arm64 else _TUTK_SDK_PATH
+        ),
+        "library_source_abi": arm64_metadata.get("abi") if arm64 else "linux-x86_64",
+        "library_source_type": arm64_metadata.get("source_type") if arm64 else "github_raw",
+        "library_source_version": arm64_metadata.get("version") if arm64 else _PROBE_IOTC_VERSION,
+        "library_source_package": arm64_metadata.get("package") if arm64 else None,
         "library_architecture_supported": machine in _SUPPORTED_MACHINES,
         "library_downloaded": False,
         "library_integrity_verified": False,
         "iotc_library_integrity_verified": False,
         "rdt_library_integrity_verified": False,
         "tmt_apk_iotc_version": _TMT_APK_IOTC_VERSION,
-        "probe_iotc_version_expected": _PROBE_IOTC_VERSION,
-        "probe_rdt_version_expected": _PROBE_RDT_VERSION,
-        "helper_runtime": "private_glibc" if machine in _SUPPORTED_MACHINES else None,
-        "glibc_version": _GLIBC_VERSION if machine in _SUPPORTED_MACHINES else None,
+        "probe_iotc_version_expected": (
+            _TMT_APK_IOTC_VERSION if arm64 else _PROBE_IOTC_VERSION
+        ),
+        "probe_rdt_version_expected": (
+            None if arm64 else _PROBE_RDT_VERSION
+        ),
+        "helper_runtime": (
+            "private_bionic" if arm64 else "private_glibc"
+        ) if machine in _SUPPORTED_MACHINES else None,
+        "native_runtime_downloaded": False,
+        "native_runtime_integrity_verified": False,
+        "native_helper_integrity_verified": False,
+        "glibc_version": (
+            _GLIBC_VERSION if machine in {"x86_64", "amd64"} else None
+        ),
         "glibc_runtime_downloaded": False,
         "glibc_runtime_integrity_verified": False,
         "glibc_helper_integrity_verified": False,
@@ -162,6 +198,9 @@ def _safe_install_tutk_libraries(payloads: dict[str, bytes], target: Path) -> No
 
 
 async def _async_ensure_libraries(hass: HomeAssistant) -> tuple[Path, Path, bool]:
+    if is_arm64_machine():
+        return await async_ensure_arm64_libraries(hass)
+
     cache_dir = Path(hass.config.path(".storage", "tmt_chow_ouranos"))
     await hass.async_add_executor_job(lambda: cache_dir.mkdir(parents=True, exist_ok=True))
     target = cache_dir / "tutk-3.1.5.38-x64"
@@ -385,20 +424,46 @@ async def async_probe_ouranos_on_ha(
 
     process: asyncio.subprocess.Process | None = None
     try:
-        loader, libdir, glibc_downloaded = await _async_ensure_glibc_runtime(hass)
-        result["glibc_runtime_downloaded"] = glibc_downloaded
-        result["glibc_runtime_integrity_verified"] = True
-        helper = await hass.async_add_executor_job(_verify_bundled_glibc_helper)
-        result["glibc_helper_integrity_verified"] = True
-        argv = [
-            str(loader),
-            "--library-path",
-            str(libdir),
-            str(helper),
-            str(iotc_path),
-            str(rdt_path),
-        ]
-        env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
+        if is_arm64_machine(machine):
+            (
+                loader,
+                libdir,
+                helper,
+                _session_helper,
+                native_runtime_installed,
+            ) = await async_ensure_arm64_runtime(hass)
+            result["native_runtime_downloaded"] = native_runtime_installed
+            result["native_runtime_integrity_verified"] = True
+            result["native_helper_integrity_verified"] = True
+            library_path = f"{libdir}:{iotc_path.parent}"
+        else:
+            loader, libdir, glibc_downloaded = await _async_ensure_glibc_runtime(hass)
+            result["glibc_runtime_downloaded"] = glibc_downloaded
+            result["glibc_runtime_integrity_verified"] = True
+            helper = await hass.async_add_executor_job(_verify_bundled_glibc_helper)
+            result["glibc_helper_integrity_verified"] = True
+            result["native_runtime_downloaded"] = glibc_downloaded
+            result["native_runtime_integrity_verified"] = True
+            result["native_helper_integrity_verified"] = True
+            library_path = str(libdir)
+
+        if is_arm64_machine(machine):
+            argv = [
+                str(loader),
+                str(helper),
+                str(iotc_path),
+                str(rdt_path),
+            ]
+        else:
+            argv = [
+                str(loader),
+                "--library-path",
+                library_path,
+                str(helper),
+                str(iotc_path),
+                str(rdt_path),
+            ]
+        env = {**os.environ, "LD_LIBRARY_PATH": library_path}
 
         process, stdout, stderr = await _async_run_process(
             argv, uuid, pin_code, mode, env=env

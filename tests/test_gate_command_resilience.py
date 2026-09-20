@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from custom_components.tmt_chow.controller_types import (
     CAPABILITY_PEDESTRIAN,
@@ -248,6 +249,48 @@ def test_pedestrian_command_uses_verified_wire_command() -> None:
 
     assert captured == [("PED OPEN", "ACK PED OPEN", "opening")]
 
+
+
+def test_ps17062_normal_pedestrian_button_uses_native_ped_open_from_closed() -> None:
+    hub = _hub("PS17062")
+    hub.set_gate_control_enabled(True)
+    hub._ouranos_native_session = object()  # type: ignore[assignment]
+    hub._last_ouranos_status_monotonic = time.monotonic()
+    hub.position = 0
+    hub.is_operating = False
+    captured: list[tuple[str, str, str | None]] = []
+
+    async def fake_command(
+        command: str,
+        acknowledgement: str,
+        *,
+        motion_direction: str | None = None,
+    ) -> bool:
+        captured.append((command, acknowledgement, motion_direction))
+        return True
+
+    hub._async_command = fake_command  # type: ignore[method-assign]
+    asyncio.run(hub.async_pedestrian_open())
+
+    assert captured == [("PED OPEN", "ACK PED OPEN", "opening")]
+    assert hub.is_operating is True
+    assert hub.movement == "opening"
+
+
+def test_ps17062_pedestrian_button_is_blocked_unless_fully_closed() -> None:
+    hub = _hub("PS17062")
+    hub.set_gate_control_enabled(True)
+    hub._ouranos_native_session = object()  # type: ignore[assignment]
+    hub._last_ouranos_status_monotonic = time.monotonic()
+    hub.position = 100
+    hub.is_operating = False
+
+    try:
+        asyncio.run(hub.async_pedestrian_open())
+    except TmtCommandError as err:
+        assert err.translation_key == "command_failed"
+    else:
+        raise AssertionError("PS17062 PED OPEN was accepted while not fully closed")
 
 def test_pedestrian_capability_is_model_gated() -> None:
     assert CAPABILITY_PEDESTRIAN in controller_capabilities("PS21053C")

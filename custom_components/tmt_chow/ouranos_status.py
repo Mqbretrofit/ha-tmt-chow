@@ -107,8 +107,9 @@ class OuranosStatusPoller:
     async def async_movement_test(self, action: str) -> dict[str, Any]:
         """Send exactly one guarded PS25142 movement test command.
 
-        This deliberately does not enable the normal cover controls.  The caller
-        must already have a fresh verified status, and OPEN/CLOSE are only allowed
+        This remains an explicit diagnostic action even on profiles whose normal
+        cover controls are enabled. The caller must already have a fresh verified
+        status, and OPEN/CLOSE are only allowed
         from their opposite stopped end positions.  STOP is only allowed while
         movement is currently reported.  A movement command is never retried.
         """

@@ -14,6 +14,7 @@ from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 
+from .ouranos_arm64 import async_ensure_arm64_libraries, async_ensure_arm64_runtime, is_arm64_machine
 from .ouranos_ha_probe import (
     _SUPPORTED_MACHINES,
     _async_ensure_glibc_runtime,
@@ -28,6 +29,13 @@ _RESPONSE_TIMEOUT: Final = 8
 _SESSION_STOP_TIMEOUT: Final = 6
 _PS19001_PARAMETER_FRAGMENT_RE: Final = re.compile(
     "".join(rf",{field_id}:[0-9A-Z]+" for field_id in "123456789ABCDEFGHIJ")
+    + r"\Z"
+)
+_PS17062_PARAMETER_FRAGMENT_RE: Final = re.compile(
+    "".join(
+        rf",{field_id}:[0-9A-Z]+"
+        for field_id in "0123456789ABCDEFGHIJKLM"
+    )
     + r"\Z"
 )
 _PS25142_PARAMETER_BODY_RE: Final = re.compile(
@@ -110,9 +118,12 @@ class OuranosNativeSession:
         """Write one codec-validated complete parameter frame."""
         if command.startswith("WRITE FUNCTION"):
             fragment = command[len("WRITE FUNCTION") :]
-            if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is None:
+            if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is not None:
+                protocol = f"PARAM_WRITE {fragment}"
+            elif _PS17062_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is not None:
+                protocol = f"PARAM_WRITE_PS17062 {fragment}"
+            else:
                 return {"result": "invalid_parameter_command", "native": None}
-            protocol = f"PARAM_WRITE {fragment}"
         elif command.startswith("WP,1:"):
             body = command[len("WP,1:") :]
             if _PS25142_PARAMETER_BODY_RE.fullmatch(body) is None:
@@ -185,19 +196,42 @@ class OuranosNativeSession:
             return "unsupported_architecture"
 
         try:
-            iotc_path, rdt_path, _ = await _async_ensure_libraries(self._hass)
-            loader, libdir, _ = await _async_ensure_glibc_runtime(self._hass)
-            helper = await self._hass.async_add_executor_job(
-                _verify_bundled_session_helper
-            )
-            env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
+            if is_arm64_machine():
+                iotc_path, rdt_path, _ = await async_ensure_arm64_libraries(self._hass)
+                (
+                    loader,
+                    libdir,
+                    _probe_helper,
+                    helper,
+                    _runtime_installed,
+                ) = await async_ensure_arm64_runtime(self._hass)
+                library_path = f"{libdir}:{iotc_path.parent}"
+            else:
+                iotc_path, rdt_path, _ = await _async_ensure_libraries(self._hass)
+                loader, libdir, _ = await _async_ensure_glibc_runtime(self._hass)
+                helper = await self._hass.async_add_executor_job(
+                    _verify_bundled_session_helper
+                )
+                library_path = str(libdir)
+            env = {**os.environ, "LD_LIBRARY_PATH": library_path}
+            if is_arm64_machine():
+                argv = [
+                    str(loader),
+                    str(helper),
+                    str(iotc_path),
+                    str(rdt_path),
+                ]
+            else:
+                argv = [
+                    str(loader),
+                    "--library-path",
+                    library_path,
+                    str(helper),
+                    str(iotc_path),
+                    str(rdt_path),
+                ]
             self._process = await asyncio.create_subprocess_exec(
-                str(loader),
-                "--library-path",
-                str(libdir),
-                str(helper),
-                str(iotc_path),
-                str(rdt_path),
+                *argv,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
