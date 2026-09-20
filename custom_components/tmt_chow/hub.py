@@ -562,6 +562,17 @@ class TmtChowHub:
                 "Parameter writing is not verified for this live controller variant",
                 translation_key="unsupported_controller",
             )
+        if self.controller_type == "PS17062":
+            if self._ouranos_native_session is None or not self.ouranos_status_available:
+                raise TmtCommandError(
+                    "PS17062 parameter changes require a fresh native status session",
+                    translation_key="parameters_not_ready",
+                )
+            if self.is_operating is not False:
+                raise TmtCommandError(
+                    "PS17062 parameters can only be changed while the gate is stopped",
+                    translation_key="command_failed",
+                )
         transport = self._parameter_transport()
         schema = self.model_parameter_schema
         if self.parameter_model_type == PS25142:
