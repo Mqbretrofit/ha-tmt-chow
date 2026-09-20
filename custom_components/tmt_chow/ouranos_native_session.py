@@ -14,6 +14,7 @@ from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 
+from .ouranos_arm64 import async_ensure_arm64_libraries, async_ensure_arm64_runtime, is_arm64_machine
 from .ouranos_ha_probe import (
     _SUPPORTED_MACHINES,
     _async_ensure_glibc_runtime,
@@ -185,16 +186,28 @@ class OuranosNativeSession:
             return "unsupported_architecture"
 
         try:
-            iotc_path, rdt_path, _ = await _async_ensure_libraries(self._hass)
-            loader, libdir, _ = await _async_ensure_glibc_runtime(self._hass)
-            helper = await self._hass.async_add_executor_job(
-                _verify_bundled_session_helper
-            )
-            env = {**os.environ, "LD_LIBRARY_PATH": str(libdir)}
+            if is_arm64_machine():
+                iotc_path, rdt_path, _ = await async_ensure_arm64_libraries(self._hass)
+                (
+                    loader,
+                    libdir,
+                    _probe_helper,
+                    helper,
+                    _runtime_installed,
+                ) = await async_ensure_arm64_runtime(self._hass)
+                library_path = f"{libdir}:{iotc_path.parent}"
+            else:
+                iotc_path, rdt_path, _ = await _async_ensure_libraries(self._hass)
+                loader, libdir, _ = await _async_ensure_glibc_runtime(self._hass)
+                helper = await self._hass.async_add_executor_job(
+                    _verify_bundled_session_helper
+                )
+                library_path = str(libdir)
+            env = {**os.environ, "LD_LIBRARY_PATH": library_path}
             self._process = await asyncio.create_subprocess_exec(
                 str(loader),
                 "--library-path",
-                str(libdir),
+                library_path,
                 str(helper),
                 str(iotc_path),
                 str(rdt_path),
