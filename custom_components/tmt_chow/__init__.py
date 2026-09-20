@@ -423,9 +423,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
     if hub.configured_controller_type in {"PS25142", "PS17062"}:
-        # Fail closed for native profiles until movement is separately verified.
-        # PS17062 is status-only for now; PS25142 is enabled explicitly below
-        # only when its exact hardware-verified movement profile matches.
+        # Fail closed until the exact verified native profile is matched below.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -437,10 +435,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Existing PS19001 keeps its proven READ STATUS + control session.
             poller = OuranosStatusPoller(hass, hub, pin_code)
         elif _is_verified_ps17062_read_status_candidate(hass, hub) and valid_pin:
-            # Issue #53 real hardware verified PS17062 on ARM64 with native
-            # IOTC/RDT READ STATUS and FULL OPEN. Keep normal cover movement
-            # disabled, but attach the same native session for guarded
-            # READ FUNCTION / full-frame parameter transactions.
+            # Issue #53 real hardware verified PS17062 native READ STATUS plus
+            # FULL OPEN and FULL CLOSE on ARM64. Enable the normal HA cover
+            # controls and the APK-declared PED OPEN button on this exact
+            # UUID/uuid_type/PIN-gated native profile. The shared session also
+            # carries guarded READ/WRITE FUNCTION parameter transactions.
+            hub.set_gate_control_enabled(True)
             poller = OuranosStatusPoller(
                 hass,
                 hub,
