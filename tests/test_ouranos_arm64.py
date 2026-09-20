@@ -127,3 +127,21 @@ def test_ps17062_uses_verified_status_only_arm64_route() -> None:
     assert 'status_command="READ_STATUS"' in init_source
     assert "expose_control_session=False" in init_source
     assert "_is_verified_ouranos_poller_candidate" in init_source
+
+
+def test_ps17062_movement_test_remains_explicit_and_guarded() -> None:
+    init_source = (ROOT / "custom_components" / "tmt_chow" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    service_source = (
+        ROOT / "custom_components" / "tmt_chow" / "services.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert 'SERVICE_PS17062_MOVEMENT_TEST = "ps17062_movement_test"' in init_source
+    assert 'call.data.get("confirm") is not True' in init_source
+    assert "_is_verified_ps17062_read_status_candidate" in init_source
+    assert "exactly one verified PS17062" in init_source
+    assert "return await poller.async_movement_test(action)" in init_source
+    assert "ps17062_movement_test:" in service_source
+    assert "never" in service_source and "retried" in service_source
+    assert "Normal cover movement controls remain disabled." in service_source
