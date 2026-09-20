@@ -254,6 +254,15 @@ class TmtChowHub:
     @property
     def parameter_write_schema_verified(self) -> bool:
         """Return whether parameter writes are verified for the live controller."""
+        if (
+            self.parameter_model_type == "PS17062"
+            or self.controller_type == "PS17062"
+            or self.configured_controller_type == "PS17062"
+        ):
+            # Issue #53 verifies only the native READ STATUS route. The mapped
+            # parameter schema is APK-derived; its read/write transport is not
+            # yet confirmed on PS17062 hardware, so fail closed for writes.
+            return False
         if self._is_ps25007a_live_alias():
             return self.parameter_schema_verified
         if self._is_ps25007a_profile():
