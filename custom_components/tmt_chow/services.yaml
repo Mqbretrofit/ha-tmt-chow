@@ -74,3 +74,42 @@ ps25142_movement_test:
       required: true
       selector:
         boolean:
+
+
+ps17062_movement_test:
+  name: PS17062 movement test
+  description: >-
+    Send exactly one hardware-test movement command to the verified PS17062
+    over its confirmed OURANOS/IOTC-RDT READ STATUS route. The command is never
+    retried automatically. Open is allowed only from a fully closed/stopped gate,
+    close only from a fully open/stopped gate, and stop only while Home Assistant
+    currently reports movement. A read-only READ STATUS refresh follows the
+    one-shot movement command. Normal cover movement controls remain disabled.
+  fields:
+    uuid:
+      name: Gate UUID
+      description: >-
+        Optional. Leave empty when exactly one verified PS17062 is configured.
+      required: false
+      example: "ABCDEFGHIJKLMNOPQRST"
+      selector:
+        text:
+    action:
+      name: Test action
+      description: The single movement command to test.
+      required: true
+      selector:
+        select:
+          options:
+            - label: Open
+              value: open
+            - label: Close
+              value: close
+            - label: Stop
+              value: stop
+    confirm:
+      name: Confirm movement
+      description: Must be enabled to send the selected physical gate command.
+      required: true
+      selector:
+        boolean:
