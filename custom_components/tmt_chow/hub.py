@@ -460,6 +460,17 @@ class TmtChowHub:
     async def async_pedestrian_open(self) -> None:
         """Open to the controller's configured pedestrian/partial position."""
         self._ensure_gate_control_enabled()
+        if self.controller_type == "PS17062":
+            if self._ouranos_native_session is None or not self.ouranos_status_available:
+                raise TmtCommandError(
+                    "PS17062 pedestrian opening requires a fresh native status session",
+                    translation_key="gate_offline",
+                )
+            if self.position != 0 or self.is_operating is not False:
+                raise TmtCommandError(
+                    "PS17062 pedestrian opening requires a fully closed, stopped gate",
+                    translation_key="command_failed",
+                )
         if self._is_ps25007a_live_alias():
             source_tag = self._identified_source_tag()
             if source_tag is None:
