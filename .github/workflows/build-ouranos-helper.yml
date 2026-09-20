@@ -74,8 +74,6 @@ jobs:
       NDK_VERSION: "29.0.14206865"
       ANDROID_SDK_ROOT: "/usr/local/lib/android/sdk"
       API_LEVEL: "35"
-      TUTK_REPO: "yanjuntext/NewJKDevice"
-      TUTK_COMMIT: "0423b6c0cfbf9156eb9990250b955f1f6aafcf20"
       AOSP_COMMIT: "070571b455076f77a01c7b07154a15e545d2b428"
       APEX_SHA256: "83bf0dce249728dae48149b80d28b48115c54adad95a352120d58a6ac669d1fc"
     steps:
@@ -97,52 +95,36 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends erofs-utils e2fsprogs
 
-      - name: Fetch and inspect pinned ARM64 TUTK libraries
+      - name: Write pinned TMT ARM64 SDK manifest
         run: |
           set -euo pipefail
-          work="$RUNNER_TEMP/arm64-ouranos"
-          mkdir -p "$work/tutk"
-          base="https://raw.githubusercontent.com/${TUTK_REPO}/${TUTK_COMMIT}/tutk/libs/arm64-v8a"
-          for name in libIOTCAPIs.so libRDTAPIs.so libTUTKGlobalAPIs.so; do
-            curl --fail --location --silent --show-error "$base/$name" -o "$work/tutk/$name"
-          done
-
-          readelf_bin="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          for name in libIOTCAPIs.so libRDTAPIs.so libTUTKGlobalAPIs.so; do
-            file "$work/tutk/$name"
-            "$readelf_bin" -h "$work/tutk/$name" | grep -E 'Class:|Machine:'
-            "$readelf_bin" -d "$work/tutk/$name" | grep NEEDED || true
-          done
-
           mkdir -p custom_components/tmt_chow/native
-          python3 - <<'PY'
-          import hashlib, json, os
-          from pathlib import Path
-
-          work = Path(os.environ["RUNNER_TEMP"]) / "arm64-ouranos" / "tutk"
-          commit = os.environ["TUTK_COMMIT"]
-          files = {}
-          for name in ("libIOTCAPIs.so", "libRDTAPIs.so", "libTUTKGlobalAPIs.so"):
-              data = (work / name).read_bytes()
-              files[name] = {
-                  "sha256": hashlib.sha256(data).hexdigest(),
-                  "size": len(data),
+          cat > custom_components/tmt_chow/native/ouranos_tutk_arm64_manifest.json <<'EOF'
+          {
+            "schema_version": 2,
+            "architecture": "aarch64",
+            "abi": "arm64-v8a",
+            "source_type": "tmt_apk",
+            "source_name": "TMT Chow! Android APK",
+            "source_package": "tw.timotion",
+            "source_version": "V3.1.4/V3.2.0 ARM64 SDK pair",
+            "source_id": "tmt-chow-arm64-iotc-rdt-3.1.5.33",
+            "source_url": "https://d.apkpure.net/b/APK/tw.timotion?version=latest",
+            "source_path": "lib/arm64-v8a",
+            "files": {
+              "libIOTCAPIs.so": {
+                "apk_path": "lib/arm64-v8a/libIOTCAPIs.so",
+                "sha256": "f5d7365b5c160f2d0195d9ffb109e490b076bb90a54146cf2a774758316e93f4",
+                "size": 272024
+              },
+              "libRDTAPIs.so": {
+                "apk_path": "lib/arm64-v8a/libRDTAPIs.so",
+                "sha256": "1e1edb740b27c14c8ff51c8efe303459e3a8e587a27afcd5eebb4841d4eda934",
+                "size": 42400
               }
-          manifest = {
-              "schema_version": 1,
-              "architecture": "aarch64",
-              "abi": "arm64-v8a",
-              "source_repository": os.environ["TUTK_REPO"],
-              "source_commit": commit,
-              "source_path": "tutk/libs/arm64-v8a",
-              "files": files,
+            }
           }
-          Path("custom_components/tmt_chow/native/ouranos_tutk_arm64_manifest.json").write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          print(json.dumps(manifest, indent=2, sort_keys=True))
-          PY
+          EOF
 
       - name: Build pinned Bionic runtime and ARM64 helpers
         run: |
