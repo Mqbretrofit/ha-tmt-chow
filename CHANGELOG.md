@@ -6,6 +6,7 @@
 - Confirm on real PS17062/aarch64 hardware that `IOTC_Initialize2`, IOTC connect, RDT initialize/channel creation and `READ STATUS` all succeed
 - Record the hardware response `ACK STATUS:PED CLOSED,2`; record that `RS` is rejected by this controller
 - Promote the exact PS17062 + 20-character UID + `uuid_type=1` profile to automatic persistent native `READ STATUS` polling
+- Add an explicit `tmt_chow.ps17062_movement_test` developer action for one-shot `FULL OPEN`, `FULL CLOSE` or `STOP` validation with explicit confirmation, fresh-state/end-position preconditions, no automatic retry, and one post-command `READ STATUS` verification
 - Keep PS17062 movement/pedestrian controls disabled until separately hardware-verified
 - Keep PS17062 parameter writes disabled and disable normal runtime parameter polling because the legacy `READ FUNCTION` route was not acknowledged
 - Treat a successful native diagnostic read matrix as verified route evidence so diagnostics no longer report the obsolete “one read-only native status response is still required” blocker
