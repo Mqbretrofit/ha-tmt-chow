@@ -8,7 +8,8 @@
 - Promote the exact PS17062 + 20-character UID + `uuid_type=1` profile to automatic persistent native `READ STATUS` polling
 - Add an explicit `tmt_chow.ps17062_movement_test` developer action for one-shot `FULL OPEN`, `FULL CLOSE` or `STOP` validation with explicit confirmation, fresh-state/end-position preconditions, no automatic retry, and one post-command `READ STATUS` verification
 - Keep PS17062 movement/pedestrian controls disabled until separately hardware-verified
-- Keep PS17062 parameter writes disabled and disable normal runtime parameter polling because the legacy `READ FUNCTION` route was not acknowledged
+- Enable the APK-derived PS17062 23-parameter UART0 profile over the verified native IOTC/RDT session. Reads use native `READ FUNCTION`; writes require a fresh complete read, exactly one complete `WRITE FUNCTION` frame with no retry, and mandatory full-frame readback equality
+- Require a fresh native status session and a stopped gate before any PS17062 parameter write
 - Treat a successful native diagnostic read matrix as verified route evidence so diagnostics no longer report the obsolete “one read-only native status response is still required” blocker
 - Preserve the existing PS19001, PS25142, x86-64/glibc, AWS/WBT and all other verified controller routes unchanged
 
