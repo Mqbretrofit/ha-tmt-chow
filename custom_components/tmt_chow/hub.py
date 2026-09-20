@@ -253,16 +253,16 @@ class TmtChowHub:
 
     @property
     def parameter_write_schema_verified(self) -> bool:
-        """Return whether parameter writes are verified for the live controller."""
+        """Return whether parameter writes are enabled for a guarded full-frame route."""
         if (
             self.parameter_model_type == "PS17062"
-            or self.controller_type == "PS17062"
-            or self.configured_controller_type == "PS17062"
+            and self.controller_type == "PS17062"
+            and self.configured_controller_type == "PS17062"
         ):
-            # Issue #53 verifies only the native READ STATUS route. The mapped
-            # parameter schema is APK-derived; its read/write transport is not
-            # yet confirmed on PS17062 hardware, so fail closed for writes.
-            return False
+            # PS17062 uses the APK-derived UART0 legacy frame. Writes remain
+            # guarded by fresh full READ FUNCTION, exactly one complete WRITE
+            # FUNCTION frame, and mandatory full-frame readback equality.
+            return self.parameter_schema_verified
         if self._is_ps25007a_live_alias():
             return self.parameter_schema_verified
         if self._is_ps25007a_profile():
@@ -283,17 +283,7 @@ class TmtChowHub:
 
     @property
     def may_probe_parameters(self) -> bool:
-        """Return whether this controller has a verified runtime parameter-read route."""
-        if (
-            self.parameter_model_type == "PS17062"
-            or self.controller_type == "PS17062"
-            or self.configured_controller_type == "PS17062"
-        ):
-            # The PS17062 schema is known from the APK, but issue #53 hardware
-            # did not ACK READ FUNCTION on the legacy WBT route. Keep normal
-            # runtime parameter polling disabled until its native read dialect
-            # is separately verified.
-            return False
+        """Return whether this controller has a safe model-specific read profile."""
         return self.parameter_schema_verified
 
     async def async_start(self) -> None:
