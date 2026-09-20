@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.parameter_codec import (
@@ -369,6 +370,9 @@ def test_ps17062_mapped_parameter_profile_uses_guarded_full_frame_route() -> Non
 def test_ps17062_parameter_write_reads_once_writes_once_and_verifies() -> None:
     hub = _hub("PS17062")
     hub._set_controller_type("PS17062")
+    hub._ouranos_native_session = object()  # type: ignore[assignment]
+    hub._last_ouranos_status_monotonic = time.monotonic()
+    hub.is_operating = False
     defaults = parameter_defaults("PS17062")
     assert defaults is not None and len(defaults) == 23
 
