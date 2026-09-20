@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from custom_components.tmt_chow import (
     _is_known_ouranos_candidate,
     _is_ouranos_probe_candidate,
+    _is_verified_ouranos_poller_candidate,
+    _is_verified_ps17062_read_status_candidate,
     _is_verified_ps25142_rs_status_candidate,
     _ouranos_probe_status_command,
 )
@@ -96,3 +98,26 @@ def test_ps25142_verified_rs_runtime_requires_exact_vendor_evidence() -> None:
     assert _is_verified_ps25142_rs_status_candidate(
         _hass_for(uuid, "1", {"uartVer": "V2.0", "gateType": "橫拉門"}), hub
     ) is False
+
+
+def test_ps17062_verified_read_status_runtime_requires_uuid_type_1() -> None:
+    uuid = "12345678901234567890"
+    hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS17062")
+
+    assert _is_verified_ps17062_read_status_candidate(
+        _hass_for(uuid, "1"), hub
+    ) is True
+    assert _is_verified_ps17062_read_status_candidate(
+        _hass_for(uuid, "5"), hub
+    ) is False
+    assert _is_verified_ouranos_poller_candidate(
+        _hass_for(uuid, "1"), hub
+    ) is True
+
+
+def test_ps17062_keeps_hardware_verified_read_status_even_with_v3_metadata() -> None:
+    uuid = "12345678901234567890"
+    hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS17062")
+    hass = _hass_for(uuid, "1", {"uartVer": "V3.0"})
+
+    assert _ouranos_probe_status_command(hass, hub) == "READ_STATUS"
