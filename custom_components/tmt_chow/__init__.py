@@ -438,14 +438,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             poller = OuranosStatusPoller(hass, hub, pin_code)
         elif _is_verified_ps17062_read_status_candidate(hass, hub) and valid_pin:
             # Issue #53 real hardware verified PS17062 on ARM64 with native
-            # IOTC/RDT READ STATUS. Keep this profile strictly status-only:
-            # no movement session exposure and no native parameter writes.
+            # IOTC/RDT READ STATUS and FULL OPEN. Keep normal cover movement
+            # disabled, but attach the same native session for guarded
+            # READ FUNCTION / full-frame parameter transactions.
             poller = OuranosStatusPoller(
                 hass,
                 hub,
                 pin_code,
                 status_command="READ_STATUS",
-                expose_control_session=False,
+                expose_control_session=True,
             )
         elif _is_verified_ps25142_rs_status_candidate(hass, hub) and valid_pin:
             # Beta.31 verified live RS status and beta.32 verified FULL OPEN,
