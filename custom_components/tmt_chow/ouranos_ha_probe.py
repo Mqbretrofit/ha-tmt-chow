@@ -436,14 +436,22 @@ async def async_probe_ouranos_on_ha(
             result["native_helper_integrity_verified"] = True
             library_path = str(libdir)
 
-        argv = [
-            str(loader),
-            "--library-path",
-            library_path,
-            str(helper),
-            str(iotc_path),
-            str(rdt_path),
-        ]
+        if is_arm64_machine(machine):
+            argv = [
+                str(loader),
+                str(helper),
+                str(iotc_path),
+                str(rdt_path),
+            ]
+        else:
+            argv = [
+                str(loader),
+                "--library-path",
+                library_path,
+                str(helper),
+                str(iotc_path),
+                str(rdt_path),
+            ]
         env = {**os.environ, "LD_LIBRARY_PATH": library_path}
 
         process, stdout, stderr = await _async_run_process(
