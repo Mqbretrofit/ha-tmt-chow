@@ -71,7 +71,7 @@ jobs:
     if: github.ref_name == 'issue-53-arm64-ouranos'
     runs-on: ubuntu-latest
     env:
-      NDK_VERSION: "27.2.12479018"
+      NDK_VERSION: "29.0.14206865"
       ANDROID_SDK_ROOT: "/usr/local/lib/android/sdk"
       API_LEVEL: "35"
       TUTK_REPO: "yanjuntext/NewJKDevice"
@@ -89,8 +89,8 @@ jobs:
       - name: Select hosted NDK and install extraction tools
         run: |
           set -euo pipefail
-          ndk_root="$(find "$ANDROID_SDK_ROOT/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          test -n "$ndk_root"
+          ndk_root="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          test -d "$ndk_root"
           echo "NDK_ROOT=$ndk_root" >> "$GITHUB_ENV"
           echo "NDK_RESOLVED_VERSION=$(basename "$ndk_root")" >> "$GITHUB_ENV"
           echo "Using NDK: $ndk_root"
@@ -166,6 +166,9 @@ jobs:
             test -f "$libroot/$runtime_file"
             cp "$libroot/$runtime_file" "$work/runtime/lib64/$runtime_file"
           done
+          stdcpp="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/21/libstdc++.so"
+          test -f "$stdcpp"
+          cp "$stdcpp" "$work/runtime/lib64/libstdc++.so"
           test -f "$work/payload/bin/linker64"
           cp "$work/payload/bin/linker64" "$work/runtime/bin/linker64"
 
@@ -231,4 +234,6 @@ jobs:
             exit 0
           fi
           git commit -m "Build ARM64 OURANOS runtime [skip ci]"
+          git fetch origin "${{ github.ref_name }}"
+          git rebase "origin/${{ github.ref_name }}"
           git push origin HEAD:${{ github.ref_name }}
