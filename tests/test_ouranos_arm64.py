@@ -99,6 +99,7 @@ def test_arm64_runtime_is_isolated_and_does_not_replace_x86_path() -> None:
     session_source = SESSION_MODULE.read_text(encoding="utf-8")
 
     assert 'ARM64_MACHINES: Final = frozenset({"aarch64", "arm64"})' in arm64_source
+    assert '"runtime/lib64/libstdc++.so"' in arm64_source
     assert "async_ensure_arm64_libraries" in probe_source
     assert "async_ensure_arm64_runtime" in probe_source
     assert "is_arm64_machine(machine)" in probe_source
