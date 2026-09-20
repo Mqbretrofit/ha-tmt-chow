@@ -31,6 +31,13 @@ _PS19001_PARAMETER_FRAGMENT_RE: Final = re.compile(
     "".join(rf",{field_id}:[0-9A-Z]+" for field_id in "123456789ABCDEFGHIJ")
     + r"\Z"
 )
+_PS17062_PARAMETER_FRAGMENT_RE: Final = re.compile(
+    "".join(
+        rf",{field_id}:[0-9A-Z]+"
+        for field_id in "0123456789ABCDEFGHIJKLM"
+    )
+    + r"\Z"
+)
 _PS25142_PARAMETER_BODY_RE: Final = re.compile(
     r"\d+(?:,\d+){17}\Z"
 )
@@ -111,9 +118,12 @@ class OuranosNativeSession:
         """Write one codec-validated complete parameter frame."""
         if command.startswith("WRITE FUNCTION"):
             fragment = command[len("WRITE FUNCTION") :]
-            if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is None:
+            if _PS19001_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is not None:
+                protocol = f"PARAM_WRITE {fragment}"
+            elif _PS17062_PARAMETER_FRAGMENT_RE.fullmatch(fragment) is not None:
+                protocol = f"PARAM_WRITE_PS17062 {fragment}"
+            else:
                 return {"result": "invalid_parameter_command", "native": None}
-            protocol = f"PARAM_WRITE {fragment}"
         elif command.startswith("WP,1:"):
             body = command[len("WP,1:") :]
             if _PS25142_PARAMETER_BODY_RE.fullmatch(body) is None:
