@@ -696,6 +696,13 @@ async def async_get_config_entry_diagnostics(
             "ps25142_movement_test_last_result": (
                 ouranos_poller.last_movement_test
                 if ouranos_poller is not None
+                and hub.configured_controller_type == "PS25142"
+                else None
+            ),
+            "ps17062_movement_test_last_result": (
+                ouranos_poller.last_movement_test
+                if ouranos_poller is not None
+                and hub.configured_controller_type == "PS17062"
                 else None
             ),
             "shadow_get_probe_result": shadow_get_probe["result"],
