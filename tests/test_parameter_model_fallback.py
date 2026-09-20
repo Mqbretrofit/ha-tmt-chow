@@ -346,3 +346,15 @@ def test_unrelated_configured_model_keeps_ps21050d_raw_read_only_fallback() -> N
     assert hub.model_parameter_schema[0][1] == "ps21050d_raw_01"
     assert hub.parameter_write_schema_verified is False
     assert hub.supports_parameters is False
+
+
+def test_ps17062_mapped_parameter_profile_stays_read_only() -> None:
+    hub = _hub("PS17062")
+    hub._set_controller_type("PS17062")
+
+    assert hub.controller_type == "PS17062"
+    assert hub.parameter_model_type == "PS17062"
+    assert hub.model_parameter_schema is not None
+    assert hub.may_probe_parameters is True
+    assert hub.parameter_write_schema_verified is False
+    assert hub.supports_parameters is False
