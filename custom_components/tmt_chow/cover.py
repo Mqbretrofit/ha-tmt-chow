@@ -51,6 +51,11 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
         return self.hub.position
 
     @property
+    def assumed_state(self) -> bool:
+        """Keep both directions usable while pedestrian final state is unknown."""
+        return self.hub.pedestrian_state_assumed
+
+    @property
     def is_closed(self) -> bool | None:
         return None if self.hub.position is None else self.hub.position == 0
 
