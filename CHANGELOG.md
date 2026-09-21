@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4-beta.36
+
+- Fix the Home Assistant cover controls after a successful pedestrian/partial opening so **Close** and **Full Open** remain available instead of leaving only **Stop**
+- Mark the cover as an assumed state only while the final pedestrian position is not yet authoritatively confirmed
+- Clear the temporary assumed state on authoritative stopped telemetry or when a normal Full Open, Full Close, or Stop action takes over
+- Keep the existing normal Open / Close / Stop command routes, controller-specific safety gates, parameter handling, MQTT/native transports, and previously verified behavior unchanged
+- Add regression tests for the pedestrian post-open state and the transition back to normal full opening
+
 ## v1.0.4-beta.35
 
 - Add isolated ARM64/Bionic OURANOS support using the exact TMT Chow 3.1.5.33 ARM64 `libIOTCAPIs.so` / `libRDTAPIs.so` pair extracted from the public APK with strict size and SHA-256 verification
