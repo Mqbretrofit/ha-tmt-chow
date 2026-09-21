@@ -153,6 +153,11 @@ class TmtChowHub:
         self._stopping = False
         self._ouranos_native_session: OuranosNativeSession | None = None
         self._gate_control_enabled = True
+        # A successful pedestrian/partial-open command can leave some
+        # controllers without a final stationary position update. While that
+        # post-command position is unconfirmed, expose the cover as assumed
+        # state so Home Assistant keeps both FULL OPEN and FULL CLOSE usable.
+        self._pedestrian_state_assumed = False
 
         # TMT uses the device UUID as the topic/Shadow thing identifier.
         self.rx_topic = f"{uuid}/wbt01Rx"
@@ -220,6 +225,11 @@ class TmtChowHub:
     def gate_control_enabled(self) -> bool:
         """Return whether movement commands are enabled for this runtime profile."""
         return self._gate_control_enabled
+
+    @property
+    def pedestrian_state_assumed(self) -> bool:
+        """Return whether the final post-pedestrian position is unconfirmed."""
+        return self._pedestrian_state_assumed
 
     def set_gate_control_enabled(self, enabled: bool) -> None:
         """Enable or disable movement commands without affecting read-only status."""
@@ -440,9 +450,13 @@ class TmtChowHub:
             "ACK FULL OPEN",
             motion_direction="opening",
         )
+        was_assumed = self._pedestrian_state_assumed
+        self._pedestrian_state_assumed = False
         if acknowledged:
             self.is_operating = True
             self.movement = "opening"
+            self._notify()
+        elif was_assumed:
             self._notify()
 
     async def async_close(self) -> None:
@@ -452,9 +466,13 @@ class TmtChowHub:
             "ACK FULL CLOSE",
             motion_direction="closing",
         )
+        was_assumed = self._pedestrian_state_assumed
+        self._pedestrian_state_assumed = False
         if acknowledged:
             self.is_operating = True
             self.movement = "closing"
+            self._notify()
+        elif was_assumed:
             self._notify()
 
     async def async_pedestrian_open(self) -> None:
@@ -501,20 +519,24 @@ class TmtChowHub:
                         "Failed to publish PS25007A pedestrian command",
                         translation_key="command_failed",
                     ) from err
+            self._pedestrian_state_assumed = True
+            self._notify()
             return
         acknowledged = await self._async_command(
             "PED OPEN",
             "ACK PED OPEN",
             motion_direction="opening",
         )
+        self._pedestrian_state_assumed = True
         if acknowledged:
             self.is_operating = True
             self.movement = "opening"
-            self._notify()
+        self._notify()
 
     async def async_stop_gate(self) -> None:
         self._ensure_gate_control_enabled()
         await self._async_command("STOP", "ACK STOP")
+        self._pedestrian_state_assumed = False
         self.is_operating = False
         self.movement = None
         if self.controller_type == PS25142 and self._ouranos_native_session is not None:
@@ -932,6 +954,8 @@ class TmtChowHub:
     def _apply_status(self, status: GateStatus) -> None:
         if status.is_operating is not None:
             self.is_operating = status.is_operating
+            if status.is_operating is False:
+                self._pedestrian_state_assumed = False
 
         if status.is_operating:
             self._last_operating_status_monotonic = time.monotonic()
@@ -977,6 +1001,7 @@ class TmtChowHub:
                 return True
             if status.is_operating is False:
                 self._native_stop_guard_until_monotonic = None
+                self._pedestrian_state_assumed = False
             # OURANOS does not provide the separate WBT /position topic used by
             # _apply_status during travel.  The verified PS25142 ACK RS frame
             # carries the live percentage itself, so apply it even while moving.
@@ -1005,6 +1030,7 @@ class TmtChowHub:
                 self.movement = "opening" if status.is_open_direction else "closing"
             elif not status.is_operating:
                 self.movement = None
+                self._pedestrian_state_assumed = False
 
         self._last_ouranos_status_monotonic = time.monotonic()
         self.attributes[ATTR_OURANOS_STATUS] = state
@@ -1047,6 +1073,7 @@ class TmtChowHub:
         reached_closed = normalized == 0 and self.movement != "opening"
         reached_open = normalized == 100 and self.movement != "closing"
         if reached_closed or reached_open:
+            self._pedestrian_state_assumed = False
             self.is_operating = False
             self.movement = None
 
