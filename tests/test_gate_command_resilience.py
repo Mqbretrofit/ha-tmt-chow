@@ -9,6 +9,7 @@ from custom_components.tmt_chow.controller_types import (
     CAPABILITY_PEDESTRIAN,
     controller_capabilities,
 )
+from custom_components.tmt_chow.cover import TmtChowCover
 from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.protocol import GateStatus
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
@@ -248,6 +249,66 @@ def test_pedestrian_command_uses_verified_wire_command() -> None:
     asyncio.run(hub.async_pedestrian_open())
 
     assert captured == [("PED OPEN", "ACK PED OPEN", "opening")]
+
+
+def test_pedestrian_open_uses_assumed_state_until_stationary_status() -> None:
+    hub = _hub()
+    hub.position = 0
+    hub.is_operating = False
+
+    async def fake_command(
+        command: str,
+        acknowledgement: str,
+        *,
+        motion_direction: str | None = None,
+    ) -> bool:
+        return True
+
+    hub._async_command = fake_command  # type: ignore[method-assign]
+    asyncio.run(hub.async_pedestrian_open())
+
+    cover = TmtChowCover(hub)
+    assert hub.pedestrian_state_assumed is True
+    assert cover.assumed_state is True
+    assert hub.movement == "opening"
+
+    # A partial live position alone does not prove that the pedestrian cycle
+    # has finished, so both directions must remain available in Home Assistant.
+    hub._apply_position(35)
+    assert hub.pedestrian_state_assumed is True
+    assert cover.assumed_state is True
+
+    # A stationary status is authoritative and restores normal cover semantics.
+    hub._apply_status(
+        GateStatus(
+            position=35,
+            is_operating=False,
+            is_open_direction=True,
+            battery_percent=90,
+        )
+    )
+    assert hub.pedestrian_state_assumed is False
+    assert cover.assumed_state is False
+    assert hub.movement is None
+
+
+def test_full_open_clears_pedestrian_assumed_state() -> None:
+    hub = _hub()
+    hub._pedestrian_state_assumed = True
+
+    async def fake_command(
+        command: str,
+        acknowledgement: str,
+        *,
+        motion_direction: str | None = None,
+    ) -> bool:
+        return True
+
+    hub._async_command = fake_command  # type: ignore[method-assign]
+    asyncio.run(hub.async_open())
+
+    assert hub.pedestrian_state_assumed is False
+    assert hub.movement == "opening"
 
 
 
