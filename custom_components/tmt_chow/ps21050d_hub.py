@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
-from .const import ATTR_DEV_PARAM
+from .const import ATTR_DEV_PARAM, SHADOW_REFRESH_SECONDS
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
 from .parameter_codec import ParameterTransport, is_editable_parameter
@@ -50,6 +51,10 @@ _PS20005A_CONTROLLER_TYPE = "PS20005A"
 _PS20040_APP_MODEL = "PS20040"
 _PS20040D_CONTROLLER_TYPE = "PS20040D"
 _PS21050C_CONTROLLER_TYPE = "PS21050C"
+_PS24118_CONFIGURED_TYPE = "PS24118"
+_PS24118_LIVE_TYPE = "PS24118C"
+_PS24118_APK_FAMILY_MODEL = "P190U"
+_PS24118_STATUS_REFRESH_DELAYS = (0.0, 0.5, 0.75, 1.25, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -81,6 +86,15 @@ class TmtChowHub(BaseTmtChowHub):
     field. Reuse the codec and APK family/capabilities for this exact pair.
     Writes use a fresh full read, one WP,1 with no retry, and an exact full-frame
     readback before Home Assistant accepts the new value.
+
+    PS24118 / PS24118C is an observed identity split for P190U hardware
+    (DEV INFO: P190U,PS24118C,V02). Reuse only the P190U swing-family and
+    pedestrian UI capability metadata; never borrow the P190U parameter codec.
+    This controller's classic Shadow can remain stale after roughly three
+    minutes of standby, while read-only WBT/MQTT RS is live and verified.
+    Therefore RS is treated as the authoritative runtime state source for this
+    exact identity and is refreshed after movement commands plus periodically.
+    Movement commands are still sent exactly once and are never retried.
 
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
     matrix contains two inherited P190 current helper entries before the real
@@ -118,6 +132,15 @@ class TmtChowHub(BaseTmtChowHub):
             and self.configured_controller_type == _PS20040_APP_MODEL
         )
 
+    def _is_ps24118_profile(self) -> bool:
+        return (
+            self.configured_controller_type == _PS24118_CONFIGURED_TYPE
+            and self.controller_type in {
+                _PS24118_CONFIGURED_TYPE,
+                _PS24118_LIVE_TYPE,
+            }
+        )
+
     def _is_ps22027_verified_profile(self) -> bool:
         return (
             self.controller_type == PS22027
@@ -145,6 +168,24 @@ class TmtChowHub(BaseTmtChowHub):
 
     def _set_controller_type(self, controller_type: str | None) -> None:
         normalized = (controller_type or "").strip().upper()
+
+        if (
+            self.configured_controller_type == _PS24118_CONFIGURED_TYPE
+            and normalized in {_PS24118_CONFIGURED_TYPE, _PS24118_LIVE_TYPE}
+        ):
+            # Diagnostics from real PS24118 hardware identify the board as
+            # P190U,PS24118C,V02. Reuse only the APK family/UI capabilities.
+            # Keep parameter_model_type unset so no P190U parameter writes can
+            # ever be enabled through this identity alias.
+            self.controller_type = normalized
+            self.controller_family = controller_family(_PS24118_APK_FAMILY_MODEL)
+            self.controller_capabilities = controller_capabilities(
+                _PS24118_APK_FAMILY_MODEL
+            )
+            self.parameter_model_type = None
+            self.parameter_model_source = "ps24118_p190u_capability_alias"
+            self.model_parameter_schema = None
+            return
 
         if normalized == PS22087 and self.configured_controller_type == PS22087:
             # The account model alone is not enough to select the P710U wire
@@ -211,6 +252,78 @@ class TmtChowHub(BaseTmtChowHub):
         if self.controller_type == PS22027 and self.parameter_model_type == PS22027:
             self.model_parameter_schema = PS22027_PARAMETERS
             self.parameter_model_source = "ps22027_wire20_verified"
+
+    def _apply_reported(self, reported: dict[str, object]) -> None:
+        """Keep stale PS24118 Shadow status from overriding live RS state."""
+        if self._is_ps24118_profile():
+            reported = {
+                key: value
+                for key, value in reported.items()
+                if str(key).lower().replace("_", " ") != "dev status"
+            }
+        super()._apply_reported(reported)
+
+    async def _async_ps24118_request_status(self) -> None:
+        """Publish one read-only RS request without creating a command waiter."""
+        if not self._is_ps24118_profile() or self.device_online is False:
+            return
+        try:
+            await self._mqtt.async_publish(
+                self.rx_topic,
+                f"c=RS;src={self._source_tag}",
+            )
+        except Exception:  # MQTT disconnect/race must not fail a movement command.
+            return
+
+    async def _async_ps24118_status_monitor(self) -> None:
+        """Refresh live state for the full motion window without resending motion."""
+        task = asyncio.current_task()
+        try:
+            for delay in _PS24118_STATUS_REFRESH_DELAYS:
+                if delay:
+                    await asyncio.sleep(delay)
+                if not self._is_ps24118_profile() or self._stopping:
+                    return
+                await self._async_ps24118_request_status()
+        finally:
+            if getattr(self, "_ps24118_status_task", None) is task:
+                self._ps24118_status_task = None
+
+    def _start_ps24118_status_monitor(self) -> None:
+        if not self._is_ps24118_profile():
+            return
+        previous = getattr(self, "_ps24118_status_task", None)
+        if previous is not None and not previous.done():
+            previous.cancel()
+        self._ps24118_status_task = asyncio.create_task(
+            self._async_ps24118_status_monitor()
+        )
+
+    async def _shadow_refresh_loop(self) -> None:
+        """Preserve Shadow metadata refresh and add PS24118 live RS polling."""
+        while True:
+            await asyncio.sleep(SHADOW_REFRESH_SECONDS)
+            if not self._mqtt.connected:
+                continue
+            await self._async_request_shadow()
+            if self._is_ps24118_profile():
+                await self._async_ps24118_request_status()
+
+    def _mqtt_state_changed(self, connected: bool) -> None:
+        super()._mqtt_state_changed(connected)
+        if connected and self._is_ps24118_profile():
+            asyncio.create_task(self._async_ps24118_request_status())
+
+    async def async_stop(self) -> None:
+        task = getattr(self, "_ps24118_status_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._ps24118_status_task = None
+        await super().async_stop()
 
     def _decode_parameter_response(self, payload: str) -> tuple[int, ...] | None:
         if self._is_ps22087b_alias():
@@ -295,6 +408,19 @@ class TmtChowHub(BaseTmtChowHub):
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
+    async def async_open(self) -> None:
+        if self._is_ps24118_profile():
+            # Start read-only RS observation before the single movement publish.
+            # If ACK FULL OPEN is lost after standby, fresh RS motion telemetry
+            # can satisfy the base hub's no-ACK motion fallback without retrying.
+            self._start_ps24118_status_monitor()
+        await super().async_open()
+
+    async def async_close(self) -> None:
+        if self._is_ps24118_profile():
+            self._start_ps24118_status_monitor()
+        await super().async_close()
+
     async def async_pedestrian_open(self) -> None:
         """Run only the pedestrian command strategy verified for this controller."""
         strategy = self.pedestrian_strategy
@@ -314,6 +440,8 @@ class TmtChowHub(BaseTmtChowHub):
             return
 
         if strategy == PEDESTRIAN_STRATEGY_PED_OPEN:
+            if self._is_ps24118_profile():
+                self._start_ps24118_status_monitor()
             await super().async_pedestrian_open()
             return
 
