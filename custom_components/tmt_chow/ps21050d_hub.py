@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import Any
 
 from .const import ATTR_DEV_PARAM, SHADOW_REFRESH_SECONDS
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
+from .mqtt import MqttError
 from .parameter_codec import ParameterTransport, is_editable_parameter
 from .pedestrian import (
     PEDESTRIAN_STRATEGY_NONE,
@@ -54,7 +56,19 @@ _PS21050C_CONTROLLER_TYPE = "PS21050C"
 _PS24118_CONFIGURED_TYPE = "PS24118"
 _PS24118_LIVE_TYPE = "PS24118C"
 _PS24118_APK_FAMILY_MODEL = "P190U"
-_PS24118_STATUS_REFRESH_DELAYS = (0.0, 0.5, 0.75, 1.25, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
+_PS24118_STATUS_REFRESH_DELAYS = (
+    0.0,
+    0.5,
+    0.75,
+    1.25,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    8.0,
+    10.0,
+)
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -253,7 +267,7 @@ class TmtChowHub(BaseTmtChowHub):
             self.model_parameter_schema = PS22027_PARAMETERS
             self.parameter_model_source = "ps22027_wire20_verified"
 
-    def _apply_reported(self, reported: dict[str, object]) -> None:
+    def _apply_reported(self, reported: dict[str, Any]) -> None:
         """Keep stale PS24118 Shadow status from overriding live RS state."""
         if self._is_ps24118_profile():
             reported = {
@@ -272,7 +286,8 @@ class TmtChowHub(BaseTmtChowHub):
                 self.rx_topic,
                 f"c=RS;src={self._source_tag}",
             )
-        except Exception:  # MQTT disconnect/race must not fail a movement command.
+        except MqttError:
+            # A disconnect/race must not fail or resend a movement command.
             return
 
     async def _async_ps24118_status_monitor(self) -> None:
