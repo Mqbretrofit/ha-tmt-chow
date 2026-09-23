@@ -685,7 +685,7 @@ class TmtChowHub(BaseTmtChowHub):
         *,
         motion_direction: str | None = None,
     ) -> bool:
-        """Use PS24118 endpoint re-arm plus strict no-resend motion proof."""
+        """Use the vendor-shaped PS24118 command path without movement retries."""
         is_ps24118_motion = (
             self._is_ps24118_profile()
             and command in {"FULL OPEN", "FULL CLOSE", "PED OPEN"}
@@ -705,44 +705,18 @@ class TmtChowHub(BaseTmtChowHub):
         start_position = self.position
         start_operating = self.is_operating
         command_started = time.monotonic()
-        endpoint_direction = self._ps24118_endpoint_direction(start_position)
-
-        previous_full_command = getattr(
-            self, "_ps24118_last_full_command_monotonic", None
-        )
-        profile_started = getattr(
-            self, "_ps24118_profile_started_monotonic", command_started
-        )
-        idle_reference = (
-            previous_full_command
-            if previous_full_command is not None
-            else profile_started
-        )
-        idle_seconds = max(0.0, command_started - idle_reference)
-        after_standby = (
-            command in {"FULL OPEN", "FULL CLOSE"}
-            and start_operating is not True
-            and endpoint_direction is not None
-            and idle_seconds >= _PS24118_STANDBY_REARM_SECONDS
-        )
-
-        preflight_response = None
-        if command in {"FULL OPEN", "FULL CLOSE"}:
-            preflight_response = await self._async_ps24118_read_status()
-        preflight_state = self._ps24118_status_state(preflight_response)
-
+        source_tag = str(self._source_tag or "").strip().upper()
         debug: dict[str, Any] = {
             "command": command,
             "direction": motion_direction,
             "start_position": start_position,
             "start_operating": start_operating,
-            "idle_seconds_before_command": round(idle_seconds, 3),
-            "after_standby": after_standby,
-            "preflight_read_status_response": preflight_response,
-            "preflight_state": preflight_state,
-            "pending_rearm_direction_before": getattr(
-                self, "_ps24118_rearm_pending_direction", None
+            "source_tag": source_tag,
+            "source_tag_is_default": source_tag == DEFAULT_SOURCE_TAG,
+            "source_tag_origin": getattr(
+                self, "_ps24118_source_tag_origin", "configured_default"
             ),
+            "preflight_read_status_response": None,
             "explicit_ack_received": False,
             "explicit_ack_response": None,
             "fallback_rs": [],
@@ -750,71 +724,14 @@ class TmtChowHub(BaseTmtChowHub):
         }
         self._ps24118_last_command_debug = debug
 
-        pending_direction = getattr(
-            self, "_ps24118_rearm_pending_direction", None
-        )
-        requested_is_opposite_endpoint = (
-            command in {"FULL OPEN", "FULL CLOSE"}
-            and endpoint_direction is not None
-            and motion_direction != endpoint_direction
-        )
-        contradictory_logical_state = (
-            requested_is_opposite_endpoint
-            and (
-                (
-                    endpoint_direction == "opening"
-                    and preflight_state is not None
-                    and "CLOSED" in preflight_state
-                )
-                or (
-                    endpoint_direction == "closing"
-                    and preflight_state is not None
-                    and "OPEN" in preflight_state
-                    and "OPENING" not in preflight_state
-                )
-            )
-        )
-        pending_requires_rearm = (
-            requested_is_opposite_endpoint
-            and pending_direction == endpoint_direction
-        )
-
-        if contradictory_logical_state or pending_requires_rearm:
-            reason = (
-                "logical_state_contradicts_physical_endpoint"
-                if contradictory_logical_state
-                else "previous_post_standby_endpoint_requires_rearm"
-            )
-            rearmed = await self._async_ps24118_rearm_endpoint(
-                endpoint_direction=endpoint_direction,
-                debug=debug,
-                reason=reason,
-            )
-            if not rearmed:
-                debug["result"] = "rearm_endpoint_not_proven"
-                raise TmtCommandError(
-                    "PS24118 endpoint re-arm was required but the physical endpoint "
-                    "could not be verified",
-                    translation_key="command_failed",
-                )
-            self._ps24118_rearm_pending_direction = None
-
-        # If the user explicitly presses the same endpoint direction while a
-        # re-arm is pending, that requested command itself performs the proven
-        # manual Chow-app recovery; do not inject another identical command.
-        requested_consumes_pending_rearm = (
-            command in {"FULL OPEN", "FULL CLOSE"}
-            and pending_direction is not None
-            and endpoint_direction == pending_direction
-            and motion_direction == pending_direction
-        )
-
         command_error: TmtCommandError | None = None
         try:
-            # The requested movement itself is still published exactly once.
+            # Mirror the APK WBT/UART-v1 shape: exactly one requested movement
+            # command with the current source tag. No same-direction re-arm,
+            # READ STATUS wake command, or automatic movement resend is injected.
             async with self._transaction_lock:
                 ack_response = await self._async_exchange(
-                    f"c={command};src={self._source_tag}",
+                    f"c={command};src={source_tag}",
                     acknowledgement,
                 )
         except TmtCommandError as err:
@@ -831,18 +748,9 @@ class TmtChowHub(BaseTmtChowHub):
             debug["explicit_ack_received"] = True
             debug["explicit_ack_response"] = ack_response
             debug["result"] = "explicit_ack"
-            if command in {"FULL OPEN", "FULL CLOSE"}:
-                self._ps24118_last_full_command_monotonic = command_started
-                if requested_consumes_pending_rearm:
-                    self._ps24118_rearm_pending_direction = None
-                elif after_standby:
-                    self._ps24118_rearm_pending_direction = motion_direction
-                debug["pending_rearm_direction_after"] = getattr(
-                    self, "_ps24118_rearm_pending_direction", None
-                )
             return True
 
-        # The requested movement was already sent once and its waiter is gone.
+        # The movement command was already sent once and its waiter is gone.
         # Only read-only RS transactions may follow. Do not accept endpoint noise
         # (for example the observed 100 -> 98) as evidence of real movement.
         normalized_start = (
@@ -923,15 +831,6 @@ class TmtChowHub(BaseTmtChowHub):
                     if proof == "meaningful_position_delta"
                     else "runtime_telemetry_confirmed"
                 )
-                if command in {"FULL OPEN", "FULL CLOSE"}:
-                    self._ps24118_last_full_command_monotonic = command_started
-                    if requested_consumes_pending_rearm:
-                        self._ps24118_rearm_pending_direction = None
-                    elif after_standby:
-                        self._ps24118_rearm_pending_direction = motion_direction
-                    debug["pending_rearm_direction_after"] = getattr(
-                        self, "_ps24118_rearm_pending_direction", None
-                    )
                 return False
 
         debug["result"] = "no_ack_and_no_motion_proof"
