@@ -182,7 +182,7 @@ def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() 
     ]
     assert published == ["c=RS;src=P9999999"]
     assert hub.ps24118_command_debug is not None
-    assert hub.ps24118_command_debug["result"] == "rs_confirmed_operating"
+    assert hub.ps24118_command_debug["result"] == "rs_confirmed_position"
 
 
 def test_ps24118_rs_waits_for_transaction_lock() -> None:
