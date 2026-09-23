@@ -11,6 +11,7 @@ from custom_components.tmt_chow.controller_types import (
     FAMILY_SWING,
 )
 from custom_components.tmt_chow.pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
+from custom_components.tmt_chow.hub import TmtCommandError
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
 
@@ -77,9 +78,13 @@ def test_ps24118_stale_shadow_status_cannot_override_live_state() -> None:
 def test_ps24118_monitor_publishes_read_only_rs_only() -> None:
     hub = _hub()
     published: list[tuple[str, str]] = []
+    hub._mqtt._connected.set()
 
     async def fake_publish(topic: str, payload: str) -> None:
         published.append((topic, payload))
+        for expected, future in tuple(hub._waiters):
+            if expected == "ACK RS" and not future.done():
+                future.set_result("ACK RS:60,64,AA,00,40,00,00,40,00")
 
     hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
 
@@ -97,10 +102,9 @@ def test_ps24118_monitor_publishes_read_only_rs_only() -> None:
     ]
 
 
-def test_ps24118_full_open_is_sent_once_then_status_monitor_starts() -> None:
+def test_ps24118_full_open_is_sent_before_status_monitor_starts() -> None:
     hub = _hub()
-    commands: list[tuple[str, str, str | None]] = []
-    monitor_starts = 0
+    events: list[str] = []
 
     async def fake_command(
         command: str,
@@ -108,17 +112,94 @@ def test_ps24118_full_open_is_sent_once_then_status_monitor_starts() -> None:
         *,
         motion_direction: str | None = None,
     ) -> bool:
-        commands.append((command, acknowledgement, motion_direction))
+        assert command == "FULL OPEN"
+        assert acknowledgement == "ACK FULL OPEN"
+        assert motion_direction == "opening"
+        events.append("command")
         return True
 
     def fake_start_monitor() -> None:
-        nonlocal monitor_starts
-        monitor_starts += 1
+        events.append("monitor")
 
     hub._async_command = fake_command  # type: ignore[method-assign]
     hub._start_ps24118_status_monitor = fake_start_monitor  # type: ignore[method-assign]
 
     asyncio.run(hub.async_open())
 
-    assert commands == [("FULL OPEN", "ACK FULL OPEN", "opening")]
-    assert monitor_starts == 1
+    assert events == ["command", "monitor"]
+
+
+def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() -> None:
+    hub = _hub()
+    hub.position = 0
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    exchanges: list[tuple[str, str]] = []
+    published: list[str] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        exchanges.append((payload, expected))
+        if payload.startswith("c=FULL OPEN"):
+            try:
+                raise TimeoutError
+            except TimeoutError as err:
+                raise TmtCommandError(
+                    "No ACK FULL OPEN acknowledgement",
+                    translation_key="no_acknowledgement",
+                    translation_placeholders={"acknowledgement": "ACK FULL OPEN"},
+                ) from err
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    async def fake_publish(topic: str, payload: str) -> None:
+        assert topic == hub.rx_topic
+        published.append(payload)
+        for expected, future in tuple(hub._waiters):
+            if expected == "ACK RS" and not future.done():
+                future.set_result("ACK RS:60,64,EA,20,40,00,00,40,00")
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
+
+    with patch.object(
+        hub_module,
+        "_PS24118_ACK_FALLBACK_DELAYS",
+        (0.0,),
+    ):
+        acknowledged = asyncio.run(
+            hub._async_command(
+                "FULL OPEN",
+                "ACK FULL OPEN",
+                motion_direction="opening",
+            )
+        )
+
+    assert acknowledged is False
+    assert exchanges == [
+        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
+    ]
+    assert published == ["c=RS;src=P9999999"]
+
+
+def test_ps24118_rs_waits_for_transaction_lock() -> None:
+    hub = _hub()
+    hub._mqtt._connected.set()
+    published: list[str] = []
+
+    async def fake_publish(topic: str, payload: str) -> None:
+        published.append(payload)
+        for expected, future in tuple(hub._waiters):
+            if expected == "ACK RS" and not future.done():
+                future.set_result("ACK RS:60,64,AA,00,40,00,00,40,00")
+
+    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
+
+    async def run() -> None:
+        async with hub._transaction_lock:
+            task = asyncio.create_task(hub._async_ps24118_request_status())
+            await asyncio.sleep(0)
+            assert published == []
+        assert await task == "ACK RS:60,64,AA,00,40,00,00,40,00"
+
+    asyncio.run(run())
+
+    assert published == ["c=RS;src=P9999999"]
