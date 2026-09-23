@@ -17,6 +17,7 @@ from .pedestrian import (
     PEDESTRIAN_STRATEGY_RELAY4,
     pedestrian_strategy_for,
 )
+from .protocol import parse_ack_rs
 from .ps21050d_parameters import (
     APP_MODEL,
     APP_PARAMETERS,
@@ -69,6 +70,8 @@ _PS24118_STATUS_REFRESH_DELAYS = (
     8.0,
     10.0,
 )
+_PS24118_ACK_FALLBACK_DELAYS = (0.15, 0.35, 0.6, 1.0, 1.5)
+_PS24118_RS_TIMEOUT_SECONDS = 1.5
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -108,6 +111,8 @@ class TmtChowHub(BaseTmtChowHub):
     minutes of standby, while read-only WBT/MQTT RS is live and verified.
     Therefore RS is treated as the authoritative runtime state source for this
     exact identity and is refreshed after movement commands plus periodically.
+    Every RS transaction is serialized behind the same command lock so status
+    polling can never overlap a FULL OPEN/FULL CLOSE/PED OPEN exchange.
     Movement commands are still sent exactly once and are never retried.
 
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
@@ -277,18 +282,37 @@ class TmtChowHub(BaseTmtChowHub):
             }
         super()._apply_reported(reported)
 
-    async def _async_ps24118_request_status(self) -> None:
-        """Publish one read-only RS request without creating a command waiter."""
-        if not self._is_ps24118_profile() or self.device_online is False:
-            return
-        try:
-            await self._mqtt.async_publish(
-                self.rx_topic,
-                f"c=RS;src={self._source_tag}",
-            )
-        except MqttError:
-            # A disconnect/race must not fail or resend a movement command.
-            return
+    async def _async_ps24118_request_status(self) -> str | None:
+        """Run one serialized read-only RS transaction."""
+        if (
+            not self._is_ps24118_profile()
+            or self.device_online is False
+            or not self._mqtt.connected
+        ):
+            return None
+
+        async with self._transaction_lock:
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[str] = loop.create_future()
+            waiter = ("ACK RS", future)
+            self._waiters.append(waiter)
+            try:
+                await self._mqtt.async_publish(
+                    self.rx_topic,
+                    f"c=RS;src={self._source_tag}",
+                )
+                return await asyncio.wait_for(
+                    future,
+                    timeout=_PS24118_RS_TIMEOUT_SECONDS,
+                )
+            except (MqttError, TimeoutError):
+                # Read-only status loss must never fail or resend movement.
+                return None
+            finally:
+                try:
+                    self._waiters.remove(waiter)
+                except ValueError:
+                    pass
 
     async def _async_ps24118_status_monitor(self) -> None:
         """Refresh live state for the full motion window without resending motion."""
@@ -423,18 +447,103 @@ class TmtChowHub(BaseTmtChowHub):
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
+    async def _async_command(
+        self,
+        command: str,
+        acknowledgement: str,
+        *,
+        motion_direction: str | None = None,
+    ) -> bool:
+        """Add a serialized RS fallback for PS24118 movement ACK loss."""
+        is_ps24118_motion = (
+            self._is_ps24118_profile()
+            and command in {"FULL OPEN", "FULL CLOSE", "PED OPEN"}
+            and motion_direction in {"opening", "closing"}
+        )
+        if not is_ps24118_motion:
+            return await super()._async_command(
+                command,
+                acknowledgement,
+                motion_direction=motion_direction,
+            )
+
+        start_position = self.position
+        start_operating = self.is_operating
+        command_started = time.monotonic()
+
+        try:
+            return await super()._async_command(
+                command,
+                acknowledgement,
+                motion_direction=motion_direction,
+            )
+        except TmtCommandError as err:
+            if not (
+                err.translation_key == "no_acknowledgement"
+                and isinstance(err.__cause__, TimeoutError)
+            ):
+                raise
+
+            # The movement command has already been sent exactly once and its
+            # waiter is gone. Only now may RS be issued, one transaction at a
+            # time, behind the same transaction lock.
+            for delay in _PS24118_ACK_FALLBACK_DELAYS:
+                await asyncio.sleep(delay)
+                response = await self._async_ps24118_request_status()
+                status = parse_ack_rs(response)
+                if status is None:
+                    continue
+
+                if (
+                    start_operating is not True
+                    and status.is_operating is True
+                    and status.is_open_direction is not None
+                    and (
+                        (motion_direction == "opening" and status.is_open_direction)
+                        or (
+                            motion_direction == "closing"
+                            and not status.is_open_direction
+                        )
+                    )
+                ):
+                    return False
+
+                if start_position is not None and status.position is not None:
+                    if (
+                        motion_direction == "opening"
+                        and status.position > start_position
+                    ):
+                        return False
+                    if (
+                        motion_direction == "closing"
+                        and status.position < start_position
+                    ):
+                        return False
+
+                # If unrelated fresh telemetry arrived after the command while
+                # the explicit ACK was missing, accept the same proof used by
+                # the base hub.
+                if self._motion_confirms_command(
+                    motion_direction,
+                    start_position=start_position,
+                    start_operating=start_operating,
+                    command_started=command_started,
+                ):
+                    return False
+
+            raise
+
     async def async_open(self) -> None:
-        if self._is_ps24118_profile():
-            # Start read-only RS observation before the single movement publish.
-            # If ACK FULL OPEN is lost after standby, fresh RS motion telemetry
-            # can satisfy the base hub's no-ACK motion fallback without retrying.
-            self._start_ps24118_status_monitor()
         await super().async_open()
+        if self._is_ps24118_profile():
+            # Start monitoring only after the movement exchange/fallback has
+            # completed, so RS cannot steal or mask the FULL OPEN ACK.
+            self._start_ps24118_status_monitor()
 
     async def async_close(self) -> None:
+        await super().async_close()
         if self._is_ps24118_profile():
             self._start_ps24118_status_monitor()
-        await super().async_close()
 
     async def async_pedestrian_open(self) -> None:
         """Run only the pedestrian command strategy verified for this controller."""
@@ -455,9 +564,9 @@ class TmtChowHub(BaseTmtChowHub):
             return
 
         if strategy == PEDESTRIAN_STRATEGY_PED_OPEN:
+            await super().async_pedestrian_open()
             if self._is_ps24118_profile():
                 self._start_ps24118_status_monitor()
-            await super().async_pedestrian_open()
             return
 
         raise TmtCommandError(
