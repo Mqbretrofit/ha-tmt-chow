@@ -210,7 +210,7 @@ def test_ps24118_rs_waits_for_transaction_lock() -> None:
     assert published == ["c=RS;src=P9999999"]
 
 
-def test_ps24118_full_close_uses_read_status_preflight_before_single_command() -> None:
+def test_ps24118_contradictory_closed_state_rearms_open_before_close() -> None:
     hub = _hub()
     hub.position = 100
     hub.is_operating = False
@@ -220,29 +220,41 @@ def test_ps24118_full_close_uses_read_status_preflight_before_single_command() -
     async def fake_exchange(payload: str, expected: str) -> str:
         events.append((payload, expected))
         if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,98"
+            return "ACK STATUS:FULL CLOSED,99"
+        if payload.startswith("c=FULL OPEN"):
+            return "ACK FULL OPEN"
         if payload.startswith("c=FULL CLOSE"):
             return "ACK FULL CLOSE"
         raise AssertionError(f"Unexpected exchange: {payload}")
 
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    async def fake_rs() -> str:
+        return "ACK RS:60,64,AA,63,40,00,63,40,00"
 
-    acknowledged = asyncio.run(
-        hub._async_command(
-            "FULL CLOSE",
-            "ACK FULL CLOSE",
-            motion_direction="closing",
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+
+    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
+        acknowledged = asyncio.run(
+            hub._async_command(
+                "FULL CLOSE",
+                "ACK FULL CLOSE",
+                motion_direction="closing",
+            )
         )
-    )
 
     assert acknowledged is True
     assert events == [
         ("c=READ STATUS", "ACK STATUS"),
+        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
         ("c=FULL CLOSE;src=P9999999", "ACK FULL CLOSE"),
     ]
     debug = hub.ps24118_command_debug
     assert debug is not None
-    assert debug["preflight_read_status_response"] == "ACK STATUS:FULL CLOSED,98"
+    assert debug["preflight_read_status_response"] == "ACK STATUS:FULL CLOSED,99"
+    assert debug["rearm"]["reason"] == "logical_state_contradicts_physical_endpoint"
+    assert debug["rearm"]["command"] == "FULL OPEN"
+    assert debug["rearm"]["rs_normalized_position"] == 100
+    assert debug["rearm"]["ack"] == "ACK FULL OPEN"
     assert debug["explicit_ack_received"] is True
     assert debug["explicit_ack_response"] == "ACK FULL CLOSE"
     assert debug["result"] == "explicit_ack"
@@ -256,7 +268,7 @@ def test_ps24118_endpoint_jitter_does_not_confirm_missing_close_ack() -> None:
 
     async def fake_exchange(payload: str, expected: str) -> str:
         if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,98"
+            return "ACK STATUS:FULL OPENED,98"
         if payload.startswith("c=FULL CLOSE"):
             try:
                 raise TimeoutError
@@ -309,7 +321,7 @@ def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> No
 
     async def fake_exchange(payload: str, expected: str) -> str:
         if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,98"
+            return "ACK STATUS:FULL OPENED,98"
         if payload.startswith("c=FULL CLOSE"):
             try:
                 raise TimeoutError
@@ -347,3 +359,166 @@ def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> No
     assert debug["fallback_rs"][0]["normalized_position"] == 90
     assert debug["fallback_rs"][0]["position_delta"] == -10
     assert debug["fallback_rs"][0]["movement_proven"] is True
+
+
+def test_ps24118_pending_post_standby_close_rearms_before_open_when_status_missing() -> None:
+    hub = _hub()
+    hub.position = 0
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    hub._ps24118_rearm_pending_direction = "closing"
+    events: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        events.append((payload, expected))
+        if payload == "c=READ STATUS":
+            try:
+                raise TimeoutError
+            except TimeoutError as err:
+                raise TmtCommandError(
+                    "No ACK STATUS acknowledgement",
+                    translation_key="no_acknowledgement",
+                ) from err
+        if payload.startswith("c=FULL CLOSE"):
+            return "ACK FULL CLOSE"
+        if payload.startswith("c=FULL OPEN"):
+            return "ACK FULL OPEN"
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    async def fake_rs() -> str:
+        return "ACK RS:60,64,AA,80,40,00,80,40,00"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+
+    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
+        acknowledged = asyncio.run(
+            hub._async_command(
+                "FULL OPEN",
+                "ACK FULL OPEN",
+                motion_direction="opening",
+            )
+        )
+
+    assert acknowledged is True
+    assert events == [
+        ("c=READ STATUS", "ACK STATUS"),
+        ("c=FULL CLOSE;src=P9999999", "ACK FULL CLOSE"),
+        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
+    ]
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["preflight_read_status_response"] is None
+    assert debug["rearm"]["reason"] == "previous_post_standby_endpoint_requires_rearm"
+    assert debug["rearm"]["command"] == "FULL CLOSE"
+    assert debug["rearm"]["ack"] == "ACK FULL CLOSE"
+    assert debug["pending_rearm_direction_after"] is None
+
+
+def test_ps24118_first_full_command_after_three_minutes_marks_endpoint_for_rearm() -> None:
+    hub = _hub()
+    hub.position = 0
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    hub._ps24118_profile_started_monotonic = (
+        hub_module.time.monotonic() - hub_module._PS24118_STANDBY_REARM_SECONDS - 1.0
+    )
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,0"
+        if payload.startswith("c=FULL OPEN"):
+            return "ACK FULL OPEN"
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+
+    acknowledged = asyncio.run(
+        hub._async_command(
+            "FULL OPEN",
+            "ACK FULL OPEN",
+            motion_direction="opening",
+        )
+    )
+
+    assert acknowledged is True
+    assert hub._ps24118_rearm_pending_direction == "opening"
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["after_standby"] is True
+    assert debug["pending_rearm_direction_after"] == "opening"
+
+
+def test_ps24118_same_direction_user_command_consumes_pending_rearm_without_duplicate() -> None:
+    hub = _hub()
+    hub.position = 100
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    hub._ps24118_rearm_pending_direction = "opening"
+    events: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        events.append((payload, expected))
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL OPENED,100"
+        if payload.startswith("c=FULL OPEN"):
+            return "ACK FULL OPEN"
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+
+    acknowledged = asyncio.run(
+        hub._async_command(
+            "FULL OPEN",
+            "ACK FULL OPEN",
+            motion_direction="opening",
+        )
+    )
+
+    assert acknowledged is True
+    assert events == [
+        ("c=READ STATUS", "ACK STATUS"),
+        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
+    ]
+    assert hub._ps24118_rearm_pending_direction is None
+
+
+def test_ps24118_rearm_is_not_sent_without_fresh_endpoint_proof() -> None:
+    hub = _hub()
+    hub.position = 100
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    hub._ps24118_rearm_pending_direction = "opening"
+    events: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        events.append((payload, expected))
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,99"
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    async def fake_rs() -> str:
+        return "ACK RS:60,64,EA,5A,40,00,63,40,00"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+
+    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
+        try:
+            asyncio.run(
+                hub._async_command(
+                    "FULL CLOSE",
+                    "ACK FULL CLOSE",
+                    motion_direction="closing",
+                )
+            )
+        except TmtCommandError as err:
+            assert err.translation_key == "command_failed"
+        else:
+            raise AssertionError("Re-arm must not be sent unless endpoint is proven")
+
+    assert events == [("c=READ STATUS", "ACK STATUS")]
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["rearm"]["sent"] is False
+    assert debug["rearm"]["result"] == "endpoint_not_proven"
