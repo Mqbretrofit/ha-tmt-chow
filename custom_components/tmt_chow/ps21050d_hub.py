@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+import re
 import time
 from typing import Any
 
-from .const import ATTR_DEV_PARAM, SHADOW_REFRESH_SECONDS
+from .const import ATTR_DEV_PARAM, DEFAULT_SOURCE_TAG, SHADOW_REFRESH_SECONDS
 from .controller_types import controller_capabilities, controller_family
 from .hub import TmtChowHub as BaseTmtChowHub, TmtCommandError
 from .mqtt import MqttError
@@ -144,6 +146,68 @@ class TmtChowHub(BaseTmtChowHub):
     100. Keep the last proven motion direction briefly so that late stale
     status cannot flip a just-closed gate back to open (or vice versa).
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        configured = str(kwargs.get("device_type") or "").strip().upper()
+        kwargs["observe_rx_topic"] = configured == _PS24118_CONFIGURED_TYPE
+        super().__init__(*args, **kwargs)
+        self._source_tag_update_callback: Callable[[str], None] | None = None
+        self._ps24118_source_tag_origin = (
+            "configured_default"
+            if str(self._source_tag or "").strip().upper() == DEFAULT_SOURCE_TAG
+            else "configured_vendor"
+        )
+
+    def set_source_tag_update_callback(
+        self, callback: Callable[[str], None] | None
+    ) -> None:
+        """Persist a vendor source tag learned from official-app traffic."""
+        self._source_tag_update_callback = callback
+
+    @property
+    def ps24118_source_tag_debug(self) -> dict[str, Any] | None:
+        """Return sanitized PS24118 source-tag routing evidence."""
+        if self.configured_controller_type != _PS24118_CONFIGURED_TYPE:
+            return None
+        tag = str(self._source_tag or "").strip().upper()
+        return {
+            "source_tag": tag,
+            "is_default": tag == DEFAULT_SOURCE_TAG,
+            "origin": getattr(
+                self, "_ps24118_source_tag_origin", "configured_default"
+            ),
+            "rx_topic_observation_requested": self.rx_topic in self._mqtt._topics,
+        }
+
+    def _learn_ps24118_source_tag(self, payload: str) -> None:
+        """Learn the official app's UART-v1 source tag from wbt01Rx traffic."""
+        if self.configured_controller_type != _PS24118_CONFIGURED_TYPE:
+            return
+
+        current = str(self._source_tag or "").strip().upper()
+        if current != DEFAULT_SOURCE_TAG:
+            return
+
+        match = re.search(
+            r"(?:^|;)SRC=(P[0-9A-F]{7,})(?:;|$)",
+            str(payload or "").strip().upper(),
+        )
+        if match is None:
+            return
+        candidate = match.group(1)
+        if candidate == DEFAULT_SOURCE_TAG:
+            return
+
+        self._source_tag = candidate
+        self._ps24118_source_tag_origin = "vendor_rx_observed"
+        callback = self._source_tag_update_callback
+        if callback is not None:
+            callback(candidate)
+
+    async def _async_message(self, topic: str, payload: str) -> None:
+        if topic == self.rx_topic:
+            self._learn_ps24118_source_tag(payload)
+        await super()._async_message(topic, payload)
 
     def _is_ps21050d_alias(self) -> bool:
         return (
