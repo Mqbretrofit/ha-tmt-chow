@@ -74,10 +74,7 @@ _PS24118_STATUS_REFRESH_DELAYS = (
 )
 _PS24118_ACK_FALLBACK_DELAYS = (0.15, 0.35, 0.6, 1.0, 1.5)
 _PS24118_RS_TIMEOUT_SECONDS = 1.5
-_PS24118_READ_STATUS_TIMEOUT_SECONDS = 1.5
 _PS24118_MIN_POSITION_DELTA = 5
-_PS24118_STANDBY_REARM_SECONDS = 180.0
-_PS24118_REARM_SETTLE_SECONDS = 0.35
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -118,16 +115,15 @@ class TmtChowHub(BaseTmtChowHub):
     Therefore RS is treated as the authoritative runtime state source for this
     exact identity and is refreshed after movement commands plus periodically.
     Every RS transaction is serialized behind the same command lock so status
-    polling can never overlap a FULL OPEN/FULL CLOSE/PED OPEN exchange. Before
-    FULL OPEN/FULL CLOSE, one best-effort read-only READ STATUS exchange is used
-    to observe the controller's logical state. Real hardware can ACK the next
-    opposite command without moving when that logical state remains stuck on the
-    old endpoint. For that exact PS24118 endpoint/standby condition only, the
-    integration mirrors the reporter's proven Chow-app recovery: one same-endpoint
-    re-arm command (FULL OPEN while physically open, or FULL CLOSE while physically
-    closed), then the requested opposite command. Each individual command is sent
-    exactly once and is never automatically retried. Endpoint jitter such as
-    98/100 or 0/2 is never accepted as proof that a movement command executed.
+    polling can never overlap a FULL OPEN/FULL CLOSE/PED OPEN exchange. The
+    vendor Android app normally adds a per-user UART-v1 source tag in the form
+    P%07X(user_id), while P9999999 is its privacy/default form. For this exact
+    controller, Home Assistant can observe wbt01Rx and, while still using the
+    default tag, learn and persist the first non-default vendor-app source tag.
+    Movement then mirrors the vendor shape: exactly one requested command with
+    that source tag, with no READ STATUS wake command, endpoint re-arm, or
+    automatic movement retry. Endpoint jitter such as 98/100 or 0/2 is never
+    accepted as proof that a movement command executed.
 
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
     matrix contains two inherited P190 current helper entries before the real
@@ -171,8 +167,8 @@ class TmtChowHub(BaseTmtChowHub):
             return None
         tag = str(self._source_tag or "").strip().upper()
         return {
-            "source_tag": tag,
             "is_default": tag == DEFAULT_SOURCE_TAG,
+            "format_valid": re.fullmatch(r"P[0-9A-F]{7,}", tag) is not None,
             "origin": getattr(
                 self, "_ps24118_source_tag_origin", "configured_default"
             ),
@@ -280,8 +276,6 @@ class TmtChowHub(BaseTmtChowHub):
             self.parameter_model_type = None
             self.parameter_model_source = "ps24118_p190u_capability_alias"
             self.model_parameter_schema = None
-            if not hasattr(self, "_ps24118_profile_started_monotonic"):
-                self._ps24118_profile_started_monotonic = time.monotonic()
             return
 
         if normalized == PS22087 and self.configured_controller_type == PS22087:
@@ -431,24 +425,6 @@ class TmtChowHub(BaseTmtChowHub):
                 except ValueError:
                     pass
 
-    async def _async_ps24118_read_status(self) -> str | None:
-        """Run the verified legacy READ STATUS as a best-effort standby preflight."""
-        if (
-            not self._is_ps24118_profile()
-            or self.device_online is False
-            or not self._mqtt.connected
-        ):
-            return None
-        try:
-            async with self._transaction_lock:
-                response = await asyncio.wait_for(
-                    self._async_exchange("c=READ STATUS", "ACK STATUS"),
-                    timeout=_PS24118_READ_STATUS_TIMEOUT_SECONDS,
-                )
-        except (TmtCommandError, TimeoutError):
-            return None
-        return response
-
     async def _async_cancel_ps24118_status_monitor(self) -> None:
         """Stop an older monitor before starting a new movement transaction."""
         task = getattr(self, "_ps24118_status_task", None)
@@ -595,89 +571,6 @@ class TmtChowHub(BaseTmtChowHub):
             return self.parameter_schema_verified
         return super().parameter_write_schema_verified
 
-    @staticmethod
-    def _ps24118_status_state(response: str | None) -> str | None:
-        """Extract the textual ACK STATUS state without trusting its position."""
-        if not response:
-            return None
-        prefix = "ACK STATUS:"
-        upper = response.strip().upper()
-        if not upper.startswith(prefix):
-            return None
-        return upper[len(prefix) :].split(",", 1)[0].strip() or None
-
-    @staticmethod
-    def _ps24118_endpoint_direction(position: int | None) -> str | None:
-        """Return the physical endpoint direction represented by HA position."""
-        if position is None:
-            return None
-        normalized = TmtChowHub._ps24118_normalize_position(position)
-        if normalized == 100:
-            return "opening"
-        if normalized == 0:
-            return "closing"
-        return None
-
-    async def _async_ps24118_rearm_endpoint(
-        self,
-        *,
-        endpoint_direction: str,
-        debug: dict[str, Any],
-        reason: str,
-    ) -> bool:
-        """Mirror the proven Chow-app same-direction endpoint re-arm once."""
-        rearm_command = "FULL OPEN" if endpoint_direction == "opening" else "FULL CLOSE"
-        rearm_ack = f"ACK {rearm_command}"
-        expected_endpoint = 100 if endpoint_direction == "opening" else 0
-
-        # Never send the extra movement command unless a fresh read-only RS proves
-        # the gate is stationary at the matching physical endpoint.
-        rs_response = await self._async_ps24118_request_status()
-        status = parse_ack_rs(rs_response)
-        raw_position = status.position if status is not None else None
-        normalized_position = (
-            self._ps24118_normalize_position(raw_position)
-            if raw_position is not None
-            else None
-        )
-        debug["rearm"] = {
-            "reason": reason,
-            "command": rearm_command,
-            "rs_before": rs_response,
-            "rs_position": raw_position,
-            "rs_normalized_position": normalized_position,
-            "rs_is_operating": status.is_operating if status is not None else None,
-            "sent": False,
-            "ack": None,
-            "result": "not_sent",
-        }
-        if (
-            status is None
-            or status.is_operating is not False
-            or normalized_position != expected_endpoint
-        ):
-            debug["rearm"]["result"] = "endpoint_not_proven"
-            return False
-
-        try:
-            async with self._transaction_lock:
-                ack_response = await self._async_exchange(
-                    f"c={rearm_command};src={self._source_tag}",
-                    rearm_ack,
-                )
-        except TmtCommandError as err:
-            debug["rearm"]["sent"] = True
-            debug["rearm"]["result"] = "command_error"
-            debug["rearm"]["error"] = str(err)
-            debug["rearm"]["error_translation_key"] = err.translation_key
-            raise
-
-        debug["rearm"]["sent"] = True
-        debug["rearm"]["ack"] = ack_response
-        debug["rearm"]["result"] = "explicit_ack"
-        await asyncio.sleep(_PS24118_REARM_SETTLE_SECONDS)
-        return True
-
     async def _async_command(
         self,
         command: str,
@@ -711,8 +604,10 @@ class TmtChowHub(BaseTmtChowHub):
             "direction": motion_direction,
             "start_position": start_position,
             "start_operating": start_operating,
-            "source_tag": source_tag,
             "source_tag_is_default": source_tag == DEFAULT_SOURCE_TAG,
+            "source_tag_format_valid": (
+                re.fullmatch(r"P[0-9A-F]{7,}", source_tag) is not None
+            ),
             "source_tag_origin": getattr(
                 self, "_ps24118_source_tag_origin", "configured_default"
             ),
