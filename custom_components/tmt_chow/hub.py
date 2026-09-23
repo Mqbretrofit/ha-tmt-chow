@@ -183,6 +183,7 @@ class TmtChowHub:
             ),
             message_callback=self._async_message,
             state_callback=self._mqtt_state_changed,
+            optional_topics=(self.rx_topic,) if observe_rx_topic else (),
         )
 
     @property
