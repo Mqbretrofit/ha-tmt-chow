@@ -10,12 +10,12 @@ from custom_components.tmt_chow.controller_types import (
     CAPABILITY_PEDESTRIAN,
     FAMILY_SWING,
 )
-from custom_components.tmt_chow.pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
 from custom_components.tmt_chow.hub import TmtCommandError
+from custom_components.tmt_chow.pedestrian import PEDESTRIAN_STRATEGY_PED_OPEN
 from custom_components.tmt_chow.ps21050d_hub import TmtChowHub
 
 
-def _hub() -> TmtChowHub:
+def _hub(source_tag: str = "P9999999") -> TmtChowHub:
     return TmtChowHub(
         uuid="test-uuid",
         thing_name="test-thing",
@@ -23,7 +23,7 @@ def _hub() -> TmtChowHub:
         endpoint="example.invalid",
         certificate_pem="",
         private_key="",
-        source_tag="P9999999",
+        source_tag=source_tag,
         product_type="197",
         device_type="PS24118",
     )
@@ -37,8 +37,7 @@ def test_ps24118_reuses_only_p190u_family_and_pedestrian_capability() -> None:
     assert CAPABILITY_PEDESTRIAN in hub.controller_capabilities
     assert hub.pedestrian_strategy == PEDESTRIAN_STRATEGY_PED_OPEN
 
-    # The P190U identity evidence is used only for family/UI capabilities.
-    # Parameter schemas and writes remain disabled for this unverified variant.
+    # P190U evidence is capability-only: never borrow its parameter write path.
     assert hub.parameter_model_type is None
     assert hub.parameter_schema_verified is False
     assert hub.parameter_write_schema_verified is False
@@ -54,119 +53,123 @@ def test_ps24118_reuses_only_p190u_family_and_pedestrian_capability() -> None:
     assert hub.supports_parameters is False
 
 
-def test_ps24118_stale_shadow_status_cannot_override_live_state() -> None:
+def test_ps24118_requests_optional_rx_observation_only_for_exact_profile() -> None:
     hub = _hub()
-    hub.position = 100
-    hub.is_operating = False
-    hub.movement = None
+    assert hub.rx_topic in hub._mqtt._topics
+    assert hub.rx_topic in hub._mqtt._optional_topics
 
-    # Real diagnostics show DEV INFO P190U,PS24118C,V02 while the classic
-    # Shadow may remain on the pre-standby position. Keep identity metadata,
-    # but do not let that stale DEV STATUS overwrite the live RS state.
-    hub._apply_reported(
-        {
-            "dev status": "60,64,AA,00,40,00,00,40,00",
-            "dev info": "P190U,PS24118C,V02",
-        }
+    other = TmtChowHub(
+        uuid="other-uuid",
+        thing_name="other-thing",
+        name="Other gate",
+        endpoint="example.invalid",
+        certificate_pem="",
+        private_key="",
+        source_tag="P9999999",
+        product_type="112",
+        device_type="PS21050",
+    )
+    assert other.rx_topic not in other._mqtt._topics
+    assert other.rx_topic not in other._mqtt._optional_topics
+
+
+def test_ps24118_learns_non_default_vendor_source_tag_from_rx() -> None:
+    hub = _hub()
+    learned: list[str] = []
+    hub.set_source_tag_update_callback(learned.append)
+
+    asyncio.run(
+        hub._async_message(
+            hub.rx_topic,
+            "c=FULL OPEN;src=P00317D9",
+        )
     )
 
-    assert hub.controller_type == "PS24118C"
-    assert hub.position == 100
-    assert hub.is_operating is False
+    assert hub._source_tag == "P00317D9"
+    assert learned == ["P00317D9"]
+    debug = hub.ps24118_source_tag_debug
+    assert debug is not None
+    assert debug["is_default"] is False
+    assert debug["format_valid"] is True
+    assert debug["origin"] == "vendor_rx_observed"
 
 
-def test_ps24118_monitor_publishes_read_only_rs_only() -> None:
+def test_ps24118_does_not_learn_default_or_overwrite_configured_vendor_tag() -> None:
     hub = _hub()
-    published: list[tuple[str, str]] = []
-    hub._mqtt._connected.set()
+    learned: list[str] = []
+    hub.set_source_tag_update_callback(learned.append)
 
-    async def fake_publish(topic: str, payload: str) -> None:
-        published.append((topic, payload))
-        for expected, future in tuple(hub._waiters):
-            if expected == "ACK RS" and not future.done():
-                future.set_result("ACK RS:60,64,AA,00,40,00,00,40,00")
+    hub._learn_ps24118_source_tag("c=RS;src=P9999999")
+    assert hub._source_tag == "P9999999"
+    assert learned == []
 
-    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
-
-    with patch.object(
-        hub_module,
-        "_PS24118_STATUS_REFRESH_DELAYS",
-        (0.0, 0.0, 0.0),
-    ):
-        asyncio.run(hub._async_ps24118_status_monitor())
-
-    assert published == [
-        (hub.rx_topic, "c=RS;src=P9999999"),
-        (hub.rx_topic, "c=RS;src=P9999999"),
-        (hub.rx_topic, "c=RS;src=P9999999"),
-    ]
+    configured = _hub("P00317D9")
+    configured._learn_ps24118_source_tag("c=FULL OPEN;src=P00ABCDE")
+    assert configured._source_tag == "P00317D9"
+    assert configured.ps24118_source_tag_debug is not None
+    assert configured.ps24118_source_tag_debug["origin"] == "configured_vendor"
 
 
-def test_ps24118_full_open_is_sent_before_status_monitor_starts() -> None:
+def test_ps24118_learned_source_tag_is_used_without_preflight_or_rearm() -> None:
     hub = _hub()
-    events: list[str] = []
+    hub._learn_ps24118_source_tag("c=FULL OPEN;src=P00317D9")
+    hub.position = 100
+    hub.is_operating = False
+    events: list[tuple[str, str]] = []
 
-    async def fake_command(
-        command: str,
-        acknowledgement: str,
-        *,
-        motion_direction: str | None = None,
-    ) -> bool:
-        assert command == "FULL OPEN"
-        assert acknowledgement == "ACK FULL OPEN"
-        assert motion_direction == "opening"
-        events.append("command")
-        return True
+    async def fake_exchange(payload: str, expected: str) -> str:
+        events.append((payload, expected))
+        return "ACK FULL CLOSE"
 
-    def fake_start_monitor() -> None:
-        events.append("monitor")
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
 
-    hub._async_command = fake_command  # type: ignore[method-assign]
-    hub._start_ps24118_status_monitor = fake_start_monitor  # type: ignore[method-assign]
+    acknowledged = asyncio.run(
+        hub._async_command(
+            "FULL CLOSE",
+            "ACK FULL CLOSE",
+            motion_direction="closing",
+        )
+    )
 
-    asyncio.run(hub.async_open())
+    assert acknowledged is True
+    assert events == [("c=FULL CLOSE;src=P00317D9", "ACK FULL CLOSE")]
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["source_tag_is_default"] is False
+    assert debug["source_tag_format_valid"] is True
+    assert debug["source_tag_origin"] == "vendor_rx_observed"
+    assert debug["preflight_read_status_response"] is None
+    assert "source_tag" not in debug
+    assert "rearm" not in debug
 
-    assert events == ["command", "monitor"]
 
-
-def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() -> None:
-    hub = _hub()
+def test_ps24118_missing_ack_uses_read_only_rs_without_resending_movement() -> None:
+    hub = _hub("P00317D9")
     hub.position = 0
     hub.is_operating = False
-    hub._mqtt._connected.set()
     exchanges: list[tuple[str, str]] = []
-    published: list[str] = []
+    rs_reads = 0
 
     async def fake_exchange(payload: str, expected: str) -> str:
         exchanges.append((payload, expected))
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,0"
-        if payload.startswith("c=FULL OPEN"):
-            try:
-                raise TimeoutError
-            except TimeoutError as err:
-                raise TmtCommandError(
-                    "No ACK FULL OPEN acknowledgement",
-                    translation_key="no_acknowledgement",
-                    translation_placeholders={"acknowledgement": "ACK FULL OPEN"},
-                ) from err
-        raise AssertionError(f"Unexpected exchange: {payload}")
+        try:
+            raise TimeoutError
+        except TimeoutError as err:
+            raise TmtCommandError(
+                "No ACK FULL OPEN acknowledgement",
+                translation_key="no_acknowledgement",
+                translation_placeholders={"acknowledgement": "ACK FULL OPEN"},
+            ) from err
 
-    async def fake_publish(topic: str, payload: str) -> None:
-        assert topic == hub.rx_topic
-        published.append(payload)
-        for expected, future in tuple(hub._waiters):
-            if expected == "ACK RS" and not future.done():
-                future.set_result("ACK RS:60,64,EA,20,40,00,00,40,00")
+    async def fake_rs() -> str:
+        nonlocal rs_reads
+        rs_reads += 1
+        return "ACK RS:60,64,EA,A0,40,00,00,40,00"
 
     hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
 
-    with patch.object(
-        hub_module,
-        "_PS24118_ACK_FALLBACK_DELAYS",
-        (0.0,),
-    ):
+    with patch.object(hub_module, "_PS24118_ACK_FALLBACK_DELAYS", (0.0,)):
         acknowledged = asyncio.run(
             hub._async_command(
                 "FULL OPEN",
@@ -176,109 +179,26 @@ def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() 
         )
 
     assert acknowledged is False
-    assert exchanges == [
-        ("c=READ STATUS", "ACK STATUS"),
-        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
-    ]
-    assert published == ["c=RS;src=P9999999"]
+    assert exchanges == [("c=FULL OPEN;src=P00317D9", "ACK FULL OPEN")]
+    assert rs_reads == 1
     assert hub.ps24118_command_debug is not None
-    assert hub.ps24118_command_debug["result"] == "rs_confirmed_position"
-
-
-def test_ps24118_rs_waits_for_transaction_lock() -> None:
-    hub = _hub()
-    hub._mqtt._connected.set()
-    published: list[str] = []
-
-    async def fake_publish(topic: str, payload: str) -> None:
-        published.append(payload)
-        for expected, future in tuple(hub._waiters):
-            if expected == "ACK RS" and not future.done():
-                future.set_result("ACK RS:60,64,AA,00,40,00,00,40,00")
-
-    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
-
-    async def run() -> None:
-        async with hub._transaction_lock:
-            task = asyncio.create_task(hub._async_ps24118_request_status())
-            await asyncio.sleep(0)
-            assert published == []
-        assert await task == "ACK RS:60,64,AA,00,40,00,00,40,00"
-
-    asyncio.run(run())
-
-    assert published == ["c=RS;src=P9999999"]
-
-
-def test_ps24118_contradictory_closed_state_rearms_open_before_close() -> None:
-    hub = _hub()
-    hub.position = 100
-    hub.is_operating = False
-    hub._mqtt._connected.set()
-    events: list[tuple[str, str]] = []
-
-    async def fake_exchange(payload: str, expected: str) -> str:
-        events.append((payload, expected))
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,99"
-        if payload.startswith("c=FULL OPEN"):
-            return "ACK FULL OPEN"
-        if payload.startswith("c=FULL CLOSE"):
-            return "ACK FULL CLOSE"
-        raise AssertionError(f"Unexpected exchange: {payload}")
-
-    async def fake_rs() -> str:
-        return "ACK RS:60,64,AA,63,40,00,63,40,00"
-
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
-
-    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
-        acknowledged = asyncio.run(
-            hub._async_command(
-                "FULL CLOSE",
-                "ACK FULL CLOSE",
-                motion_direction="closing",
-            )
-        )
-
-    assert acknowledged is True
-    assert events == [
-        ("c=READ STATUS", "ACK STATUS"),
-        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
-        ("c=FULL CLOSE;src=P9999999", "ACK FULL CLOSE"),
-    ]
-    debug = hub.ps24118_command_debug
-    assert debug is not None
-    assert debug["preflight_read_status_response"] == "ACK STATUS:FULL CLOSED,99"
-    assert debug["rearm"]["reason"] == "logical_state_contradicts_physical_endpoint"
-    assert debug["rearm"]["command"] == "FULL OPEN"
-    assert debug["rearm"]["rs_normalized_position"] == 100
-    assert debug["rearm"]["ack"] == "ACK FULL OPEN"
-    assert debug["explicit_ack_received"] is True
-    assert debug["explicit_ack_response"] == "ACK FULL CLOSE"
-    assert debug["result"] == "explicit_ack"
+    assert hub.ps24118_command_debug["result"] == "rs_confirmed_operating"
 
 
 def test_ps24118_endpoint_jitter_does_not_confirm_missing_close_ack() -> None:
-    hub = _hub()
+    hub = _hub("P00317D9")
     hub.position = 100
     hub.is_operating = False
-    hub._mqtt._connected.set()
 
     async def fake_exchange(payload: str, expected: str) -> str:
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL OPENED,98"
-        if payload.startswith("c=FULL CLOSE"):
-            try:
-                raise TimeoutError
-            except TimeoutError as err:
-                raise TmtCommandError(
-                    "No ACK FULL CLOSE acknowledgement",
-                    translation_key="no_acknowledgement",
-                    translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
-                ) from err
-        raise AssertionError(f"Unexpected exchange: {payload}")
+        try:
+            raise TimeoutError
+        except TimeoutError as err:
+            raise TmtCommandError(
+                "No ACK FULL CLOSE acknowledgement",
+                translation_key="no_acknowledgement",
+                translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
+            ) from err
 
     async def fake_rs() -> str:
         return "ACK RS:60,64,AA,62,40,00,63,40,00"
@@ -286,11 +206,7 @@ def test_ps24118_endpoint_jitter_does_not_confirm_missing_close_ack() -> None:
     hub._async_exchange = fake_exchange  # type: ignore[method-assign]
     hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
 
-    with patch.object(
-        hub_module,
-        "_PS24118_ACK_FALLBACK_DELAYS",
-        (0.0, 0.0),
-    ):
+    with patch.object(hub_module, "_PS24118_ACK_FALLBACK_DELAYS", (0.0, 0.0)):
         try:
             asyncio.run(
                 hub._async_command(
@@ -314,24 +230,19 @@ def test_ps24118_endpoint_jitter_does_not_confirm_missing_close_ack() -> None:
 
 
 def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> None:
-    hub = _hub()
+    hub = _hub("P00317D9")
     hub.position = 100
     hub.is_operating = False
-    hub._mqtt._connected.set()
 
     async def fake_exchange(payload: str, expected: str) -> str:
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL OPENED,98"
-        if payload.startswith("c=FULL CLOSE"):
-            try:
-                raise TimeoutError
-            except TimeoutError as err:
-                raise TmtCommandError(
-                    "No ACK FULL CLOSE acknowledgement",
-                    translation_key="no_acknowledgement",
-                    translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
-                ) from err
-        raise AssertionError(f"Unexpected exchange: {payload}")
+        try:
+            raise TimeoutError
+        except TimeoutError as err:
+            raise TmtCommandError(
+                "No ACK FULL CLOSE acknowledgement",
+                translation_key="no_acknowledgement",
+                translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
+            ) from err
 
     async def fake_rs() -> str:
         return "ACK RS:60,64,AA,5A,40,00,63,40,00"
@@ -339,11 +250,7 @@ def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> No
     hub._async_exchange = fake_exchange  # type: ignore[method-assign]
     hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
 
-    with patch.object(
-        hub_module,
-        "_PS24118_ACK_FALLBACK_DELAYS",
-        (0.0,),
-    ):
+    with patch.object(hub_module, "_PS24118_ACK_FALLBACK_DELAYS", (0.0,)):
         acknowledged = asyncio.run(
             hub._async_command(
                 "FULL CLOSE",
@@ -361,164 +268,46 @@ def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> No
     assert debug["fallback_rs"][0]["movement_proven"] is True
 
 
-def test_ps24118_pending_post_standby_close_rearms_before_open_when_status_missing() -> None:
-    hub = _hub()
-    hub.position = 0
-    hub.is_operating = False
-    hub._mqtt._connected.set()
-    hub._ps24118_rearm_pending_direction = "closing"
-    events: list[tuple[str, str]] = []
-
-    async def fake_exchange(payload: str, expected: str) -> str:
-        events.append((payload, expected))
-        if payload == "c=READ STATUS":
-            try:
-                raise TimeoutError
-            except TimeoutError as err:
-                raise TmtCommandError(
-                    "No ACK STATUS acknowledgement",
-                    translation_key="no_acknowledgement",
-                ) from err
-        if payload.startswith("c=FULL CLOSE"):
-            return "ACK FULL CLOSE"
-        if payload.startswith("c=FULL OPEN"):
-            return "ACK FULL OPEN"
-        raise AssertionError(f"Unexpected exchange: {payload}")
-
-    async def fake_rs() -> str:
-        return "ACK RS:60,64,AA,80,40,00,80,40,00"
-
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
-
-    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
-        acknowledged = asyncio.run(
-            hub._async_command(
-                "FULL OPEN",
-                "ACK FULL OPEN",
-                motion_direction="opening",
-            )
-        )
-
-    assert acknowledged is True
-    assert events == [
-        ("c=READ STATUS", "ACK STATUS"),
-        ("c=FULL CLOSE;src=P9999999", "ACK FULL CLOSE"),
-        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
-    ]
-    debug = hub.ps24118_command_debug
-    assert debug is not None
-    assert debug["preflight_read_status_response"] is None
-    assert debug["rearm"]["reason"] == "previous_post_standby_endpoint_requires_rearm"
-    assert debug["rearm"]["command"] == "FULL CLOSE"
-    assert debug["rearm"]["ack"] == "ACK FULL CLOSE"
-    assert debug["pending_rearm_direction_after"] is None
-
-
-def test_ps24118_first_full_command_after_three_minutes_marks_endpoint_for_rearm() -> None:
-    hub = _hub()
-    hub.position = 0
-    hub.is_operating = False
-    hub._mqtt._connected.set()
-    hub._ps24118_profile_started_monotonic = (
-        hub_module.time.monotonic() - hub_module._PS24118_STANDBY_REARM_SECONDS - 1.0
-    )
-
-    async def fake_exchange(payload: str, expected: str) -> str:
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,0"
-        if payload.startswith("c=FULL OPEN"):
-            return "ACK FULL OPEN"
-        raise AssertionError(f"Unexpected exchange: {payload}")
-
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-
-    acknowledged = asyncio.run(
-        hub._async_command(
-            "FULL OPEN",
-            "ACK FULL OPEN",
-            motion_direction="opening",
-        )
-    )
-
-    assert acknowledged is True
-    assert hub._ps24118_rearm_pending_direction == "opening"
-    debug = hub.ps24118_command_debug
-    assert debug is not None
-    assert debug["after_standby"] is True
-    assert debug["pending_rearm_direction_after"] == "opening"
-
-
-def test_ps24118_same_direction_user_command_consumes_pending_rearm_without_duplicate() -> None:
+def test_ps24118_stale_shadow_status_cannot_override_live_state() -> None:
     hub = _hub()
     hub.position = 100
     hub.is_operating = False
-    hub._mqtt._connected.set()
-    hub._ps24118_rearm_pending_direction = "opening"
-    events: list[tuple[str, str]] = []
+    hub.movement = None
 
-    async def fake_exchange(payload: str, expected: str) -> str:
-        events.append((payload, expected))
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL OPENED,100"
-        if payload.startswith("c=FULL OPEN"):
-            return "ACK FULL OPEN"
-        raise AssertionError(f"Unexpected exchange: {payload}")
-
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-
-    acknowledged = asyncio.run(
-        hub._async_command(
-            "FULL OPEN",
-            "ACK FULL OPEN",
-            motion_direction="opening",
-        )
+    hub._apply_reported(
+        {
+            "dev status": "60,64,AA,00,40,00,00,40,00",
+            "dev info": "P190U,PS24118C,V02",
+        }
     )
 
-    assert acknowledged is True
-    assert events == [
-        ("c=READ STATUS", "ACK STATUS"),
-        ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
-    ]
-    assert hub._ps24118_rearm_pending_direction is None
+    assert hub.controller_type == "PS24118C"
+    assert hub.position == 100
+    assert hub.is_operating is False
 
 
-def test_ps24118_rearm_is_not_sent_without_fresh_endpoint_proof() -> None:
-    hub = _hub()
-    hub.position = 100
-    hub.is_operating = False
+def test_ps24118_monitor_publishes_read_only_rs_only() -> None:
+    hub = _hub("P00317D9")
+    published: list[tuple[str, str]] = []
     hub._mqtt._connected.set()
-    hub._ps24118_rearm_pending_direction = "opening"
-    events: list[tuple[str, str]] = []
 
-    async def fake_exchange(payload: str, expected: str) -> str:
-        events.append((payload, expected))
-        if payload == "c=READ STATUS":
-            return "ACK STATUS:FULL CLOSED,99"
-        raise AssertionError(f"Unexpected exchange: {payload}")
+    async def fake_publish(topic: str, payload: str) -> None:
+        published.append((topic, payload))
+        for expected, future in tuple(hub._waiters):
+            if expected == "ACK RS" and not future.done():
+                future.set_result("ACK RS:60,64,AA,00,40,00,00,40,00")
 
-    async def fake_rs() -> str:
-        return "ACK RS:60,64,EA,5A,40,00,63,40,00"
+    hub._mqtt.async_publish = fake_publish  # type: ignore[method-assign]
 
-    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
-    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+    with patch.object(
+        hub_module,
+        "_PS24118_STATUS_REFRESH_DELAYS",
+        (0.0, 0.0, 0.0),
+    ):
+        asyncio.run(hub._async_ps24118_status_monitor())
 
-    with patch.object(hub_module, "_PS24118_REARM_SETTLE_SECONDS", 0.0):
-        try:
-            asyncio.run(
-                hub._async_command(
-                    "FULL CLOSE",
-                    "ACK FULL CLOSE",
-                    motion_direction="closing",
-                )
-            )
-        except TmtCommandError as err:
-            assert err.translation_key == "command_failed"
-        else:
-            raise AssertionError("Re-arm must not be sent unless endpoint is proven")
-
-    assert events == [("c=READ STATUS", "ACK STATUS")]
-    debug = hub.ps24118_command_debug
-    assert debug is not None
-    assert debug["rearm"]["sent"] is False
-    assert debug["rearm"]["result"] == "endpoint_not_proven"
+    assert published == [
+        (hub.rx_topic, "c=RS;src=P00317D9"),
+        (hub.rx_topic, "c=RS;src=P00317D9"),
+        (hub.rx_topic, "c=RS;src=P00317D9"),
+    ]
