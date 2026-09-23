@@ -115,6 +115,7 @@ class TmtChowHub:
         source_tag: str,
         product_type: str,
         device_type: str = "",
+        observe_rx_topic: bool = False,
     ) -> None:
         self.uuid = uuid
         self.thing_name = thing_name
@@ -172,10 +173,13 @@ class TmtChowHub:
             certificate_pem=certificate_pem,
             private_key=private_key,
             topics=(
-                self.tx_topic,
-                self.position_topic,
-                self.shadow_get_accepted_topic,
-                self.shadow_documents_topic,
+                ((self.rx_topic,) if observe_rx_topic else ())
+                + (
+                    self.tx_topic,
+                    self.position_topic,
+                    self.shadow_get_accepted_topic,
+                    self.shadow_documents_topic,
+                )
             ),
             message_callback=self._async_message,
             state_callback=self._mqtt_state_changed,
