@@ -72,6 +72,8 @@ _PS24118_STATUS_REFRESH_DELAYS = (
 )
 _PS24118_ACK_FALLBACK_DELAYS = (0.15, 0.35, 0.6, 1.0, 1.5)
 _PS24118_RS_TIMEOUT_SECONDS = 1.5
+_PS24118_READ_STATUS_TIMEOUT_SECONDS = 1.5
+_PS24118_MIN_POSITION_DELTA = 5
 _STALE_STOP_DIRECTION_GUARD_SECONDS = 30.0
 
 
@@ -112,7 +114,10 @@ class TmtChowHub(BaseTmtChowHub):
     Therefore RS is treated as the authoritative runtime state source for this
     exact identity and is refreshed after movement commands plus periodically.
     Every RS transaction is serialized behind the same command lock so status
-    polling can never overlap a FULL OPEN/FULL CLOSE/PED OPEN exchange.
+    polling can never overlap a FULL OPEN/FULL CLOSE/PED OPEN exchange. Before
+    FULL OPEN/FULL CLOSE, one best-effort read-only READ STATUS exchange is used
+    to synchronize/wake the controller after standby. Endpoint jitter such as
+    98/100 or 0/2 is never accepted as proof that a movement command executed.
     Movement commands are still sent exactly once and are never retried.
 
     PS22027 uses its live-verified 20-slot RP,1/WP,1 profile. The generated APK
@@ -282,6 +287,42 @@ class TmtChowHub(BaseTmtChowHub):
             }
         super()._apply_reported(reported)
 
+    @staticmethod
+    def _ps24118_normalize_position(position: int) -> int:
+        """Normalize the same endpoint band used by the live gate state."""
+        return 0 if position <= 5 else 100 if position >= 95 else position
+
+    @property
+    def ps24118_command_debug(self) -> dict[str, Any] | None:
+        """Return sanitized wire evidence for the latest PS24118 movement."""
+        debug = getattr(self, "_ps24118_last_command_debug", None)
+        if not isinstance(debug, dict):
+            return None
+        copied = dict(debug)
+        fallback = copied.get("fallback_rs")
+        if isinstance(fallback, list):
+            copied["fallback_rs"] = [dict(item) for item in fallback]
+        last_status = copied.get("last_rs_status")
+        if isinstance(last_status, dict):
+            copied["last_rs_status"] = dict(last_status)
+        return copied
+
+    def _record_ps24118_rs_debug(self, response: str | None) -> None:
+        debug = getattr(self, "_ps24118_last_command_debug", None)
+        if not isinstance(debug, dict):
+            return
+        debug["last_rs_response"] = response
+        status = parse_ack_rs(response)
+        debug["last_rs_status"] = (
+            {
+                "position": status.position,
+                "is_operating": status.is_operating,
+                "open_direction": status.is_open_direction,
+            }
+            if status is not None
+            else None
+        )
+
     async def _async_ps24118_request_status(self) -> str | None:
         """Run one serialized read-only RS transaction."""
         if (
@@ -301,18 +342,52 @@ class TmtChowHub(BaseTmtChowHub):
                     self.rx_topic,
                     f"c=RS;src={self._source_tag}",
                 )
-                return await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     future,
                     timeout=_PS24118_RS_TIMEOUT_SECONDS,
                 )
+                self._record_ps24118_rs_debug(response)
+                return response
             except (MqttError, TimeoutError):
                 # Read-only status loss must never fail or resend movement.
+                self._record_ps24118_rs_debug(None)
                 return None
             finally:
                 try:
                     self._waiters.remove(waiter)
                 except ValueError:
                     pass
+
+    async def _async_ps24118_read_status(self) -> str | None:
+        """Run the verified legacy READ STATUS as a best-effort standby preflight."""
+        if (
+            not self._is_ps24118_profile()
+            or self.device_online is False
+            or not self._mqtt.connected
+        ):
+            return None
+        try:
+            async with self._transaction_lock:
+                response = await asyncio.wait_for(
+                    self._async_exchange("c=READ STATUS", "ACK STATUS"),
+                    timeout=_PS24118_READ_STATUS_TIMEOUT_SECONDS,
+                )
+        except (TmtCommandError, TimeoutError):
+            return None
+        return response
+
+    async def _async_cancel_ps24118_status_monitor(self) -> None:
+        """Stop an older monitor before starting a new movement transaction."""
+        task = getattr(self, "_ps24118_status_task", None)
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        if getattr(self, "_ps24118_status_task", None) is task:
+            self._ps24118_status_task = None
 
     async def _async_ps24118_status_monitor(self) -> None:
         """Refresh live state for the full motion window without resending motion."""
@@ -454,7 +529,7 @@ class TmtChowHub(BaseTmtChowHub):
         *,
         motion_direction: str | None = None,
     ) -> bool:
-        """Add a serialized RS fallback for PS24118 movement ACK loss."""
+        """Use PS24118 standby preflight plus strict no-resend motion proof."""
         is_ps24118_motion = (
             self._is_ps24118_profile()
             and command in {"FULL OPEN", "FULL CLOSE", "PED OPEN"}
@@ -467,71 +542,130 @@ class TmtChowHub(BaseTmtChowHub):
                 motion_direction=motion_direction,
             )
 
+        # A prior post-motion monitor must never delay or interleave the next
+        # intentional movement transaction.
+        await self._async_cancel_ps24118_status_monitor()
+
+        preflight_response = None
+        if command in {"FULL OPEN", "FULL CLOSE"}:
+            # Real beta.38 hardware diagnostics prove READ STATUS works on this
+            # controller. Keep it read-only and best-effort: failure never blocks
+            # the movement command.
+            preflight_response = await self._async_ps24118_read_status()
+
         start_position = self.position
         start_operating = self.is_operating
         command_started = time.monotonic()
+        debug: dict[str, Any] = {
+            "command": command,
+            "direction": motion_direction,
+            "start_position": start_position,
+            "start_operating": start_operating,
+            "preflight_read_status_response": preflight_response,
+            "explicit_ack_received": False,
+            "explicit_ack_response": None,
+            "fallback_rs": [],
+            "result": "command_pending",
+        }
+        self._ps24118_last_command_debug = debug
 
+        command_error: TmtCommandError | None = None
         try:
-            return await super()._async_command(
-                command,
-                acknowledgement,
-                motion_direction=motion_direction,
-            )
+            # Exactly one movement publish. _async_exchange never retries.
+            async with self._transaction_lock:
+                ack_response = await self._async_exchange(
+                    f"c={command};src={self._source_tag}",
+                    acknowledgement,
+                )
         except TmtCommandError as err:
+            command_error = err
+            debug["command_error_translation_key"] = err.translation_key
+            debug["command_error"] = str(err)
             if not (
                 err.translation_key == "no_acknowledgement"
                 and isinstance(err.__cause__, TimeoutError)
             ):
+                debug["result"] = "command_error"
                 raise
+        else:
+            debug["explicit_ack_received"] = True
+            debug["explicit_ack_response"] = ack_response
+            debug["result"] = "explicit_ack"
+            return True
 
-            # The movement command has already been sent exactly once and its
-            # waiter is gone. Only now may RS be issued, one transaction at a
-            # time, behind the same transaction lock.
-            for delay in _PS24118_ACK_FALLBACK_DELAYS:
-                await asyncio.sleep(delay)
-                response = await self._async_ps24118_request_status()
-                status = parse_ack_rs(response)
-                if status is None:
-                    continue
+        # The movement command was already sent once and its waiter is now gone.
+        # Only read-only RS transactions may follow. Do not accept endpoint noise
+        # (for example the observed 100 -> 98) as evidence of real movement.
+        normalized_start = (
+            self._ps24118_normalize_position(start_position)
+            if start_position is not None
+            else None
+        )
+        for delay in _PS24118_ACK_FALLBACK_DELAYS:
+            await asyncio.sleep(delay)
+            response = await self._async_ps24118_request_status()
+            status = parse_ack_rs(response)
+            sample: dict[str, Any] = {
+                "response": response,
+                "position": status.position if status is not None else None,
+                "is_operating": status.is_operating if status is not None else None,
+                "open_direction": (
+                    status.is_open_direction if status is not None else None
+                ),
+                "movement_proven": False,
+            }
+            debug["fallback_rs"].append(sample)
+            if status is None:
+                continue
 
-                if (
-                    start_operating is not True
-                    and status.is_operating is True
-                    and status.is_open_direction is not None
-                    and (
-                        (motion_direction == "opening" and status.is_open_direction)
-                        or (
-                            motion_direction == "closing"
-                            and not status.is_open_direction
-                        )
-                    )
-                ):
-                    return False
-
-                if start_position is not None and status.position is not None:
-                    if (
-                        motion_direction == "opening"
-                        and status.position > start_position
-                    ):
-                        return False
-                    if (
+            if (
+                start_operating is not True
+                and status.is_operating is True
+                and status.is_open_direction is not None
+                and (
+                    (motion_direction == "opening" and status.is_open_direction)
+                    or (
                         motion_direction == "closing"
-                        and status.position < start_position
-                    ):
-                        return False
+                        and not status.is_open_direction
+                    )
+                )
+            ):
+                sample["movement_proven"] = True
+                sample["proof"] = "operating_direction"
+                debug["result"] = "rs_confirmed_operating"
+                return False
 
-                # If unrelated fresh telemetry arrived after the command while
-                # the explicit ACK was missing, accept the same proof used by
-                # the base hub.
-                if self._motion_confirms_command(
-                    motion_direction,
-                    start_position=start_position,
-                    start_operating=start_operating,
-                    command_started=command_started,
-                ):
+            if normalized_start is not None and status.position is not None:
+                normalized_status = self._ps24118_normalize_position(status.position)
+                delta = normalized_status - normalized_start
+                moved_far_enough = abs(delta) >= _PS24118_MIN_POSITION_DELTA
+                direction_matches = (
+                    delta > 0 if motion_direction == "opening" else delta < 0
+                )
+                sample["normalized_position"] = normalized_status
+                sample["position_delta"] = delta
+                if moved_far_enough and direction_matches:
+                    sample["movement_proven"] = True
+                    sample["proof"] = "meaningful_position_delta"
+                    debug["result"] = "rs_confirmed_position"
                     return False
 
-            raise
+            # Dedicated /position or operating telemetry can also prove motion,
+            # but _apply_position already normalizes the endpoint bands.
+            if self._motion_confirms_command(
+                motion_direction,
+                start_position=start_position,
+                start_operating=start_operating,
+                command_started=command_started,
+            ):
+                sample["movement_proven"] = True
+                sample["proof"] = "fresh_runtime_telemetry"
+                debug["result"] = "runtime_telemetry_confirmed"
+                return False
+
+        debug["result"] = "no_ack_and_no_motion_proof"
+        assert command_error is not None
+        raise command_error
 
     async def async_open(self) -> None:
         await super().async_open()
