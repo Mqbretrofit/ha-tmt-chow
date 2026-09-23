@@ -569,6 +569,7 @@ class TmtChowHub(BaseTmtChowHub):
         }
         self._ps24118_last_command_debug = debug
 
+        command_error: TmtCommandError | None = None
         try:
             # Exactly one movement publish. _async_exchange never retries.
             async with self._transaction_lock:
@@ -577,6 +578,7 @@ class TmtChowHub(BaseTmtChowHub):
                     acknowledgement,
                 )
         except TmtCommandError as err:
+            command_error = err
             debug["command_error_translation_key"] = err.translation_key
             debug["command_error"] = str(err)
             if not (
@@ -662,7 +664,8 @@ class TmtChowHub(BaseTmtChowHub):
                 return False
 
         debug["result"] = "no_ack_and_no_motion_proof"
-        raise err
+        assert command_error is not None
+        raise command_error
 
     async def async_open(self) -> None:
         await super().async_open()
