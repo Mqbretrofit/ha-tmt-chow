@@ -139,6 +139,8 @@ def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() 
 
     async def fake_exchange(payload: str, expected: str) -> str:
         exchanges.append((payload, expected))
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,0"
         if payload.startswith("c=FULL OPEN"):
             try:
                 raise TimeoutError
@@ -175,9 +177,12 @@ def test_ps24118_missing_full_open_ack_falls_back_to_serial_rs_without_resend() 
 
     assert acknowledged is False
     assert exchanges == [
+        ("c=READ STATUS", "ACK STATUS"),
         ("c=FULL OPEN;src=P9999999", "ACK FULL OPEN"),
     ]
     assert published == ["c=RS;src=P9999999"]
+    assert hub.ps24118_command_debug is not None
+    assert hub.ps24118_command_debug["result"] == "rs_confirmed_operating"
 
 
 def test_ps24118_rs_waits_for_transaction_lock() -> None:
@@ -203,3 +208,142 @@ def test_ps24118_rs_waits_for_transaction_lock() -> None:
     asyncio.run(run())
 
     assert published == ["c=RS;src=P9999999"]
+
+
+def test_ps24118_full_close_uses_read_status_preflight_before_single_command() -> None:
+    hub = _hub()
+    hub.position = 100
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+    events: list[tuple[str, str]] = []
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        events.append((payload, expected))
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,98"
+        if payload.startswith("c=FULL CLOSE"):
+            return "ACK FULL CLOSE"
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+
+    acknowledged = asyncio.run(
+        hub._async_command(
+            "FULL CLOSE",
+            "ACK FULL CLOSE",
+            motion_direction="closing",
+        )
+    )
+
+    assert acknowledged is True
+    assert events == [
+        ("c=READ STATUS", "ACK STATUS"),
+        ("c=FULL CLOSE;src=P9999999", "ACK FULL CLOSE"),
+    ]
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["preflight_read_status_response"] == "ACK STATUS:FULL CLOSED,98"
+    assert debug["explicit_ack_received"] is True
+    assert debug["explicit_ack_response"] == "ACK FULL CLOSE"
+    assert debug["result"] == "explicit_ack"
+
+
+def test_ps24118_endpoint_jitter_does_not_confirm_missing_close_ack() -> None:
+    hub = _hub()
+    hub.position = 100
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,98"
+        if payload.startswith("c=FULL CLOSE"):
+            try:
+                raise TimeoutError
+            except TimeoutError as err:
+                raise TmtCommandError(
+                    "No ACK FULL CLOSE acknowledgement",
+                    translation_key="no_acknowledgement",
+                    translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
+                ) from err
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    async def fake_rs() -> str:
+        return "ACK RS:60,64,AA,62,40,00,63,40,00"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+
+    with patch.object(
+        hub_module,
+        "_PS24118_ACK_FALLBACK_DELAYS",
+        (0.0, 0.0),
+    ):
+        try:
+            asyncio.run(
+                hub._async_command(
+                    "FULL CLOSE",
+                    "ACK FULL CLOSE",
+                    motion_direction="closing",
+                )
+            )
+        except TmtCommandError as err:
+            assert err.translation_key == "no_acknowledgement"
+        else:
+            raise AssertionError("98/100 endpoint jitter must not confirm movement")
+
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["result"] == "no_ack_and_no_motion_proof"
+    assert len(debug["fallback_rs"]) == 2
+    assert all(sample["position"] == 98 for sample in debug["fallback_rs"])
+    assert all(sample["position_delta"] == 0 for sample in debug["fallback_rs"])
+    assert all(sample["movement_proven"] is False for sample in debug["fallback_rs"])
+
+
+def test_ps24118_meaningful_position_delta_can_confirm_missing_close_ack() -> None:
+    hub = _hub()
+    hub.position = 100
+    hub.is_operating = False
+    hub._mqtt._connected.set()
+
+    async def fake_exchange(payload: str, expected: str) -> str:
+        if payload == "c=READ STATUS":
+            return "ACK STATUS:FULL CLOSED,98"
+        if payload.startswith("c=FULL CLOSE"):
+            try:
+                raise TimeoutError
+            except TimeoutError as err:
+                raise TmtCommandError(
+                    "No ACK FULL CLOSE acknowledgement",
+                    translation_key="no_acknowledgement",
+                    translation_placeholders={"acknowledgement": "ACK FULL CLOSE"},
+                ) from err
+        raise AssertionError(f"Unexpected exchange: {payload}")
+
+    async def fake_rs() -> str:
+        return "ACK RS:60,64,AA,5A,40,00,63,40,00"
+
+    hub._async_exchange = fake_exchange  # type: ignore[method-assign]
+    hub._async_ps24118_request_status = fake_rs  # type: ignore[method-assign]
+
+    with patch.object(
+        hub_module,
+        "_PS24118_ACK_FALLBACK_DELAYS",
+        (0.0,),
+    ):
+        acknowledged = asyncio.run(
+            hub._async_command(
+                "FULL CLOSE",
+                "ACK FULL CLOSE",
+                motion_direction="closing",
+            )
+        )
+
+    assert acknowledged is False
+    debug = hub.ps24118_command_debug
+    assert debug is not None
+    assert debug["result"] == "rs_confirmed_position"
+    assert debug["fallback_rs"][0]["normalized_position"] == 90
+    assert debug["fallback_rs"][0]["position_delta"] == -10
+    assert debug["fallback_rs"][0]["movement_proven"] is True
