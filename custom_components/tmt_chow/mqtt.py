@@ -67,12 +67,14 @@ class AsyncMqttClient:
         topics: tuple[str, ...],
         message_callback: MessageCallback,
         state_callback: StateCallback,
+        optional_topics: tuple[str, ...] = (),
     ) -> None:
         self._endpoint = endpoint
         self._client_id = client_id
         self._certificate_pem = certificate_pem
         self._private_key = private_key
         self._topics = topics
+        self._optional_topics = frozenset(optional_topics)
         self._message_callback = message_callback
         self._state_callback = state_callback
         self._reader: asyncio.StreamReader | None = None
@@ -291,10 +293,27 @@ class AsyncMqttClient:
         ):
             raise MqttError("Invalid MQTT SUBACK")
         rejected = [index for index, code in enumerate(response[2:]) if code == 0x80]
-        if rejected:
+        required_rejected = [
+            index
+            for index in rejected
+            if index >= len(self._topics)
+            or self._topics[index] not in self._optional_topics
+        ]
+        if required_rejected:
             raise MqttError(
                 "AWS IoT rejected MQTT subscription(s) at indexes "
-                + ",".join(map(str, rejected))
+                + ",".join(map(str, required_rejected))
+            )
+        optional_rejected = [
+            self._topics[index]
+            for index in rejected
+            if index < len(self._topics)
+            and self._topics[index] in self._optional_topics
+        ]
+        if optional_rejected:
+            _LOGGER.debug(
+                "AWS IoT rejected optional MQTT observation topic(s): %s",
+                ",".join(optional_rejected),
             )
 
     async def _read_loop(self) -> None:
