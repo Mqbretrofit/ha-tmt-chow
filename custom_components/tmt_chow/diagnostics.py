@@ -705,6 +705,9 @@ async def async_get_config_entry_diagnostics(
                 and hub.configured_controller_type == "PS17062"
                 else None
             ),
+            "ps24118_command_debug": getattr(
+                hub, "ps24118_command_debug", None
+            ),
             "shadow_get_probe_result": shadow_get_probe["result"],
             "shadow_get_rejection_code": shadow_get_probe["rejection_code"],
             "shadow_get_rejection_message": shadow_get_probe["rejection_message"],
