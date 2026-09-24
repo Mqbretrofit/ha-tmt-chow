@@ -422,17 +422,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
-    if hub.configured_controller_type == "PS24118":
-        def _persist_ps24118_source_tag(tag: str) -> None:
-            current = str(entry.data.get(CONF_SOURCE_TAG) or "").strip().upper()
-            if current == tag:
-                return
-            data = dict(entry.data)
-            data[CONF_SOURCE_TAG] = tag
-            hass.config_entries.async_update_entry(entry, data=data)
-
-        hub.set_source_tag_update_callback(_persist_ps24118_source_tag)
-
     if hub.configured_controller_type in {"PS25142", "PS17062"}:
         # Fail closed until the exact verified native profile is matched below.
         hub.set_gate_control_enabled(False)
