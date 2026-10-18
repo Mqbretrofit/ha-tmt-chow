@@ -9,6 +9,7 @@ from custom_components.tmt_chow import (
     _is_ouranos_probe_candidate,
     _is_verified_ouranos_poller_candidate,
     _is_verified_ps17062_read_status_candidate,
+    _is_verified_ps20005_read_status_candidate,
     _is_verified_ps25142_rs_status_candidate,
     _ouranos_probe_status_command,
 )
@@ -121,3 +122,31 @@ def test_ps17062_keeps_hardware_verified_read_status_even_with_v3_metadata() -> 
     hass = _hass_for(uuid, "1", {"uartVer": "V3.0"})
 
     assert _ouranos_probe_status_command(hass, hub) == "READ_STATUS"
+
+
+def test_ps20005_native_v2_requires_exact_tested_metadata_issue74() -> None:
+    uuid = "12345678901234567890"
+    hub = SimpleNamespace(uuid=uuid, configured_controller_type="PS20005")
+    proposal = {"uartVer": "V2.0", "proposalVer": "B"}
+    hass = _hass_for(uuid, "1", proposal)
+
+    assert _is_verified_ps20005_read_status_candidate(hass, hub) is True
+    assert _is_verified_ouranos_poller_candidate(hass, hub) is True
+    assert _ouranos_probe_status_command(hass, hub) == "READ_STATUS"
+
+    assert _is_verified_ps20005_read_status_candidate(
+        _hass_for(uuid, "5", proposal), hub
+    ) is False
+    assert _is_verified_ps20005_read_status_candidate(
+        _hass_for(uuid, "1", {"uartVer": "V3.0"}), hub
+    ) is False
+    assert _is_verified_ps20005_read_status_candidate(
+        _hass_for(uuid, "1"), hub
+    ) is False
+    assert _is_verified_ps20005_read_status_candidate(
+        hass, SimpleNamespace(uuid=uuid, configured_controller_type="PS20005A")
+    ) is False
+    assert _is_verified_ps20005_read_status_candidate(
+        _hass_for("short", "1", proposal),
+        SimpleNamespace(uuid="short", configured_controller_type="PS20005"),
+    ) is False
