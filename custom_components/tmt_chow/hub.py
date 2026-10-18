@@ -227,6 +227,11 @@ class TmtChowHub:
         return self._gate_control_enabled
 
     @property
+    def stop_control_enabled(self) -> bool:
+        """Return whether exposing the cover STOP control is permitted."""
+        return self.gate_control_enabled
+
+    @property
     def pedestrian_state_assumed(self) -> bool:
         """Return whether the final post-pedestrian position is unconfirmed."""
         return self._pedestrian_state_assumed

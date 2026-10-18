@@ -156,20 +156,36 @@ class TmtChowApi:
             ("share_devices", "shared"),
         ):
             for raw in payload.get(bucket, []) or []:
-                if not isinstance(raw, dict) or not raw.get("uuid"):
+                if not isinstance(raw, dict):
                     continue
-                uuid = str(raw["uuid"])
-                device_type = str(raw.get("devies_type") or raw.get("device_type") or "")
-                endpoint = str(raw.get("iot_endpoint") or "")
+                # The vendor nests shared device details under "devies_info"
+                # (original spelling), while admin/user devices stay flat.
+                info = raw
+                if not raw.get("uuid"):
+                    nested = raw.get("devies_info")
+                    if not isinstance(nested, dict) or not nested.get("uuid"):
+                        continue
+                    info = nested
+                uuid = str(info["uuid"])
+                device_type = str(info.get("devies_type") or info.get("device_type") or "")
+                endpoint = str(info.get("iot_endpoint") or "")
                 devices.append(
                     TmtDevice(
-                        name=friendly_names.get(uuid, str(raw.get("name") or "TMT gate")),
+                        name=(
+                            friendly_names.get(uuid)
+                            or str(
+                                raw.get("custom_user_display_name")
+                                or info.get("name")
+                                or raw.get("name")
+                                or "TMT gate"
+                            )
+                        ),
                         uuid=uuid,
                         role=role,
                         device_type=device_type,
-                        product_type=str(raw.get("product_type") or ""),
+                        product_type=str(info.get("product_type") or ""),
                         iot_endpoint=endpoint,
-                        uuid_type=str(raw.get("uuid_type") or ""),
+                        uuid_type=str(info.get("uuid_type") or ""),
                     )
                 )
         return devices
