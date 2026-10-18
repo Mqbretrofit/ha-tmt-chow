@@ -180,6 +180,24 @@ def _is_verified_ps25142_rs_status_candidate(
     )
 
 
+def _is_verified_ps20005_read_status_candidate(
+    hass: HomeAssistant, hub: TmtChowHub
+) -> bool:
+    """Enable only the hardware-tested PS20005 OURANOS/V2 native route."""
+    if (
+        hub.configured_controller_type != "PS20005"
+        or len(hub.uuid) != 20
+        or _entry_uuid_type(hass, hub.uuid) != "1"
+    ):
+        return False
+    entry = _entry_for_uuid(hass, hub.uuid)
+    if entry is None:
+        return False
+    summary = proposal_summary(entry.data.get(CONF_PROPOSAL))
+    uart_version = str(summary.get("uart_version") or "").strip().upper()
+    return summary.get("available") is True and uart_version in {"V2.0", "2.0"}
+
+
 def _is_verified_ouranos_poller_candidate(
     hass: HomeAssistant, hub: TmtChowHub
 ) -> bool:
@@ -188,6 +206,7 @@ def _is_verified_ouranos_poller_candidate(
         _is_known_ouranos_candidate(hub)
         or _is_verified_ps17062_read_status_candidate(hass, hub)
         or _is_verified_ps25142_rs_status_candidate(hass, hub)
+        or _is_verified_ps20005_read_status_candidate(hass, hub)
     )
 
 
@@ -422,8 +441,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         product_type=entry.data.get(CONF_PRODUCT_TYPE, ""),
         device_type=entry.data.get(CONF_DEVICE_TYPE, ""),
     )
-    if hub.configured_controller_type in {"PS25142", "PS17062"}:
-        # Fail closed until the exact verified native profile is matched below.
+    if (
+        hub.configured_controller_type in {"PS25142", "PS17062"}
+        or (
+            hub.configured_controller_type == "PS20005"
+            and _is_ouranos_probe_candidate(hass, hub)
+        )
+    ):
+        # Fail closed until an exact verified native profile is matched.
+        # Keep existing PS20005 MQTT/uuid_type 5 behavior unchanged.
         hub.set_gate_control_enabled(False)
     poller = None
     pin_code = str(entry.options.get(CONF_OURANOS_PIN, "")).strip()
@@ -459,6 +485,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hub,
                 pin_code,
                 status_command="RS",
+                expose_control_session=True,
+            )
+        elif _is_verified_ps20005_read_status_candidate(hass, hub) and valid_pin:
+            # Issue #74: real PS20005/V2 hardware verified READ STATUS,
+            # FULL OPEN and FULL CLOSE. STOP, PED and writes remain blocked.
+            hub.set_gate_control_enabled(True)
+            poller = OuranosStatusPoller(
+                hass,
+                hub,
+                pin_code,
+                status_command="READ_STATUS",
                 expose_control_session=True,
             )
         elif _is_ouranos_probe_candidate(hass, hub):
