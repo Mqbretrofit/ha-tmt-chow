@@ -44,7 +44,10 @@ class TmtChowCover(TmtChowEntity, CoverEntity):
         """Expose controls only when the runtime route is verified for movement."""
         if not self.hub.gate_control_enabled:
             return CoverEntityFeature(0)
-        return self._attr_supported_features
+        features = self._attr_supported_features
+        if not self.hub.stop_control_enabled:
+            features &= ~CoverEntityFeature.STOP
+        return features
 
     @property
     def current_cover_position(self) -> int | None:
