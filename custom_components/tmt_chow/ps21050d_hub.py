@@ -172,6 +172,13 @@ class TmtChowHub(BaseTmtChowHub):
             }
         )
 
+    def _is_ps20005_native_profile(self) -> bool:
+        """Match only the configured PS20005 using an attached native session."""
+        return (
+            self.configured_controller_type == _PS20005_APP_MODEL
+            and self._ouranos_native_session is not None
+        )
+
     def _is_ps22027_verified_profile(self) -> bool:
         return (
             self.controller_type == PS22027
@@ -188,8 +195,15 @@ class TmtChowHub(BaseTmtChowHub):
         )
 
     @property
+    def stop_control_enabled(self) -> bool:
+        """STOP is not yet hardware-verified on PS20005 OURANOS."""
+        return super().stop_control_enabled and not self._is_ps20005_native_profile()
+
+    @property
     def pedestrian_strategy(self) -> str:
         """Return the currently permitted pedestrian command strategy."""
+        if self._is_ps20005_native_profile():
+            return PEDESTRIAN_STRATEGY_NONE
         if self._is_ps25007a_live_alias() and self._identified_source_tag() is not None:
             return PEDESTRIAN_STRATEGY_PED_OPEN
         return pedestrian_strategy_for(
@@ -519,6 +533,9 @@ class TmtChowHub(BaseTmtChowHub):
     @property
     def parameter_write_schema_verified(self) -> bool:
         """Allow writes only for parameter layouts proven safe on live hardware."""
+        if self._is_ps20005_native_profile():
+            # RP,1 read was tested in #74; WP,1 has not been tested.
+            return False
         if self._is_ps22027_verified_profile():
             return True
         if self._is_ps22087b_alias():
@@ -874,6 +891,14 @@ class TmtChowHub(BaseTmtChowHub):
         assert command_error is not None
         raise command_error
 
+    async def async_stop_gate(self) -> None:
+        if self._is_ps20005_native_profile():
+            raise TmtCommandError(
+                "PS20005 OURANOS STOP is not yet hardware-verified",
+                translation_key="unsupported_controller",
+            )
+        await super().async_stop_gate()
+
     async def async_open(self) -> None:
         await super().async_open()
         if self._is_ps24118_profile():
@@ -1037,6 +1062,11 @@ class TmtChowHub(BaseTmtChowHub):
 
     async def async_set_parameter(self, index: int, value: int) -> None:
         """Write one parameter using the model-specific verified codec."""
+        if self._is_ps20005_native_profile():
+            raise TmtCommandError(
+                "PS20005 OURANOS parameter writing is not yet hardware-verified",
+                translation_key="unsupported_controller",
+            )
         if self._is_ps22087b_alias():
             await self._async_set_ps22087b_parameter(index, value)
             return
